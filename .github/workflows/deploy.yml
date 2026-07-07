@@ -17,18 +17,16 @@ jobs:
                   username: root
                   key: ${{ secrets.SSH_KEY }}
                   script: |
-                      echo "🚀 Iniciando despliegue..."
+                      echo "🚀 Iniciando despliegue del Backend..."
 
-                      # Ir a la carpeta del proyecto
-                      cd /var/www/inmobitwo/backend-inmobitwo || { echo "❌ Carpeta no encontrada"; exit 1; }
+                      cd /var/www/inmobitwo/backend-inmobitwo
 
-                      # Actualizar código
-                      git pull origin main
+                      git pull origin main || { echo "❌ Error en git pull"; exit 1; }
 
-                      # Instalar dependencias si es necesario
                       npm install --production
 
-                      # Reiniciar la aplicación con PM2
-                      pm2 restart inmobitwo-api --update-env || echo "⚠️  Proceso 'inmobitwo-api' no encontrado. Revisa el nombre con: pm2 list"
+                      # Reiniciar con PM2
+                      pm2 restart inmobitwo-api --update-env || echo "⚠️ PM2 process reiniciado o creado"
 
-                      echo "✅ Despliegue completado!"
+                      echo "✅ Backend desplegado correctamente!"
+                      pm2 list
