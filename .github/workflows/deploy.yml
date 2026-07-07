@@ -1,0 +1,34 @@
+name: Deploy Backend to VPS
+
+on:
+    push:
+        branches:
+            - main
+
+jobs:
+    deploy:
+        runs-on: ubuntu-latest
+
+        steps:
+            - name: Deploy via SSH
+              uses: appleboy/ssh-action@v1
+              with:
+                  host: ${{ secrets.SERVER_IP }}
+                  username: root
+                  key: ${{ secrets.SSH_KEY }}
+                  script: |
+                      echo "🚀 Iniciando despliegue..."
+
+                      # Ir a la carpeta del proyecto
+                      cd /var/www/inmobitwo/backend-inmobitwo || { echo "❌ Carpeta no encontrada"; exit 1; }
+
+                      # Actualizar código
+                      git pull origin main
+
+                      # Instalar dependencias si es necesario
+                      npm install --production
+
+                      # Reiniciar la aplicación con PM2
+                      pm2 restart inmobitwo-api --update-env || echo "⚠️  Proceso 'inmobitwo-api' no encontrado. Revisa el nombre con: pm2 list"
+
+                      echo "✅ Despliegue completado!"
