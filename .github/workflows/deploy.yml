@@ -23,13 +23,12 @@ jobs:
                       git pull origin main
 
                       echo "→ Instalando dependencias..."
-                      npm ci --omit=dev
+                      rm -rf node_modules package-lock.json
+                      npm install --production=false   # Instalamos todo para evitar problemas ESM
 
-                      echo "→ Gestionando PM2..."
-                      # Usamos npx para evitar problema de PATH
+                      echo "→ Reiniciando aplicación..."
                       npx pm2 restart inmobitwo-api --update-env || npx pm2 start npm --name "inmobitwo-api" -- start
 
-                      echo "→ Estado final:"
-                      npx pm2 list || echo "PM2 no disponible"
-
+                      echo "→ Estado:"
+                      npx pm2 list
                       echo "✅ Despliegue completado!"
