@@ -1,0 +1,14 @@
+{
+  "sqltools.connections": [
+    {
+      "ssh": "Disabled",
+      "previewLimit": 50,
+      "server": "161.97.146.80",
+      "port": 5433,
+      "driver": "PostgreSQL",
+      "name": "db_inmobitwo",
+      "database": "inmobitwo",
+      "username": "adminst"
+    }
+  ]
+}

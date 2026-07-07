@@ -1,0 +1,21 @@
+export function usuario_validate(datos) {
+  const errores = [];
+
+  if (!datos.name) {
+    errores.push("El nombre es obligatorio.");
+  }
+
+  if (datos.name.length < 3) {
+    errores.push("El nombre debe tener al menos 3 caracteres.");
+  }
+
+  if (!datos.email) {
+    errores.push("El email es obligatorio.");
+  }
+
+  if (!datos.password) {
+    errores.push("La contraseña es obligatoria.");
+  }
+
+  return errores;
+}
