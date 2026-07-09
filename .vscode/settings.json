@@ -9,6 +9,16 @@
       "name": "db_inmobitwo",
       "database": "inmobitwo",
       "username": "adminst"
+    },
+    {
+      "ssh": "Disabled",
+      "previewLimit": 50,
+      "server": "161.97.146.80",
+      "port": 5433,
+      "driver": "PostgreSQL",
+      "name": "inmobitwo_db",
+      "database": "inmobitwo",
+      "username": "adminst"
     }
   ]
 }
