@@ -1,28 +1,77 @@
 import { Router } from "express";
 import {
   getOrganizaciones,
-  getOrganizacionById,
-  deleteOrganizacion,
+  getOrganizacionesPublicas,
+  getOrganizacionBySlug,
+  resolveTenant,
   createOrganizacion,
+  getOrganizacionById,
   updateOrganizacion,
+  aprobarOrganizacion,
+  suspenderOrganizacion,
+  solicitarDominioPropio,
+  activarDominioPropio,
+  deleteOrganizacion,
 } from "../controllers/organizaciones.controllers.js";
 import { createRateLimitMiddleware, defaultLimiter } from "../lib/rateLimit.js";
-// import { validateApiKey } from "../lib/validateApiKey.js";
 import { verificarToken, verificarRol } from "../middleware/auth.middleware.js";
 
 const router = Router();
-
 const rateLimit = createRateLimitMiddleware(defaultLimiter);
-
 const ruta = "/organizaciones";
 
-// 🔒 Todas estas rutas ahora necesitan token de forma obligatoria
-router.get(ruta, rateLimit, getOrganizaciones);
-router.get(`${ruta}/:id`, rateLimit, getOrganizacionById);
-// router.patch(`${ruta}/:id`, verificarToken, updateOrganizacion);
+// ────────────────────────────────────────────────────────────────
+// Lectura pública (sin token)
+// ────────────────────────────────────────────────────────────────
+router.get(`${ruta}/publicas`, rateLimit, getOrganizacionesPublicas);
+router.get(`${ruta}/slug/:slug`, rateLimit, getOrganizacionBySlug);
+router.get(`${ruta}/resolve-tenant`, rateLimit, resolveTenant);
 
-// // Solo el superadmin puede crear o eliminar otros usuarios del sistema
-router.post(ruta, createOrganizacion);
-// router.delete(`${ruta}/:id`, verificarToken, deleteOrganizacion);
+// ────────────────────────────────────────────────────────────────
+// Lectura / escritura autenticada
+// ────────────────────────────────────────────────────────────────
+router.get(
+  ruta,
+  verificarToken,
+  verificarRol(["superadmin"]),
+  getOrganizaciones,
+);
+router.get(`${ruta}/:id`, rateLimit, getOrganizacionById);
+
+router.post(ruta, verificarToken, createOrganizacion);
+router.patch(`${ruta}/:id`, verificarToken, updateOrganizacion);
+router.delete(
+  `${ruta}/:id`,
+  verificarToken,
+  verificarRol(["superadmin"]),
+  deleteOrganizacion,
+);
+
+// ────────────────────────────────────────────────────────────────
+// Aprobación / suspensión — solo superadmin
+// ────────────────────────────────────────────────────────────────
+router.patch(
+  `${ruta}/:id/aprobar`,
+  verificarToken,
+  verificarRol(["superadmin"]),
+  aprobarOrganizacion,
+);
+router.patch(
+  `${ruta}/:id/suspender`,
+  verificarToken,
+  verificarRol(["superadmin"]),
+  suspenderOrganizacion,
+);
+
+// ────────────────────────────────────────────────────────────────
+// Dominio propio
+// ────────────────────────────────────────────────────────────────
+router.patch(`${ruta}/:id/dominio`, verificarToken, solicitarDominioPropio);
+router.patch(
+  `${ruta}/:id/dominio/activar`,
+  verificarToken,
+  verificarRol(["superadmin"]),
+  activarDominioPropio,
+);
 
 export default router;

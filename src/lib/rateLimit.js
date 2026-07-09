@@ -51,7 +51,7 @@ export function createRateLimitMiddleware(limiter) {
   };
 }
 
-export const registerLimiter = createRateLimiter(5, 60000);
-export const loginLimiter = createRateLimiter(5, 60000);
+export const registerLimiter = createRateLimiter(10, 60000);
+export const loginLimiter = createRateLimiter(10, 60000);
 export const defaultLimiter = createRateLimiter(50, 60000);
 export const verificacionCodigoLimiter = createRateLimiter(5, 10 * 60000); // 5 intentos cada 10 min

@@ -808,10 +808,13 @@ export const getPropiedadesHome = async (req, res) => {
     const ultimaPropiedad = propiedades[propiedades.length - 1];
     const nextCursor = ultimaPropiedad ? ultimaPropiedad.created_at : null;
 
+    console.log({
+      limit,
+      cursor,
+    });
     res.status(200).json({
       success: true,
       message: "propiedades obtenidas.",
-      // data: [...propiedadesConDatos],
 
       data: {
         data: propiedadesConDatos,
@@ -823,6 +826,84 @@ export const getPropiedadesHome = async (req, res) => {
     });
   } catch (error) {
     res.status(500).json({
+      success: false,
+      error: error.message,
+    });
+  }
+};
+
+export const getPropiedadesMisAnuncios = async (req, res) => {
+  try {
+    const { id } = req.query;
+
+    const { rows: propiedades } = await pool.query(
+      `SELECT *
+       FROM propiedades
+       WHERE publicado_por_id = $1
+       ORDER BY created_at DESC`,
+      [id],
+    );
+
+    const propiedadesConDatos = await Promise.all(
+      propiedades.map(async (propiedad) => {
+        // Galería
+        const { rows: galeria } = await pool.query(
+          `SELECT id, url, public_id, orden
+           FROM propiedades_galeria
+           WHERE propiedad_id = $1
+           ORDER BY orden ASC`,
+          [propiedad.id],
+        );
+
+        // Publicador
+        let publicador = null;
+
+        if (propiedad.es_de_organizacion) {
+          const { rows } = await pool.query(
+            `SELECT
+              id,
+              nombre,
+              logo_url,
+              telefono,
+              ciudad,
+              provincia
+            FROM organizaciones
+            WHERE id = $1`,
+            [propiedad.organizacion_id],
+          );
+
+          publicador = rows[0] ? { tipo: "organizacion", ...rows[0] } : null;
+        } else {
+          const { rows } = await pool.query(
+            `SELECT
+              id,
+              name,
+              image_url,
+              telefono
+            FROM usuarios
+            WHERE id = $1`,
+            [propiedad.publicado_por_id],
+          );
+
+          publicador = rows[0] ? { tipo: "usuario", ...rows[0] } : null;
+        }
+
+        return {
+          ...propiedad,
+          galeria: galeria || [],
+          publicador,
+          tiempo_relativo: tiempoRelativo(propiedad.created_at),
+        };
+      }),
+    );
+
+    return res.status(200).json({
+      success: true,
+      message: "Propiedades obtenidas.",
+      data: propiedadesConDatos,
+    });
+  } catch (error) {
+    return res.status(500).json({
       success: false,
       error: error.message,
     });

@@ -1,13 +1,13 @@
 -- ============================================================================
 -- SCHEMA COMPLETO — PLATAFORMA INMOBILIARIA
--- Versión: 2.1 — integrado con geografía (countries/states/cities)
+-- Versión: 3.0 — integrado con geografía + multi-tenant (dominio propio / slug)
 -- ============================================================================
 -- ORDEN DE CREACIÓN:
 -- 1. usuarios
--- 2. organizaciones (inmobiliarias)
+-- 2. organizaciones (inmobiliarias / tenants)
 -- 3. organizacion_miembros (relación usuarios ↔ organizaciones)
--- 4. countries / states / cities          ← NUEVO, va antes de propiedades
--- 5. propiedades                           ← ahora con FK a geografía
+-- 4. countries / states / cities
+-- 5. propiedades
 -- 6. propiedades_galeria
 -- 7. refresh_tokens (para JWT)
 -- 8. función update_updated_at
@@ -29,7 +29,6 @@ CREATE TABLE IF NOT EXISTS usuarios (
     provider VARCHAR(50) DEFAULT 'local',
     -- 'local' | 'google' | 'github'
     provider_id VARCHAR(255),
-    -- ID externo del proveedor
     -- Avatar
     image_url VARCHAR(500),
     public_id VARCHAR(255),
@@ -45,7 +44,7 @@ CREATE TABLE IF NOT EXISTS usuarios (
     CONSTRAINT rol_valido CHECK (rol IN ('user', 'superadmin'))
 );
 -- ============================================================================
--- 2. ORGANIZACIONES (INMOBILIARIAS)
+-- 2. ORGANIZACIONES (INMOBILIARIAS / TENANTS)
 -- ============================================================================
 CREATE TABLE IF NOT EXISTS organizaciones (
     id SERIAL PRIMARY KEY,
@@ -58,10 +57,28 @@ CREATE TABLE IF NOT EXISTS organizaciones (
     logo_public_id VARCHAR(255),
     ciudad VARCHAR(100),
     provincia VARCHAR(100),
-    -- Estado de aprobación
-    -- 'pendiente' → recién solicitada
-    -- 'aprobada'  → visible y operativa
-    -- 'suspendida'→ bloqueada por superadmin
+    -- ------------------------------------------------------------------
+    -- MULTI-TENANT: identidad web de la organización
+    -- ------------------------------------------------------------------
+    -- slug -> usado en inmobitwo.com/inmobiliarias/:slug
+    -- Se genera automáticamente a partir del nombre al crear la organización.
+    slug VARCHAR(150) UNIQUE,
+    -- custom_domain -> dominio propio del cliente (ej: www.inmobiliariaoviedo.com)
+    -- NULL mientras no tenga dominio propio configurado.
+    custom_domain VARCHAR(255) UNIQUE,
+    -- dominio_estado -> ciclo de vida de la configuración del dominio propio
+    -- 'sin_dominio'   -> usa solo el slug bajo inmobitwo.com
+    -- 'pendiente_dns' -> el cliente ya dio su dominio, falta verificar DNS + emitir SSL
+    -- 'activo'        -> DNS verificado y SSL emitido, dominio propio funcionando
+    dominio_estado VARCHAR(50) DEFAULT 'sin_dominio' NOT NULL,
+    -- plan -> para el futuro cobro por premium
+    plan VARCHAR(50) DEFAULT 'free' NOT NULL,
+    -- ------------------------------------------------------------------
+    -- Estado de aprobación de la organización
+    -- ------------------------------------------------------------------
+    -- 'pendiente' -> recién solicitada
+    -- 'aprobada'  -> visible y operativa
+    -- 'suspendida'-> bloqueada por superadmin
     estado VARCHAR(50) DEFAULT 'pendiente' NOT NULL,
     -- Usuario que solicitó crear la organización
     creada_por_id INTEGER NOT NULL,
@@ -70,8 +87,14 @@ CREATE TABLE IF NOT EXISTS organizaciones (
     FOREIGN KEY (creada_por_id) REFERENCES usuarios(id) ON DELETE RESTRICT,
     CONSTRAINT estado_org_valido CHECK (
         estado IN ('pendiente', 'aprobada', 'suspendida')
-    )
+    ),
+    CONSTRAINT dominio_estado_valido CHECK (
+        dominio_estado IN ('sin_dominio', 'pendiente_dns', 'activo')
+    ),
+    CONSTRAINT plan_valido CHECK (plan IN ('free', 'premium'))
 );
+CREATE INDEX IF NOT EXISTS idx_organizaciones_slug ON organizaciones(slug);
+CREATE INDEX IF NOT EXISTS idx_organizaciones_custom_domain ON organizaciones(custom_domain);
 -- ============================================================================
 -- 3. ORGANIZACION_MIEMBROS
 -- Un usuario puede pertenecer a varias organizaciones con distintos roles
@@ -129,7 +152,7 @@ CREATE INDEX IF NOT EXISTS idx_cities_state_id ON cities(state_id);
 CREATE INDEX IF NOT EXISTS idx_states_name ON states(name);
 CREATE INDEX IF NOT EXISTS idx_cities_name ON cities(name);
 -- ============================================================================
--- 5. PROPIEDADES (actualizada — integrada con geografía + bugs corregidos)
+-- 5. PROPIEDADES
 -- ============================================================================
 CREATE TABLE IF NOT EXISTS propiedades (
     id SERIAL PRIMARY KEY,
@@ -170,15 +193,13 @@ CREATE TABLE IF NOT EXISTS propiedades (
         FOREIGN KEY (state_id) REFERENCES states(id),
         FOREIGN KEY (city_id) REFERENCES cities(id),
         CONSTRAINT estado_propiedad_valido CHECK (
-            estado IN (
-                'publicado',
-                'no_publicado'
-            )
+            estado IN ('publicado', 'no_publicado')
         )
 );
 CREATE INDEX IF NOT EXISTS idx_propiedades_country_id ON propiedades(country_id);
 CREATE INDEX IF NOT EXISTS idx_propiedades_state_id ON propiedades(state_id);
 CREATE INDEX IF NOT EXISTS idx_propiedades_city_id ON propiedades(city_id);
+CREATE INDEX IF NOT EXISTS idx_propiedades_organizacion_id ON propiedades(organizacion_id);
 -- ============================================================================
 -- 6. PROPIEDADES_GALERIA
 -- ============================================================================
