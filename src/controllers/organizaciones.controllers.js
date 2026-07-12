@@ -503,6 +503,77 @@ export const activarDominioPropio = async (req, res) => {
 };
 
 // ────────────────────────────────────────────────────────────────
+// PATCH /organizaciones/:id/dominio/desactivar  → SOLO superadmin
+// Pausa el dominio (vuelve a pendiente_dns) SIN perder el custom_domain.
+// Uso: incidencias temporales, sin que el cliente tenga que reconfigurar
+// DNS de nuevo si se reactiva más tarde.
+// ────────────────────────────────────────────────────────────────
+export const desactivarDominioPropio = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const { rows } = await pool.query(
+      `UPDATE organizaciones 
+       SET dominio_estado = 'pendiente_dns' 
+       WHERE id = $1 AND custom_domain IS NOT NULL 
+       RETURNING *`,
+      [id],
+    );
+
+    if (rows.length === 0) {
+      return res.status(404).json({
+        success: false,
+        error: "Organización no encontrada o no tiene un dominio propio.",
+      });
+    }
+
+    res.status(200).json({
+      success: true,
+      message: "Dominio propio desactivado (pausado).",
+      data: rows[0],
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+};
+
+// ────────────────────────────────────────────────────────────────
+// PATCH /organizaciones/:id/dominio/quitar  → SOLO superadmin
+// Elimina el custom_domain por completo (vuelve a sin_dominio).
+// Uso: después de correr quitar-dominio.sh en el VPS, o cuando el
+// cliente decide definitivamente no usar dominio propio.
+// ────────────────────────────────────────────────────────────────
+export const quitarDominioPropio = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const { rows } = await pool.query(
+      `UPDATE organizaciones 
+       SET custom_domain = NULL, dominio_estado = 'sin_dominio' 
+       WHERE id = $1 
+       RETURNING *`,
+      [id],
+    );
+
+    if (rows.length === 0) {
+      return res.status(404).json({
+        success: false,
+        error: "Organización no encontrada.",
+      });
+    }
+
+    res.status(200).json({
+      success: true,
+      message:
+        "Dominio propio eliminado. La organización volvió a sin_dominio.",
+      data: rows[0],
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+};
+
+// ────────────────────────────────────────────────────────────────
 // GET /organizaciones/:id/estadisticas
 // Métricas básicas para el panel de la organización.
 // Protegido por requiereMiembroOrganizacion("id") en la ruta:

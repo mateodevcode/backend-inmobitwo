@@ -14,6 +14,8 @@ import {
   activarDominioPropio,
   getEstadisticasOrganizacion,
   deleteOrganizacion,
+  desactivarDominioPropio,
+  quitarDominioPropio,
 } from "../controllers/organizaciones.controllers.js";
 import { createRateLimitMiddleware, defaultLimiter } from "../lib/rateLimit.js";
 import { verificarToken, verificarRol } from "../middleware/auth.middleware.js";
@@ -106,6 +108,18 @@ router.patch(
   verificarToken,
   verificarRol(["superadmin"]),
   activarDominioPropio,
+);
+router.patch(
+  `${ruta}/:id/dominio/desactivar`,
+  verificarToken,
+  verificarRol(["superadmin"]),
+  desactivarDominioPropio,
+);
+router.patch(
+  `${ruta}/:id/dominio/quitar`,
+  verificarToken,
+  verificarRol(["superadmin"]),
+  quitarDominioPropio,
 );
 
 export default router;
