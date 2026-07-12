@@ -8,6 +8,7 @@ import {
   publicarAnuncios,
   getPropiedadesHome,
   getPropiedadesMisAnuncios,
+  getPropiedadesByOrganizacion,
 } from "../controllers/propiedades.controllers.js";
 import { createRateLimitMiddleware, defaultLimiter } from "../lib/rateLimit.js";
 import { validateApiKey } from "../lib/validateApiKey.js";
@@ -32,6 +33,13 @@ router.get(ruta, rateLimit, getPropiedades);
 router.get(`${ruta}/inicio`, rateLimit, getPropiedadesHome);
 // rutas especificas /usuario/mis-datos/
 router.get(`${ruta}/mis-anuncios`, rateLimit, getPropiedadesMisAnuncios);
+
+// NUEVO — vista de organización (tenant), va antes de /:id
+router.get(
+  `${ruta}/organizacion/:slug`,
+  rateLimit,
+  getPropiedadesByOrganizacion,
+);
 
 router.get(`${ruta}/:id`, rateLimit, getPropiedadesById);
 

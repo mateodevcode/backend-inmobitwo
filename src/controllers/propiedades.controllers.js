@@ -808,10 +808,6 @@ export const getPropiedadesHome = async (req, res) => {
     const ultimaPropiedad = propiedades[propiedades.length - 1];
     const nextCursor = ultimaPropiedad ? ultimaPropiedad.created_at : null;
 
-    console.log({
-      limit,
-      cursor,
-    });
     res.status(200).json({
       success: true,
       message: "propiedades obtenidas.",
@@ -904,6 +900,97 @@ export const getPropiedadesMisAnuncios = async (req, res) => {
     });
   } catch (error) {
     return res.status(500).json({
+      success: false,
+      error: error.message,
+    });
+  }
+};
+
+// ============================================================================
+// NUEVO — Vista de organización (tenant)
+// Raiz ---> https://www.inmobiliariaoviedo.com  o  inmobitwo.com/inmobiliarias/:slug
+// ============================================================================
+// GET /propiedades/organizacion/:slug?limit=10&cursor=...
+// Trae solo los inmuebles publicados bajo el sello de esa organización.
+// Usa la misma paginación por cursor que getPropiedadesHome para que el
+// frontend pueda reutilizar el mismo componente de scroll infinito.
+// ============================================================================
+export const getPropiedadesByOrganizacion = async (req, res) => {
+  try {
+    const { slug } = req.params;
+    const limit = parseInt(req.query.limit) || 10;
+    const cursor = req.query.cursor || null;
+
+    // 1. Resolver la organización por slug (solo si está aprobada)
+    const { rows: orgRows } = await pool.query(
+      `SELECT id, nombre, logo_url, telefono, ciudad, provincia, slug, custom_domain
+       FROM organizaciones 
+       WHERE slug = $1 AND estado = 'aprobada'`,
+      [slug],
+    );
+    const organizacion = orgRows[0];
+
+    if (!organizacion) {
+      return res.status(404).json({
+        success: false,
+        error: "Organización no encontrada.",
+      });
+    }
+
+    // 2. Traer sus propiedades con paginación por cursor
+    const params = [organizacion.id, limit];
+    let whereClause =
+      "WHERE organizacion_id = $1 AND es_de_organizacion = true";
+
+    if (cursor) {
+      whereClause += " AND created_at < $3";
+      params.push(cursor);
+    }
+
+    const { rows: propiedades } = await pool.query(
+      `SELECT * FROM propiedades 
+       ${whereClause}
+       ORDER BY created_at DESC 
+       LIMIT $2`,
+      params,
+    );
+
+    const propiedadesConDatos = await Promise.all(
+      propiedades.map(async (propiedad) => {
+        const { rows: galeria } = await pool.query(
+          `SELECT id, url, public_id, orden 
+           FROM propiedades_galeria 
+           WHERE propiedad_id = $1 
+           ORDER BY orden ASC`,
+          [propiedad.id],
+        );
+
+        return {
+          ...propiedad,
+          galeria: galeria || [],
+          publicador: { tipo: "organizacion", ...organizacion },
+          tiempo_relativo: tiempoRelativo(propiedad.created_at),
+        };
+      }),
+    );
+
+    const ultimaPropiedad = propiedades[propiedades.length - 1];
+    const nextCursor = ultimaPropiedad ? ultimaPropiedad.created_at : null;
+
+    res.status(200).json({
+      success: true,
+      message: "Propiedades de la organización obtenidas.",
+      data: {
+        organizacion,
+        data: propiedadesConDatos,
+        pagination: {
+          nextCursor,
+          hasMore: propiedades.length === limit,
+        },
+      },
+    });
+  } catch (error) {
+    res.status(500).json({
       success: false,
       error: error.message,
     });

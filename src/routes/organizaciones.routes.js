@@ -2,6 +2,7 @@ import { Router } from "express";
 import {
   getOrganizaciones,
   getOrganizacionesPublicas,
+  getMisOrganizaciones,
   getOrganizacionBySlug,
   resolveTenant,
   createOrganizacion,
@@ -11,10 +12,16 @@ import {
   suspenderOrganizacion,
   solicitarDominioPropio,
   activarDominioPropio,
+  getEstadisticasOrganizacion,
   deleteOrganizacion,
 } from "../controllers/organizaciones.controllers.js";
 import { createRateLimitMiddleware, defaultLimiter } from "../lib/rateLimit.js";
 import { verificarToken, verificarRol } from "../middleware/auth.middleware.js";
+import { resolverTenant } from "../middleware/tenant.middleware.js";
+import {
+  requiereAdminOrganizacion,
+  requiereMiembroOrganizacion,
+} from "../middleware/organizacion.middleware.js";
 
 const router = Router();
 const rateLimit = createRateLimitMiddleware(defaultLimiter);
@@ -25,7 +32,13 @@ const ruta = "/organizaciones";
 // ────────────────────────────────────────────────────────────────
 router.get(`${ruta}/publicas`, rateLimit, getOrganizacionesPublicas);
 router.get(`${ruta}/slug/:slug`, rateLimit, getOrganizacionBySlug);
-router.get(`${ruta}/resolve-tenant`, rateLimit, resolveTenant);
+router.get(`${ruta}/resolve-tenant`, rateLimit, resolverTenant, resolveTenant);
+
+// ────────────────────────────────────────────────────────────────
+// "Mi organización" — para el sidebar (usuario logueado)
+// Va antes de /:id para que Express no confunda "mias" con un id.
+// ────────────────────────────────────────────────────────────────
+router.get(`${ruta}/mias`, verificarToken, getMisOrganizaciones);
 
 // ────────────────────────────────────────────────────────────────
 // Lectura / escritura autenticada
@@ -39,12 +52,28 @@ router.get(
 router.get(`${ruta}/:id`, rateLimit, getOrganizacionById);
 
 router.post(ruta, verificarToken, createOrganizacion);
-router.patch(`${ruta}/:id`, verificarToken, updateOrganizacion);
+
+// Solo el agency_admin de ESTA organización (o superadmin) puede editarla
+router.patch(
+  `${ruta}/:id`,
+  verificarToken,
+  requiereAdminOrganizacion("id"),
+  updateOrganizacion,
+);
+
 router.delete(
   `${ruta}/:id`,
   verificarToken,
   verificarRol(["superadmin"]),
   deleteOrganizacion,
+);
+
+// Estadísticas básicas — cualquier miembro activo de la organización puede verlas
+router.get(
+  `${ruta}/:id/estadisticas`,
+  verificarToken,
+  requiereMiembroOrganizacion("id"),
+  getEstadisticasOrganizacion,
 );
 
 // ────────────────────────────────────────────────────────────────
@@ -66,7 +95,12 @@ router.patch(
 // ────────────────────────────────────────────────────────────────
 // Dominio propio
 // ────────────────────────────────────────────────────────────────
-router.patch(`${ruta}/:id/dominio`, verificarToken, solicitarDominioPropio);
+router.patch(
+  `${ruta}/:id/dominio`,
+  verificarToken,
+  requiereAdminOrganizacion("id"),
+  solicitarDominioPropio,
+);
 router.patch(
   `${ruta}/:id/dominio/activar`,
   verificarToken,
