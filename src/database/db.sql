@@ -1,6 +1,6 @@
 -- ============================================================================
 -- SCHEMA COMPLETO — PLATAFORMA INMOBILIARIA
--- Versión: 3.0 — integrado con geografía + multi-tenant (dominio propio / slug)
+-- Versión: 3.1 — Agregada tabla de favoritos
 -- ============================================================================
 -- ORDEN DE CREACIÓN:
 -- 1. usuarios
@@ -9,9 +9,10 @@
 -- 4. countries / states / cities
 -- 5. propiedades
 -- 6. propiedades_galeria
--- 7. refresh_tokens (para JWT)
--- 8. función update_updated_at
--- 9. triggers
+-- 7. usuario_favoritos          ← NUEVO
+-- 8. refresh_tokens (para JWT)
+-- 9. función update_updated_at
+-- 10. triggers
 -- ============================================================================
 -- ============================================================================
 -- 1. USUARIOS
@@ -213,7 +214,24 @@ CREATE TABLE IF NOT EXISTS propiedades_galeria (
     FOREIGN KEY (propiedad_id) REFERENCES propiedades(id) ON DELETE CASCADE
 );
 -- ============================================================================
--- 7. REFRESH TOKENS (para renovar access_token sin re-login)
+-- 7. USUARIO_FAVORITOS
+-- ============================================================================
+CREATE TABLE IF NOT EXISTS usuario_favoritos (
+    id SERIAL PRIMARY KEY,
+    usuario_id INTEGER NOT NULL,
+    propiedad_id INTEGER NOT NULL,
+    -- Fecha en la que el usuario guardó la propiedad como favorito
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (usuario_id) REFERENCES usuarios(id) ON DELETE CASCADE,
+    FOREIGN KEY (propiedad_id) REFERENCES propiedades(id) ON DELETE CASCADE,
+    -- Evita que un usuario guarde la misma propiedad varias veces
+    UNIQUE (usuario_id, propiedad_id)
+);
+CREATE INDEX IF NOT EXISTS idx_usuario_favoritos_usuario_id ON usuario_favoritos(usuario_id);
+CREATE INDEX IF NOT EXISTS idx_usuario_favoritos_propiedad_id ON usuario_favoritos(propiedad_id);
+CREATE INDEX IF NOT EXISTS idx_usuario_favoritos_created_at ON usuario_favoritos(created_at);
+-- ============================================================================
+-- 8. REFRESH TOKENS (para renovar access_token sin re-login)
 -- ============================================================================
 CREATE TABLE IF NOT EXISTS refresh_tokens (
     id SERIAL PRIMARY KEY,
@@ -225,14 +243,14 @@ CREATE TABLE IF NOT EXISTS refresh_tokens (
     FOREIGN KEY (usuario_id) REFERENCES usuarios(id) ON DELETE CASCADE
 );
 -- ============================================================================
--- 8. FUNCIÓN PARA ACTUALIZAR updated_at AUTOMÁTICAMENTE
+-- 9. FUNCIÓN PARA ACTUALIZAR updated_at AUTOMÁTICAMENTE
 -- ============================================================================
 CREATE OR REPLACE FUNCTION update_updated_at_column() RETURNS TRIGGER AS $$ BEGIN NEW.updated_at = CURRENT_TIMESTAMP;
 RETURN NEW;
 END;
 $$ LANGUAGE plpgsql;
 -- ============================================================================
--- 9. TRIGGERS
+-- 10. TRIGGERS
 -- ============================================================================
 DROP TRIGGER IF EXISTS trg_usuarios_updated_at ON usuarios;
 DROP TRIGGER IF EXISTS trg_organizaciones_updated_at ON organizaciones;
@@ -247,5 +265,5 @@ UPDATE ON organizacion_miembros FOR EACH ROW EXECUTE FUNCTION update_updated_at_
 CREATE TRIGGER trg_propiedades_updated_at BEFORE
 UPDATE ON propiedades FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 -- ============================================================================
--- ✅ SCHEMA CREADO CORRECTAMENTE
+-- ✅ SCHEMA CREADO CORRECTAMENTE (Versión 3.1)
 -- ============================================================================

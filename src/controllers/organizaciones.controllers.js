@@ -37,7 +37,6 @@ const generarSlugUnico = async (nombre) => {
 
 // ────────────────────────────────────────────────────────────────
 // GET /organizaciones  → listado COMPLETO (uso: panel superadmin)
-// Incluye pendientes, aprobadas y suspendidas.
 // ────────────────────────────────────────────────────────────────
 export const getOrganizaciones = async (req, res) => {
   try {
@@ -68,7 +67,7 @@ export const getOrganizaciones = async (req, res) => {
 };
 
 // ────────────────────────────────────────────────────────────────
-// GET /organizaciones/publicas  → solo aprobadas (uso: red social / listado público)
+// GET /organizaciones/publicas  → solo aprobadas (red social / listado público)
 // ────────────────────────────────────────────────────────────────
 export const getOrganizacionesPublicas = async (req, res) => {
   try {
@@ -84,6 +83,36 @@ export const getOrganizacionesPublicas = async (req, res) => {
     res.status(500).json({
       success: false,
       error: "Error al obtener las organizaciones",
+    });
+  }
+};
+
+// ────────────────────────────────────────────────────────────────
+// GET /organizaciones/mias  → organizaciones donde el usuario logueado
+// es miembro activo (agent o agency_admin). Para el sidebar "Mi organización".
+// ────────────────────────────────────────────────────────────────
+export const getMisOrganizaciones = async (req, res) => {
+  try {
+    const usuarioId = req.usuario.id;
+
+    const { rows } = await pool.query(
+      `SELECT o.*, om.rol_en_org
+       FROM organizaciones o
+       JOIN organizacion_miembros om ON om.organizacion_id = o.id
+       WHERE om.usuario_id = $1 AND om.estado = 'activo'
+       ORDER BY o.created_at DESC`,
+      [usuarioId],
+    );
+
+    res.status(200).json({
+      success: true,
+      message: "Tus organizaciones fueron obtenidas correctamente.",
+      data: rows,
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      error: error.message,
     });
   }
 };
@@ -124,45 +153,22 @@ export const getOrganizacionBySlug = async (req, res) => {
 // ────────────────────────────────────────────────────────────────
 // GET /organizaciones/resolve-tenant?host=www.inmobiliariaoviedo.com
 // El frontend llama esto al arrancar, pasando window.location.hostname.
-// Devuelve la organización si el host coincide con un dominio propio ACTIVO.
-// Si no hay coincidencia, data = null (el front cae a modo "red social").
+// La resolución real ya la hizo el middleware resolverTenant (req.tenant),
+// este controller solo la devuelve.
 // ────────────────────────────────────────────────────────────────
 export const resolveTenant = async (req, res) => {
-  try {
-    const { host } = req.query;
-
-    if (!host) {
-      return res.status(400).json({
-        success: false,
-        error: "El parámetro host es requerido.",
-      });
-    }
-
-    const { rows } = await pool.query(
-      `SELECT * FROM organizaciones 
-       WHERE custom_domain = $1 
-         AND dominio_estado = 'activo' 
-         AND estado = 'aprobada'`,
-      [host],
-    );
-
-    res.status(200).json({
-      success: true,
-      message: rows[0]
-        ? "Tenant resuelto."
-        : "No hay organización asociada a este host.",
-      data: rows[0] || null,
-    });
-  } catch (error) {
-    res.status(500).json({
-      success: false,
-      error: error.message,
-    });
-  }
+  res.status(200).json({
+    success: true,
+    message: req.tenant
+      ? "Tenant resuelto."
+      : "No hay organización asociada a este host.",
+    data: req.tenant,
+  });
 };
 
 // ────────────────────────────────────────────────────────────────
 // POST /organizaciones  → crear (queda en estado 'pendiente' de aprobación)
+// El creador queda automáticamente como agency_admin de su organización.
 // ────────────────────────────────────────────────────────────────
 export const createOrganizacion = async (req, res) => {
   try {
@@ -211,11 +217,20 @@ export const createOrganizacion = async (req, res) => {
       ],
     );
 
+    const nuevaOrganizacion = rows[0];
+
+    // El creador queda como agency_admin de su propia organización
+    await pool.query(
+      `INSERT INTO organizacion_miembros (usuario_id, organizacion_id, rol_en_org)
+       VALUES ($1, $2, 'agency_admin')`,
+      [data.creada_por_id, nuevaOrganizacion.id],
+    );
+
     res.status(201).json({
       success: true,
       message:
         "Organización creada correctamente. Queda pendiente de aprobación.",
-      data: rows[0],
+      data: nuevaOrganizacion,
     });
   } catch (error) {
     if (error.code === "23505") {
@@ -265,8 +280,9 @@ export const getOrganizacionById = async (req, res) => {
 
 // ────────────────────────────────────────────────────────────────
 // PATCH /organizaciones/:id  → edición de datos "de perfil"
-// OJO: NO permite tocar aquí slug, estado, custom_domain, dominio_estado ni plan.
-// Esos campos tienen sus propios endpoints (más abajo) por seguridad.
+// Protegido por requiereAdminOrganizacion("id") en la ruta: solo el
+// agency_admin de ESTA organización (o superadmin) puede editar.
+// NO permite tocar aquí slug, estado, custom_domain, dominio_estado ni plan.
 // ────────────────────────────────────────────────────────────────
 export const updateOrganizacion = async (req, res) => {
   try {
@@ -400,10 +416,8 @@ export const suspenderOrganizacion = async (req, res) => {
 };
 
 // ────────────────────────────────────────────────────────────────
-// PATCH /organizaciones/:id/dominio  → la organización solicita su dominio propio
-// Body: { custom_domain: "www.inmobiliariaoviedo.com" }
-// Pasa a dominio_estado = 'pendiente_dns' hasta que el superadmin lo active
-// (una vez verificado el DNS y emitido el SSL con certbot en el VPS).
+// PATCH /organizaciones/:id/dominio  → solicitar dominio propio
+// Protegido por requiereAdminOrganizacion("id") en la ruta.
 // ────────────────────────────────────────────────────────────────
 export const solicitarDominioPropio = async (req, res) => {
   try {
@@ -454,7 +468,6 @@ export const solicitarDominioPropio = async (req, res) => {
 
 // ────────────────────────────────────────────────────────────────
 // PATCH /organizaciones/:id/dominio/activar  → SOLO superadmin
-// Se llama cuando ya verificaste el DNS y corriste certbot en el VPS.
 // ────────────────────────────────────────────────────────────────
 export const activarDominioPropio = async (req, res) => {
   try {
@@ -480,6 +493,76 @@ export const activarDominioPropio = async (req, res) => {
       success: true,
       message: "Dominio propio activado.",
       data: rows[0],
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      error: error.message,
+    });
+  }
+};
+
+// ────────────────────────────────────────────────────────────────
+// GET /organizaciones/:id/estadisticas
+// Métricas básicas para el panel de la organización.
+// Protegido por requiereMiembroOrganizacion("id") en la ruta:
+// cualquier miembro activo (agent o agency_admin) puede verlas.
+//
+// NOTA: de momento solo cuenta datos de "propiedades" y "miembros".
+// Cuando compartas el esquema de eventos_tracking / leads, esto se
+// puede ampliar con vistas, contactos recibidos, etc.
+// ────────────────────────────────────────────────────────────────
+export const getEstadisticasOrganizacion = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const { rows: orgRows } = await pool.query(
+      "SELECT id, nombre FROM organizaciones WHERE id = $1",
+      [id],
+    );
+    if (orgRows.length === 0) {
+      return res.status(404).json({
+        success: false,
+        error: "Organización no encontrada.",
+      });
+    }
+
+    const { rows: propiedadesRows } = await pool.query(
+      `SELECT 
+        COUNT(*)::int AS total,
+        COUNT(*) FILTER (WHERE estado = 'publicado')::int AS publicadas,
+        COUNT(*) FILTER (WHERE estado = 'no_publicado')::int AS no_publicadas
+       FROM propiedades
+       WHERE organizacion_id = $1 AND es_de_organizacion = true`,
+      [id],
+    );
+
+    const { rows: miembrosRows } = await pool.query(
+      `SELECT 
+        COUNT(*)::int AS total,
+        COUNT(*) FILTER (WHERE estado = 'activo')::int AS activos,
+        COUNT(*) FILTER (WHERE rol_en_org = 'agency_admin')::int AS administradores,
+        COUNT(*) FILTER (WHERE rol_en_org = 'agent')::int AS agentes
+       FROM organizacion_miembros
+       WHERE organizacion_id = $1`,
+      [id],
+    );
+
+    const { rows: ultimaPropiedadRows } = await pool.query(
+      `SELECT titulo, created_at FROM propiedades 
+       WHERE organizacion_id = $1 AND es_de_organizacion = true
+       ORDER BY created_at DESC LIMIT 1`,
+      [id],
+    );
+
+    res.status(200).json({
+      success: true,
+      message: "Estadísticas obtenidas correctamente.",
+      data: {
+        propiedades: propiedadesRows[0],
+        miembros: miembrosRows[0],
+        ultimaPropiedad: ultimaPropiedadRows[0] || null,
+      },
     });
   } catch (error) {
     res.status(500).json({
