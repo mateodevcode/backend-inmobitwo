@@ -1,0 +1,15 @@
+services:
+  backend:
+    build: .
+    container_name: inmobitwo-backend
+    env_file:
+      - .env
+    ports:
+      - "127.0.0.1:3001:3001"
+    restart: unless-stopped
+    networks:
+      - postgres_central_postgres_network
+
+networks:
+  postgres_central_postgres_network:
+    external: true
