@@ -95,7 +95,7 @@ export const createPropiedades = async (req, res) => {
       files = req.files.galeria;
     }
 
-    const { titulo, estado, publicado_por_id } = req.body;
+    const { titulo, estado } = req.body;
     const es_de_organizacion =
       req.body.es_de_organizacion === "true" ||
       req.body.es_de_organizacion === true;
@@ -114,7 +114,7 @@ export const createPropiedades = async (req, res) => {
     // ========================================
     // VALIDACIONES
     // ========================================
-    const data = { titulo, estado, publicado_por_id };
+    const data = { titulo, estado, publicado_por_id: req.usuario.id };
     const errores = propiedad_validate(data);
     if (errores.length > 0) {
       return res.status(400).json({
@@ -205,7 +205,7 @@ export const createPropiedades = async (req, res) => {
       estado || "disponible",
       es_de_organizacion || false,
       organizacion_id,
-      parseInt(publicado_por_id),
+      req.usuario.id,
     ];
 
     const result = await pool.query(query, values);
@@ -295,6 +295,25 @@ export const updatePropiedades = async (req, res) => {
       return res.status(400).json({
         success: false,
         error: "ID de propiedad requerido",
+      });
+    }
+
+    const propiedadResult = await pool.query(
+      "SELECT publicado_por_id FROM propiedades WHERE id = $1",
+      [id],
+    );
+
+    if (propiedadResult.rows.length === 0) {
+      return res.status(404).json({
+        success: false,
+        error: "Propiedad no encontrada.",
+      });
+    }
+
+    if (propiedadResult.rows[0].publicado_por_id !== req.usuario.id) {
+      return res.status(403).json({
+        success: false,
+        error: "No autorizado para editar esta propiedad.",
       });
     }
 
@@ -663,7 +682,6 @@ export const publicarAnuncios = async (req, res) => {
       latitude,
       longitude,
       estado,
-      publicado_por_id,
     } = req.body;
 
     const es_de_organizacion =
@@ -691,7 +709,7 @@ export const publicarAnuncios = async (req, res) => {
       country_id,
       city_id,
       state_id,
-      publicado_por_id,
+      publicado_por_id: req.usuario.id,
     };
     const errores = publicar_anuncio_validate(data);
     if (errores.length > 0) {
@@ -742,7 +760,7 @@ export const publicarAnuncios = async (req, res) => {
       estado || "disponible",
       es_de_organizacion || false,
       organizacion_id,
-      parseInt(publicado_por_id),
+      req.usuario.id,
     ];
 
     const result = await pool.query(query, values);

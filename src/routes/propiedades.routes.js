@@ -31,7 +31,7 @@ router.get(ruta, rateLimit, getPropiedades);
 // rutas especificas raiz inmobitwo
 router.get(`${ruta}/inicio`, rateLimit, getPropiedadesHome);
 // rutas especificas /usuario/mis-datos/
-router.get(`${ruta}/mis-anuncios`, rateLimit, getPropiedadesMisAnuncios);
+router.get(`${ruta}/mis-anuncios`, verificarToken, rateLimit, getPropiedadesMisAnuncios);
 
 // NUEVO — vista de organización (tenant), va antes de /:id
 router.get(
