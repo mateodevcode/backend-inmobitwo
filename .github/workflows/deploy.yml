@@ -22,13 +22,13 @@ jobs:
 
                       git pull origin main
 
-                      echo "→ Instalando dependencias..."
-                      rm -rf node_modules package-lock.json
-                      npm install --production=false   # Instalamos todo para evitar problemas ESM
+                      echo "→ Reconstruyendo y levantando contenedor..."
+                      docker compose up -d --build
 
-                      echo "→ Reiniciando aplicación..."
-                      npx pm2 restart inmobitwo-api --update-env || npx pm2 start npm --name "inmobitwo-api" -- start
+                      echo "→ Limpiando imágenes viejas sin uso..."
+                      docker image prune -f
 
                       echo "→ Estado:"
-                      npx pm2 list
+                      docker compose ps
+
                       echo "✅ Despliegue completado!"
