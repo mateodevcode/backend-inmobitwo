@@ -3,6 +3,10 @@ import { pool } from "../db.js";
 import { deleteFromS3, uploadToS3 } from "../lib/s3AWS.js";
 import { tiempoRelativo } from "../utils/tiempoRelativo.js";
 import { getCityById, getStateById } from "../lib/locations.js";
+import {
+  propiedad_validate,
+  publicar_anuncio_validate,
+} from "../validations/propiedad_validate.js";
 
 // ok
 export const getPropiedades = async (req, res) => {
@@ -110,33 +114,15 @@ export const createPropiedades = async (req, res) => {
     // ========================================
     // VALIDACIONES
     // ========================================
-    if (!titulo) {
-      return res
-        .status(400)
-        .json({ success: false, error: "El título es requerido." });
-    }
-    if (titulo.length < 3) {
-      return res
-        .status(400)
-        .json({ success: false, error: "El título debe tener al menos 3 caracteres." });
-    }
-    if (titulo.length > 500) {
-      return res
-        .status(400)
-        .json({ success: false, error: "El título no puede exceder los 500 caracteres." });
-    }
-    const ESTADOS_PERMITIDOS = ["publicado", "no_publicado"];
-    if (estado && !ESTADOS_PERMITIDOS.includes(estado)) {
+    const data = { titulo, estado, publicado_por_id };
+    const errores = propiedad_validate(data);
+    if (errores.length > 0) {
       return res.status(400).json({
         success: false,
-        error: `El estado debe ser uno de: ${ESTADOS_PERMITIDOS.join(", ")}.`,
+        error: errores[0],
       });
     }
-    if (!publicado_por_id) {
-      return res
-        .status(400)
-        .json({ success: false, error: "publicado_por_id es requerido." });
-    }
+
     if (!file) {
       return res
         .status(400)
@@ -332,26 +318,17 @@ export const updatePropiedades = async (req, res) => {
 
     const { titulo, estado } = formDataObj;
 
-    if (titulo !== undefined) {
-      if (titulo.length < 3) {
+    if (titulo !== undefined || estado !== undefined) {
+      const errores = propiedad_validate(
+        { titulo, estado },
+        { requerirPublicador: false },
+      );
+      if (errores.length > 0) {
         return res.status(400).json({
           success: false,
-          error: "El título debe tener al menos 3 caracteres.",
+          error: errores[0],
         });
       }
-      if (titulo.length > 500) {
-        return res.status(400).json({
-          success: false,
-          error: "El título no puede exceder los 500 caracteres.",
-        });
-      }
-    }
-    const ESTADOS_PERMITIDOS = ["publicado", "no_publicado"];
-    if (estado && !ESTADOS_PERMITIDOS.includes(estado)) {
-      return res.status(400).json({
-        success: false,
-        error: `El estado debe ser uno de: ${ESTADOS_PERMITIDOS.join(", ")}.`,
-      });
     }
 
     let imagesToDelete = [];
@@ -707,35 +684,21 @@ export const publicarAnuncios = async (req, res) => {
     // ========================================
     // VALIDACIONES
     // ========================================
-    if (!tipo) {
-      return res
-        .status(400)
-        .json({ success: false, error: "El tipo de propiedad es requerido." });
-    }
-    if (!operacion) {
-      return res
-        .status(400)
-        .json({ success: false, error: "La operación es requerida." });
-    }
-    if (!direccion) {
-      return res
-        .status(400)
-        .json({ success: false, error: "La dirección es requerida." });
-    }
-    if (!country_id) {
-      return res
-        .status(400)
-        .json({ success: false, error: "country_id es requerido." });
-    }
-    if (!publicado_por_id) {
-      return res
-        .status(400)
-        .json({ success: false, error: "publicado_por_id es requerido." });
-    }
-    if (!city_id || !state_id) {
-      return res
-        .status(400)
-        .json({ success: false, error: "city_id y state_id son requeridos." });
+    const data = {
+      tipo,
+      operacion,
+      direccion,
+      country_id,
+      city_id,
+      state_id,
+      publicado_por_id,
+    };
+    const errores = publicar_anuncio_validate(data);
+    if (errores.length > 0) {
+      return res.status(400).json({
+        success: false,
+        error: errores[0],
+      });
     }
 
     // ========================================

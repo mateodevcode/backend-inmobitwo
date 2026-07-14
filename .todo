@@ -1,0 +1,300 @@
+# Implementación de Rate Limiter con Redis
+
+Guía paso a paso para migrar el rate limiter en memoria a Redis en el VPS.
+
+---
+
+## Paso 1 — Instalar Redis en el VPS
+
+```bash
+# Conectate al VPS por SSH y ejecutá:
+
+# 1. Instalar Redis
+sudo apt update
+sudo apt install redis-server -y
+
+# 2. Configurar Redis para production
+sudo nano /etc/redis/redis.conf
+```
+
+Dentro de `redis.conf`, asegurate de tener esto:
+
+```
+# Escuchar solo localhost (no exponer a internet)
+bind 127.0.0.1 ::1
+
+# Activar persistencia mínima (opcional)
+save 900 1
+save 300 10
+
+# Límite de memoria para rate limiting (muy poco, con 10MB sobra)
+maxmemory 10mb
+maxmemory-policy allkeys-lru
+```
+
+```bash
+# 3. Iniciar y habilitar Redis
+sudo systemctl start redis
+sudo systemctl enable redis
+
+# 4. Verificar que esté corriendo
+sudo systemctl status redis
+
+# 5. Probar conexión
+redis-cli ping   # Debe responder: PONG
+```
+
+---
+
+## Paso 2 — Agregar ioredis al proyecto
+
+```bash
+# En tu máquina local (raíz del proyecto)
+npm install ioredis
+```
+
+---
+
+## Paso 3 — Agregar variables de entorno
+
+En tu `.env` (local y la del VPS), agregá:
+
+```env
+# Redis (localhost en VPS, no usar en dev local a menos que instales Redis)
+REDIS_URL=redis://localhost:6379
+```
+
+Si usás Redis Cloud o un host remoto, poné la URL completa:
+```env
+REDIS_URL=redis://usuario:password@host:puerto
+```
+
+---
+
+## Paso 4 — Crear el módulo de Redis
+
+Creá el archivo `src/lib/redis.js`:
+
+```js
+// src/lib/redis.js
+import Redis from "ioredis";
+import { REDIS_URL } from "../config.js";
+
+let redis;
+
+try {
+  redis = new Redis(REDIS_URL || "redis://localhost:6379", {
+    maxRetriesPerRequest: 3,
+    retryStrategy(times) {
+      if (times > 3) return null; // dejar de reintentar
+      return Math.min(times * 200, 2000);
+    },
+    lazyConnect: true,
+  });
+
+  redis.on("error", (err) => {
+    console.warn("⚠️ Redis no disponible, usando rate limiter en memoria:", err.message);
+  });
+
+  // Conectar solo si no estamos en entorno de desarrollo sin Redis
+  await redis.connect();
+  console.log("✅ Redis conectado");
+} catch (err) {
+  console.warn("⚠️ Redis no disponible, usando rate limiter en memoria:", err.message);
+  redis = null;
+}
+
+export default redis;
+```
+
+Agregá la variable en `src/config.js`:
+
+```js
+export const REDIS_URL = process.env.REDIS_URL;
+```
+
+---
+
+## Paso 5 — Modificar el rate limiter
+
+Reemplazá el contenido de `src/lib/rateLimit.js`:
+
+```js
+// src/lib/rateLimit.js
+import redis from "./redis.js";
+
+const FALLBACK_MAP = new Map();
+
+/**
+ * Script Lua atómico para rate limiting en Redis.
+ * INCR incrementa el contador. Si es la primera vez (retorna 1), setea TTL.
+ */
+const RATE_LIMIT_SCRIPT = `
+  local current = redis.call("INCR", KEYS[1])
+  if current == 1 then
+    redis.call("EXPIRE", KEYS[1], ARGV[1])
+  end
+  return current
+`;
+
+export function createRateLimiter(maxRequests = 10, windowSeconds = 60) {
+  return async (req) => {
+    const identifier = req.headers["x-api-key"] || req.ip || "anonymous";
+    const key = `ratelimit:${identifier}`;
+
+    // --- Redis (principal) ---
+    if (redis && redis.status === "ready") {
+      try {
+        const count = await redis.eval(
+          RATE_LIMIT_SCRIPT,
+          1,
+          key,
+          windowSeconds,
+        );
+
+        if (count > maxRequests) {
+          const ttl = await redis.ttl(key);
+          return {
+            isLimited: true,
+            message: `Límite de ${maxRequests} solicitudes excedido. Reintentá en ${ttl}s.`,
+            retryAfter: ttl > 0 ? ttl : windowSeconds,
+          };
+        }
+
+        return { isLimited: false };
+      } catch (err) {
+        console.warn("⚠️ Error en Redis rate limit, usando fallback en memoria:", err.message);
+      }
+    }
+
+    // --- Fallback en memoria (si Redis no está disponible) ---
+    const now = Date.now();
+    const windowMs = windowSeconds * 1000;
+    const windowKey = `${key}-${Math.floor(now / windowMs)}`;
+
+    if (!FALLBACK_MAP.has(windowKey)) {
+      FALLBACK_MAP.set(windowKey, 0);
+    }
+
+    const count = FALLBACK_MAP.get(windowKey);
+
+    if (count >= maxRequests) {
+      return {
+        isLimited: true,
+        message: `Límite de ${maxRequests} solicitudes excedido.`,
+        retryAfter: Math.ceil((windowMs - (now % windowMs)) / 1000),
+      };
+    }
+
+    FALLBACK_MAP.set(windowKey, count + 1);
+
+    // Limpieza periódica del Map en memoria
+    if (Math.random() < 0.01) {
+      const cutoff = now - windowMs * 2;
+      for (const [mapKey, _] of FALLBACK_MAP) {
+        const parts = mapKey.split("-");
+        const ts = parseInt(parts[parts.length - 1]);
+        if (ts * windowMs < cutoff) {
+          FALLBACK_MAP.delete(mapKey);
+        }
+      }
+    }
+
+    return { isLimited: false };
+  };
+}
+
+export function createRateLimitMiddleware(limiter) {
+  return async (req, res, next) => {
+    try {
+      const result = await limiter(req);
+
+      if (result.isLimited) {
+        return res.status(429).set("Retry-After", result.retryAfter).json({
+          success: false,
+          error: result.message,
+        });
+      }
+
+      next();
+    } catch (err) {
+      console.error("❌ Error en rate limiter middleware:", err);
+      next(); // Si falla el rate limiter, dejamos pasar (fail open)
+    }
+  };
+}
+
+// Limitadores predefinidos
+// Ahora windowSeconds en vez de windowMs
+export const registerLimiter = createRateLimiter(10, 60);       // 10 por minuto
+export const loginLimiter = createRateLimiter(10, 60);          // 10 por minuto
+export const defaultLimiter = createRateLimiter(50, 60);        // 50 por minuto
+export const verificacionCodigoLimiter = createRateLimiter(5, 600); // 5 cada 10 min
+```
+
+---
+
+## Paso 6 — Probar en local
+
+```bash
+# Si tenés Redis instalado localmente:
+redis-server   # Inicia Redis
+
+# En otra terminal:
+npm run dev
+
+# Probar que el rate limit funcione (hacer varias requests rápidas):
+curl http://localhost:3001/api/countries
+curl http://localhost:3001/api/countries
+# ... después de 50 en 1 minuto deberías ver 429
+```
+
+---
+
+## Paso 7 — Deploy en VPS
+
+```bash
+# Conectate al VPS y ejecutá:
+
+# 1. Pull del código
+cd /ruta/del/proyecto
+git pull
+
+# 2. Instalar dependencias (ioredis)
+npm install
+
+# 3. Verificar que Redis esté corriendo
+sudo systemctl status redis
+
+# 4. Asegurate que REDIS_URL esté en el .env del VPS
+echo "REDIS_URL=redis://localhost:6379" >> .env
+
+# 5. Reiniciar la app con PM2
+pm2 restart inmobitwo-api
+
+# 6. Ver logs para confirmar conexión a Redis
+pm2 logs inmobitwo-api --lines 20
+# Deberías ver: "✅ Redis conectado"
+```
+
+---
+
+## Resumen de archivos modificados/creados
+
+| Archivo | Acción |
+|---------|--------|
+| `package.json` | Agregar `ioredis` (`npm install ioredis`) |
+| `.env` | Agregar `REDIS_URL=redis://localhost:6379` |
+| `src/config.js` | Agregar `export const REDIS_URL = ...` |
+| `src/lib/redis.js` | **Nuevo** — Conexión a Redis |
+| `src/lib/rateLimit.js` | **Reemplazar** — Rate limiter con Redis + fallback en memoria |
+
+Las rutas y middlewares **no se tocan** — la interfaz `createRateLimiter` / `createRateLimitMiddleware` es idéntica, solo cambia la implementación interna.
+
+---
+
+## Notas
+
+- Si Redis no está disponible (caída, no instalado, error de conexión), automáticamente usa el fallback en memoria. La app no se rompe.
+- Si el rate limiter falla completamente (error en Redis Y en memoria), hace **fail open** (deja pasar la request) para no bloquear usuarios legítimos.
+- Las keys en Redis expiran solas con TTL, no hace falta limpiar manualmente.
