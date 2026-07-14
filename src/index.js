@@ -17,6 +17,7 @@ import geocodeRoutes from "./routes/geocode.routes.js";
 import trackingRoutes from "./routes/tracking.routes.js";
 import leadsRoutes from "./routes/leads.routes.js";
 import { corsOptions } from "./cors.config.js";
+import { errorHandler } from "./middleware/error.middleware.js";
 
 const app = express();
 
@@ -40,6 +41,9 @@ app.use(trackingRoutes);
 app.use(leadsRoutes);
 app.use("/api", geoRoutes);
 app.use("/api", geocodeRoutes);
+
+// Middleware de errores (debe ir después de todas las rutas)
+app.use(errorHandler);
 
 app.listen(PORT);
 console.log("Server running on port", PORT);
