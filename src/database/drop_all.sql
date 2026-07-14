@@ -12,7 +12,6 @@ DROP TRIGGER IF EXISTS trg_propiedades_updated_at ON propiedades;
 -- 2. Borrar tablas en orden inverso (dependencias)
 DROP TABLE IF EXISTS refresh_tokens CASCADE;
 DROP TABLE IF EXISTS usuario_favoritos CASCADE;
--- ← NUEVO
 DROP TABLE IF EXISTS propiedades_galeria CASCADE;
 DROP TABLE IF EXISTS propiedades CASCADE;
 DROP TABLE IF EXISTS cities CASCADE;

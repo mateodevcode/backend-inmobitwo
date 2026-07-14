@@ -1,6 +1,6 @@
 -- ============================================================================
 -- SCHEMA COMPLETO — PLATAFORMA INMOBILIARIA
--- Versión: 3.1 — Agregada tabla de favoritos
+-- Versión: 3.2 — Agregado campo "tema" (diseño del escaparate) en organizaciones
 -- ============================================================================
 -- ORDEN DE CREACIÓN:
 -- 1. usuarios
@@ -9,7 +9,7 @@
 -- 4. countries / states / cities
 -- 5. propiedades
 -- 6. propiedades_galeria
--- 7. usuario_favoritos          ← NUEVO
+-- 7. usuario_favoritos
 -- 8. refresh_tokens (para JWT)
 -- 9. función update_updated_at
 -- 10. triggers
@@ -81,6 +81,13 @@ CREATE TABLE IF NOT EXISTS organizaciones (
     -- 'aprobada'  -> visible y operativa
     -- 'suspendida'-> bloqueada por superadmin
     estado VARCHAR(50) DEFAULT 'pendiente' NOT NULL,
+    -- ------------------------------------------------------------------
+    -- DISEÑO DEL ESCAPARATE — NUEVO en v3.2
+    -- ------------------------------------------------------------------
+    -- tema -> qué plantilla de landing usa el escaparate público de esta
+    -- organización (mismo dato de fondo, distinto diseño/layout).
+    -- 'tema1' (Clásico) | 'tema2' (Moderno) | 'tema3' (Con mapa) | 'tema4' (Minimalista)
+    tema VARCHAR(50) DEFAULT 'tema1' NOT NULL,
     -- Usuario que solicitó crear la organización
     creada_por_id INTEGER NOT NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -92,7 +99,10 @@ CREATE TABLE IF NOT EXISTS organizaciones (
     CONSTRAINT dominio_estado_valido CHECK (
         dominio_estado IN ('sin_dominio', 'pendiente_dns', 'activo')
     ),
-    CONSTRAINT plan_valido CHECK (plan IN ('free', 'premium'))
+    CONSTRAINT plan_valido CHECK (plan IN ('free', 'premium')),
+    CONSTRAINT tema_valido CHECK (
+        tema IN ('tema1', 'tema2', 'tema3', 'tema4')
+    )
 );
 CREATE INDEX IF NOT EXISTS idx_organizaciones_slug ON organizaciones(slug);
 CREATE INDEX IF NOT EXISTS idx_organizaciones_custom_domain ON organizaciones(custom_domain);
@@ -265,5 +275,5 @@ UPDATE ON organizacion_miembros FOR EACH ROW EXECUTE FUNCTION update_updated_at_
 CREATE TRIGGER trg_propiedades_updated_at BEFORE
 UPDATE ON propiedades FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 -- ============================================================================
--- ✅ SCHEMA CREADO CORRECTAMENTE (Versión 3.1)
+-- ✅ SCHEMA CREADO CORRECTAMENTE (Versión 3.2)
 -- ============================================================================
