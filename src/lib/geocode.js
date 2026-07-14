@@ -11,7 +11,7 @@ const NOMINATIM_BASE_URL = "https://nominatim.openstreetmap.org/search";
 
 // ⚠️ Cambia esto por el nombre real de tu app y un contacto válido,
 // Nominatim lo exige en su política de uso (https://operations.osmfoundation.org/policies/nominatim/)
-const USER_AGENT = "InmobiTwo/1.0 (contacto@tudominio.com)";
+const USER_AGENT = "InmobiTwo/1.0 (mateodevcode@gmail.com)"; // mateo@seventwo.tech
 
 // Caché simple en memoria. Para producción con más de una instancia del server,
 // considera moverlo a Redis (la firma de geocodeAddress no cambiaría).

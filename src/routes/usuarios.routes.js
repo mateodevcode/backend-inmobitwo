@@ -12,7 +12,6 @@ import {
   defaultLimiter,
   verificacionCodigoLimiter,
 } from "../lib/rateLimit.js";
-import { validateApiKey } from "../lib/validateApiKey.js";
 import { verificarToken, verificarRol } from "../middleware/auth.middleware.js";
 import { upload } from "../lib/multer.js";
 import {

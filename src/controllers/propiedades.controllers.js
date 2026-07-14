@@ -115,6 +115,23 @@ export const createPropiedades = async (req, res) => {
         .status(400)
         .json({ success: false, error: "El título es requerido." });
     }
+    if (titulo.length < 3) {
+      return res
+        .status(400)
+        .json({ success: false, error: "El título debe tener al menos 3 caracteres." });
+    }
+    if (titulo.length > 500) {
+      return res
+        .status(400)
+        .json({ success: false, error: "El título no puede exceder los 500 caracteres." });
+    }
+    const ESTADOS_PERMITIDOS = ["publicado", "no_publicado"];
+    if (estado && !ESTADOS_PERMITIDOS.includes(estado)) {
+      return res.status(400).json({
+        success: false,
+        error: `El estado debe ser uno de: ${ESTADOS_PERMITIDOS.join(", ")}.`,
+      });
+    }
     if (!publicado_por_id) {
       return res
         .status(400)
@@ -314,6 +331,28 @@ export const updatePropiedades = async (req, res) => {
     }
 
     const { titulo, estado } = formDataObj;
+
+    if (titulo !== undefined) {
+      if (titulo.length < 3) {
+        return res.status(400).json({
+          success: false,
+          error: "El título debe tener al menos 3 caracteres.",
+        });
+      }
+      if (titulo.length > 500) {
+        return res.status(400).json({
+          success: false,
+          error: "El título no puede exceder los 500 caracteres.",
+        });
+      }
+    }
+    const ESTADOS_PERMITIDOS = ["publicado", "no_publicado"];
+    if (estado && !ESTADOS_PERMITIDOS.includes(estado)) {
+      return res.status(400).json({
+        success: false,
+        error: `El estado debe ser uno de: ${ESTADOS_PERMITIDOS.join(", ")}.`,
+      });
+    }
 
     let imagesToDelete = [];
     if (formDataObj.imagesToDelete) {
@@ -535,7 +574,6 @@ export const updatePropiedades = async (req, res) => {
 export const deletePropiedades = async (req, res) => {
   try {
     const { id } = req.params;
-    const { id_usuario } = req.body;
 
     if (!id) {
       return res.status(400).json({
@@ -558,10 +596,10 @@ export const deletePropiedades = async (req, res) => {
 
     const propiedad = propiedadResult.rows[0];
 
-    if (propiedad.publicado_por_id !== id_usuario) {
-      return res.status(404).json({
+    if (propiedad.publicado_por_id !== req.usuario.id) {
+      return res.status(403).json({
         success: false,
-        error: "Usuario no autorizado para eliminar la propiedad",
+        error: "No autorizado para eliminar esta propiedad",
       });
     }
 
@@ -669,6 +707,26 @@ export const publicarAnuncios = async (req, res) => {
     // ========================================
     // VALIDACIONES
     // ========================================
+    if (!tipo) {
+      return res
+        .status(400)
+        .json({ success: false, error: "El tipo de propiedad es requerido." });
+    }
+    if (!operacion) {
+      return res
+        .status(400)
+        .json({ success: false, error: "La operación es requerida." });
+    }
+    if (!direccion) {
+      return res
+        .status(400)
+        .json({ success: false, error: "La dirección es requerida." });
+    }
+    if (!country_id) {
+      return res
+        .status(400)
+        .json({ success: false, error: "country_id es requerido." });
+    }
     if (!publicado_por_id) {
       return res
         .status(400)
@@ -830,7 +888,7 @@ export const getPropiedadesHome = async (req, res) => {
 
 export const getPropiedadesMisAnuncios = async (req, res) => {
   try {
-    const { id } = req.query;
+    const id = req.usuario.id;
 
     const { rows: propiedades } = await pool.query(
       `SELECT *
