@@ -290,6 +290,7 @@ export const updateOrganizacion = async (req, res) => {
       "logo_public_id",
       "ciudad",
       "provincia",
+      "tema", // ← NUEVO
     ];
 
     for (const campo of camposPermitidos) {
