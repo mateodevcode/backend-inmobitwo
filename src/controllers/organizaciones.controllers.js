@@ -1,5 +1,5 @@
 import { pool } from "../db.js";
-// import { organizacion_validate } from "../validations/organizacion_validate.js";
+import { organizacion_validate } from "../validations/organizacion_validate.js";
 
 // ────────────────────────────────────────────────────────────────
 // Helper: genera un slug a partir del nombre y garantiza que sea único
@@ -174,24 +174,11 @@ export const createOrganizacion = async (req, res) => {
   try {
     const data = req.body;
 
-    // const errores = organizacion_validate(data);
-    // if (errores.length > 0) {
-    //   return res.status(400).json({
-    //     success: false,
-    //     error: errores[0],
-    //   });
-    // }
-
-    if (!data.nombre) {
+    const errores = organizacion_validate(data);
+    if (errores.length > 0) {
       return res.status(400).json({
         success: false,
-        error: "El nombre es requerido.",
-      });
-    }
-    if (!data.creada_por_id) {
-      return res.status(400).json({
-        success: false,
-        error: "creada_por_id es requerido.",
+        error: errores[0],
       });
     }
 

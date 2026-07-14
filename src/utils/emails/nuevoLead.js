@@ -1,4 +1,5 @@
 // utils/emails/nuevoLead.js
+import { escapeHtml } from "../sanitize.js";
 
 export const nuevoLead = ({
   nombreAgente,
@@ -18,12 +19,12 @@ export const nuevoLead = ({
   return `
     <div style="font-family: Arial, sans-serif; max-width: 500px; margin: 0 auto;">
       <h2 style="color: #111;">Tienes un nuevo lead 🎯</h2>
-      <p>Hola ${nombreAgente || ""},</p>
-      <p>Alguien mostró interés en tu propiedad <strong>${propiedadTitulo}</strong>.</p>
+      <p>Hola ${escapeHtml(nombreAgente) || ""},</p>
+      <p>Alguien mostró interés en tu propiedad <strong>${escapeHtml(propiedadTitulo)}</strong>.</p>
       <div style="background: #f5f5f5; border-radius: 8px; padding: 16px; margin: 16px 0;">
-        <p style="margin: 4px 0;"><strong>Nombre:</strong> ${leadNombre || "No proporcionado"}</p>
-        <p style="margin: 4px 0;"><strong>Email:</strong> ${leadEmail || "No proporcionado"}</p>
-        <p style="margin: 4px 0;"><strong>Teléfono:</strong> ${leadTelefono || "No proporcionado"}</p>
+        <p style="margin: 4px 0;"><strong>Nombre:</strong> ${escapeHtml(leadNombre) || "No proporcionado"}</p>
+        <p style="margin: 4px 0;"><strong>Email:</strong> ${escapeHtml(leadEmail) || "No proporcionado"}</p>
+        <p style="margin: 4px 0;"><strong>Teléfono:</strong> ${escapeHtml(leadTelefono) || "No proporcionado"}</p>
       </div>
       <p style="color: #555;">${origenTexto}</p>
       <p style="margin-top: 24px;">Te recomendamos contactarlo lo antes posible mientras el interés está activo.</p>

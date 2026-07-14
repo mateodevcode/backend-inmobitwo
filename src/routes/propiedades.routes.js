@@ -11,7 +11,6 @@ import {
   getPropiedadesByOrganizacion,
 } from "../controllers/propiedades.controllers.js";
 import { createRateLimitMiddleware, defaultLimiter } from "../lib/rateLimit.js";
-import { validateApiKey } from "../lib/validateApiKey.js";
 import { APIKEY } from "../config.js";
 import { upload } from "../lib/multer.js";
 import { verificarToken, verificarRol } from "../middleware/auth.middleware.js";

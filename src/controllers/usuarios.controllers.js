@@ -9,7 +9,7 @@ const CAMPOS_USUARIO_PERMITIDOS = [
   "id",
   "name",
   "email",
-  "telefono", 
+  "telefono",
   "image_url",
   "public_id",
   "provider",
@@ -24,7 +24,8 @@ const CAMPOS_USUARIO_DEFAULT = [...CAMPOS_USUARIO_PERMITIDOS];
 
 export const getUsuarios = async (req, res) => {
   try {
-    const { rows } = await pool.query("SELECT * FROM usuarios");
+    const columnas = CAMPOS_USUARIO_DEFAULT.join(", ");
+    const { rows } = await pool.query(`SELECT ${columnas} FROM usuarios`);
     res.status(200).json({
       success: true,
       message: "Usuarios obtenidos correctamente.",
@@ -50,7 +51,7 @@ export const createUsuario = async (req, res) => {
       });
     }
 
-    const pass = await bcrypt.hash(data.password, 10);
+    const pass = await bcrypt.hash(data.password, 12);
     const { rows } = await pool.query(
       "INSERT INTO usuarios (name, email, password) VALUES ($1, $2, $3) RETURNING *",
       [data.name, data.email, pass],
@@ -152,7 +153,48 @@ export const updateUsuario = async (req, res) => {
 
     const { name } = formDataObj;
 
-    // FormData manda todo como string, por eso comparamos con "true"
+    if (name !== undefined) {
+      if (name.length < 3) {
+        return res.status(400).json({
+          success: false,
+          error: "El nombre debe tener al menos 3 caracteres.",
+        });
+      }
+      if (name.length > 255) {
+        return res.status(400).json({
+          success: false,
+          error: "El nombre no puede exceder los 255 caracteres.",
+        });
+      }
+    }
+
+    const email = formDataObj.email;
+    if (email !== undefined) {
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      if (!emailRegex.test(email)) {
+        return res.status(400).json({
+          success: false,
+          error: "El email no tiene un formato válido.",
+        });
+      }
+      if (email.length > 255) {
+        return res.status(400).json({
+          success: false,
+          error: "El email no puede exceder los 255 caracteres.",
+        });
+      }
+    }
+
+    const telefono = formDataObj.telefono;
+    if (telefono !== undefined) {
+      if (!/^[0-9+\-\s()]{6,20}$/.test(telefono)) {
+        return res.status(400).json({
+          success: false,
+          error: "El teléfono no tiene un formato válido.",
+        });
+      }
+    }
+
     const eliminarImagen =
       formDataObj.eliminarImagenPrincipal === true ||
       formDataObj.eliminarImagenPrincipal === "true";
@@ -211,7 +253,6 @@ export const updateUsuario = async (req, res) => {
     const camposPermitidos = [
       "name",
       "email",
-      "password",
       "telefono",
       "provider",
       "role",
@@ -369,7 +410,7 @@ export const updatePassword = async (req, res) => {
       });
     }
 
-    const nuevaHash = await bcrypt.hash(passwordNueva, 10);
+    const nuevaHash = await bcrypt.hash(passwordNueva, 12);
 
     await pool.query("UPDATE usuarios SET password = $1 WHERE id = $2", [
       nuevaHash,

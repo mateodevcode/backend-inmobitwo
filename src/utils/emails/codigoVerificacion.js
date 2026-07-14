@@ -1,10 +1,10 @@
 // utils/emails/codigoVerificacion.js
-// Mismo patrón que tu función bienvenida({ name, plan, email, botonWhatsapp })
+import { escapeHtml } from "../sanitize.js";
 
 export const codigoVerificacion = ({ name, codigo }) => {
   return `
     <div style="font-family: Arial, sans-serif; max-width: 480px; margin: 0 auto; padding: 32px 24px; color: #1a1a1a;">
-      <h2 style="margin-bottom: 8px;">Hola${name ? `, ${name}` : ""} 👋</h2>
+      <h2 style="margin-bottom: 8px;">Hola${name ? `, ${escapeHtml(name)}` : ""} 👋</h2>
       <p style="font-size: 16px; line-height: 1.5;">
         Usa este código para verificar tu correo electrónico y activar la
         seguridad adicional en tu cuenta de Inmobitwo.

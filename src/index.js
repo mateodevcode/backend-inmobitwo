@@ -20,24 +20,13 @@ import { corsOptions } from "./cors.config.js";
 
 const app = express();
 
-// Agrega esto justo debajo de instanciar Express:
-// app.set('trust proxy', true); des comentar cuando suba a pro
-
-// app.use(
-//   cors({
-//     origin: FRONTEND_URL?.split(","),
-//     credentials: true, // ← necesario para que las cookies funcionen cross-origin
-//   }),
-// );
+app.set("trust proxy", true);
 
 app.use(cors(corsOptions));
 app.use(cookieParser()); // ← necesario para leer req.cookies
-app.use(morgan("dev"));
-app.use(express.json());
-
-app.use(cors(corsOptions));
-app.use(cookieParser());
-app.use(morgan("dev"));
+if (process.env.NODE_ENV !== "production") {
+  app.use(morgan("dev"));
+}
 app.use(express.json());
 
 // Rutas

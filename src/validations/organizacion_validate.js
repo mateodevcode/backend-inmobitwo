@@ -79,11 +79,11 @@ export function organizacion_validate(datos) {
   // Validación de creada_por_id (obligatorio)
   if (!datos.creada_por_id) {
     errores.push("El ID del usuario creador es obligatorio.");
-  } else if (
-    typeof datos.creada_por_id !== "number" ||
-    datos.creada_por_id <= 0
-  ) {
-    errores.push("El ID del usuario creador debe ser un número válido.");
+  } else {
+    const creadaId = Number(datos.creada_por_id);
+    if (!Number.isInteger(creadaId) || creadaId <= 0) {
+      errores.push("El ID del usuario creador debe ser un número válido.");
+    }
   }
 
   return errores;
