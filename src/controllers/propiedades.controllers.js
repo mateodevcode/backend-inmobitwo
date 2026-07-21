@@ -1035,3 +1035,70 @@ export const getPropiedadesByOrganizacion = async (req, res) => {
     });
   }
 };
+
+export const getPropertiesBySlugs = async (req, res) => {
+  const { operation, type, city, dept } = req.query;
+
+  // Validación rápida de parámetros de URL obligatorios
+  if (!operation || !type || !city || !dept) {
+    return res.status(400).json({
+      success: false,
+      message: "Faltan parámetros requeridos de geolocalización o negocio.",
+      data: null,
+      error: null,
+    });
+  }
+
+  try {
+    // CONSULTA REAJUSTADA: Se elimina 'p.price' para que coincida con tu master.sql de producción
+    const query = `
+      SELECT 
+        p.id, 
+        p.tipo,
+        p.operacion,
+        p.titulo,
+        p.direccion,
+        p.imagen_principal_url,
+        c.name as city_name,
+        s.name as state_name,
+        p.longitude::float as longitude, 
+        p.latitude::float as latitude
+      FROM propiedades p
+      INNER JOIN cities c ON p.city_id = c.id
+      INNER JOIN states s ON c.state_id = s.id 
+      WHERE LOWER(p.operacion) = $1
+        AND LOWER(p.tipo) = $2
+        AND c.slug = $3
+        AND s.slug = $4
+        AND p.estado = 'publicado'
+      ORDER BY p.id DESC
+      LIMIT 100;
+    `;
+
+    // Ejecutamos la petición pasando los slugs limpios e indexados en minúsculas
+    const { rows } = await pool.query(query, [
+      operation.toLowerCase(),
+      type.toLowerCase(),
+      city.toLowerCase(),
+      dept.toLowerCase(),
+    ]);
+
+    // Enviamos la respuesta estructurada respetando tu firma estándar del apiBackend
+    return res.json({
+      success: true,
+      message:
+        rows.length === 0 ? "No se encontraron inmuebles en esta zona" : null,
+      data: rows,
+      error: null,
+    });
+  } catch (error) {
+    console.error("Error crítico en getPropertiesBySlugs:", error.message);
+
+    return res.status(500).json({
+      success: false,
+      message: "Error interno al procesar la búsqueda geográfica",
+      data: null,
+      error: error.message,
+    });
+  }
+};

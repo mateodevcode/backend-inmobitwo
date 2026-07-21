@@ -1,8 +1,9 @@
 -- ============================================================================
 -- SCHEMA COMPLETO — PLATAFORMA INMOBILIARIA
--- Versión: 3.2 — Agregado campo "tema" (diseño del escaparate) en organizaciones
+-- Versión: 3.3 — Agregados Slugs e Índices Espaciales GIST (Estilo Idealista)
 -- ============================================================================
 -- ORDEN DE CREACIÓN:
+-- 0. extensiones (PostGIS)
 -- 1. usuarios
 -- 2. organizaciones (inmobiliarias / tenants)
 -- 3. organizacion_miembros (relación usuarios ↔ organizaciones)
@@ -14,6 +15,12 @@
 -- 9. función update_updated_at
 -- 10. triggers
 -- ============================================================================
+-- ============================================================================
+-- 0. EXTENSIONES PREVIAS REQUERIDAS
+-- ============================================================================
+-- Activada para permitir búsquedas dinámicas en el mapa local mediante figuras 
+-- geométricas o polígonos dibujados a mano de forma gratuita.
+CREATE EXTENSION IF NOT EXISTS postgis;
 -- ============================================================================
 -- 1. USUARIOS
 -- ============================================================================
@@ -61,10 +68,10 @@ CREATE TABLE IF NOT EXISTS organizaciones (
     -- ------------------------------------------------------------------
     -- MULTI-TENANT: identidad web de la organización
     -- ------------------------------------------------------------------
-    -- slug -> usado en inmobitwo.com/inmobiliarias/:slug
+    -- slug -> usado en ://inmobitwo.com
     -- Se genera automáticamente a partir del nombre al crear la organización.
     slug VARCHAR(150) UNIQUE,
-    -- custom_domain -> dominio propio del cliente (ej: www.inmobiliariaoviedo.com)
+    -- custom_domain -> dominio propio del cliente (ej: ://inmobiliariaoviedo.com)
     -- NULL mientras no tenga dominio propio configurado.
     custom_domain VARCHAR(255) UNIQUE,
     -- dominio_estado -> ciclo de vida de la configuración del dominio propio
@@ -148,6 +155,8 @@ CREATE TABLE IF NOT EXISTS states (
     id SERIAL PRIMARY KEY,
     country_id INTEGER NOT NULL REFERENCES countries(id) ON DELETE CASCADE,
     name VARCHAR(150) NOT NULL,
+    slug VARCHAR(150),
+    -- 👈 NUEVO v3.3: Mapeo de URLs Amigables SEO (Ej: "antioquia")
     latitude DECIMAL(10, 8),
     longitude DECIMAL(11, 8)
 );
@@ -155,6 +164,8 @@ CREATE TABLE IF NOT EXISTS cities (
     id SERIAL PRIMARY KEY,
     state_id INTEGER NOT NULL REFERENCES states(id) ON DELETE CASCADE,
     name VARCHAR(150) NOT NULL,
+    slug VARCHAR(150),
+    -- 👈 NUEVO v3.3: Mapeo de URLs Amigables SEO (Ej: "bogota")
     latitude DECIMAL(10, 8) NOT NULL,
     longitude DECIMAL(11, 8) NOT NULL
 );
@@ -162,6 +173,10 @@ CREATE INDEX IF NOT EXISTS idx_states_country_id ON states(country_id);
 CREATE INDEX IF NOT EXISTS idx_cities_state_id ON cities(state_id);
 CREATE INDEX IF NOT EXISTS idx_states_name ON states(name);
 CREATE INDEX IF NOT EXISTS idx_cities_name ON cities(name);
+CREATE INDEX IF NOT EXISTS idx_states_slug ON states(slug);
+-- 👈 NUEVO v3.3: Indexador B-Tree para llamadas de rutas
+CREATE INDEX IF NOT EXISTS idx_cities_slug ON cities(slug);
+-- 👈 NUEVO v3.3: Indexador B-Tree para llamadas de rutas
 -- ============================================================================
 -- 5. PROPIEDADES
 -- ============================================================================
@@ -184,6 +199,8 @@ CREATE TABLE IF NOT EXISTS propiedades (
     -- Ubicación: coordenada final confirmada en el mapa (paso de Nominatim + Leaflet)
     latitude DECIMAL(10, 8),
     longitude DECIMAL(11, 8),
+    geom GEOMETRY(Point, 4326),
+    -- 👈 NUEVO v3.3: Punto geográfico nativo indexado para mapas eficientes
     titulo VARCHAR(255),
     -- Imagenes
     imagen_principal_url VARCHAR(500),
@@ -211,6 +228,8 @@ CREATE INDEX IF NOT EXISTS idx_propiedades_country_id ON propiedades(country_id)
 CREATE INDEX IF NOT EXISTS idx_propiedades_state_id ON propiedades(state_id);
 CREATE INDEX IF NOT EXISTS idx_propiedades_city_id ON propiedades(city_id);
 CREATE INDEX IF NOT EXISTS idx_propiedades_organizacion_id ON propiedades(organizacion_id);
+CREATE INDEX IF NOT EXISTS idx_propiedades_geom ON propiedades USING GIST(geom);
+-- 👈 NUEVO v3.3: Índice espacial GIST para velocidad de pines en mapas
 -- ============================================================================
 -- 6. PROPIEDADES_GALERIA
 -- ============================================================================
@@ -275,5 +294,5 @@ UPDATE ON organizacion_miembros FOR EACH ROW EXECUTE FUNCTION update_updated_at_
 CREATE TRIGGER trg_propiedades_updated_at BEFORE
 UPDATE ON propiedades FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 -- ============================================================================
--- ✅ SCHEMA CREADO CORRECTAMENTE (Versión 3.2)
+-- ✅ SCHEMA CREADO CORRECTAMENTE (Versión 3.3 - Inmobitwo Maps Engine)
 -- ============================================================================

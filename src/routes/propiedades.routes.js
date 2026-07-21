@@ -9,6 +9,7 @@ import {
   getPropiedadesHome,
   getPropiedadesMisAnuncios,
   getPropiedadesByOrganizacion,
+  getPropertiesBySlugs,
 } from "../controllers/propiedades.controllers.js";
 import { createRateLimitMiddleware, defaultLimiter } from "../lib/rateLimit.js";
 import { APIKEY } from "../config.js";
@@ -26,31 +27,35 @@ const uploadFields = upload.fields([
 
 const ruta = "/propiedades";
 
+// 1. RUTAS ESTÁTICAS GENERALES DE PROPIEDADES (Siempre arriba)
 router.get(ruta, rateLimit, getPropiedades);
-
-// rutas especificas raiz inmobitwo
 router.get(`${ruta}/inicio`, rateLimit, getPropiedadesHome);
-// rutas especificas /usuario/mis-datos/
-router.get(`${ruta}/mis-anuncios`, verificarToken, rateLimit, getPropiedadesMisAnuncios);
+router.get(
+  `${ruta}/mis-anuncios`,
+  verificarToken,
+  rateLimit,
+  getPropiedadesMisAnuncios,
+);
 
-// NUEVO — vista de organización (tenant), va antes de /:id
+// 2. NUEVA RUTA POR SLUG ESTILO IDEALISTA (Corregida con el prefijo ${ruta} y bien posicionada)
+router.get(`${ruta}/search-slugs`, rateLimit, getPropertiesBySlugs);
+
+// 3. VISTA DE ORGANIZACIÓN (TENANT) - Va antes de los parámetros dinámicos generales
 router.get(
   `${ruta}/organizacion/:slug`,
   rateLimit,
   getPropiedadesByOrganizacion,
 );
 
+// 4. PARÁMETROS DINÁMICOS GENERALES (Siempre abajo del todo para evitar colisiones de tipos)
 router.get(`${ruta}/:id`, rateLimit, getPropiedadesById);
 
+// 5. MÉTODOS DE ESCRITURA Y ACCIONES
 router.post(ruta, verificarToken, uploadFields, createPropiedades);
 router.patch(`${ruta}/:id`, verificarToken, uploadFields, updatePropiedades);
 
-router.delete(
-  `${ruta}/:id`,
-  verificarToken,
-  // verificarRol(["admin", "superadmin"]),
-  deletePropiedades,
-);
+router.delete(`${ruta}/:id`, verificarToken, deletePropiedades);
+
 router.post(
   "/publicar-anuncios",
   verificarToken,
