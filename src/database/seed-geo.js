@@ -16,6 +16,20 @@ import { pool } from "../db.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
+// Función utilitaria para normalizar texto a slugs limpios amigables con URLs
+function generateSlug(text) {
+  if (!text) return "";
+  return text
+    .toString()
+    .normalize("NFD") // Descompone caracteres con acentos
+    .replace(/[\u0300-\u036f]/g, "") // Remueve los acentos completamente
+    .toLowerCase()
+    .trim()
+    .replace(/\s+/g, "-") // Cambia espacios por guiones
+    .replace(/[^a-z0-9\-]/g, "") // Remueve cualquier símbolo extraño residual
+    .replace(/\-{2,}/g, "-"); // Mitiga guiones repetidos
+}
+
 function readJSON(filename) {
   const filePath = path.join(__dirname, "data", filename);
   return JSON.parse(fs.readFileSync(filePath, "utf-8"));
@@ -53,17 +67,20 @@ async function seed() {
       );
     }
 
-    console.log(`Insertando ${states.length} provincias/departamentos...`);
+    console.log(
+      `Insertando ${states.length} provincias/departamentos con auto-slug...`,
+    );
     for (const s of states) {
+      const stateSlug = generateSlug(s.name); // 👈 Generación dinámica v3.3
       await client.query(
-        `INSERT INTO states (id, country_id, name, latitude, longitude)
-         VALUES ($1, $2, $3, $4, $5)`,
-        [s.id, s.country_id, s.name, s.latitude, s.longitude],
+        `INSERT INTO states (id, country_id, name, slug, latitude, longitude)
+         VALUES ($1, $2, $3, $4, $5, $6)`,
+        [s.id, s.country_id, s.name, stateSlug, s.latitude, s.longitude],
       );
     }
 
     console.log(
-      `Insertando ${cities.length} ciudades (puede tardar unos segundos)...`,
+      `Insertando ${cities.length} ciudades con auto-slug (en lotes)...`,
     );
     const BATCH_SIZE = 500;
     for (let i = 0; i < cities.length; i += BATCH_SIZE) {
@@ -71,14 +88,22 @@ async function seed() {
       const values = [];
       const placeholders = batch
         .map((c, idx) => {
-          const base = idx * 5;
-          values.push(c.id, c.state_id, c.name, c.latitude, c.longitude);
-          return `($${base + 1}, $${base + 2}, $${base + 3}, $${base + 4}, $${base + 5})`;
+          const base = idx * 6; // 6 parámetros por fila ahora
+          const citySlug = generateSlug(c.name); // 👈 Generación dinámica v3.3
+          values.push(
+            c.id,
+            c.state_id,
+            c.name,
+            citySlug,
+            c.latitude,
+            c.longitude,
+          );
+          return `($${base + 1}, $${base + 2}, $${base + 3}, $${base + 4}, $${base + 5}, $${base + 6})`;
         })
         .join(", ");
 
       await client.query(
-        `INSERT INTO cities (id, state_id, name, latitude, longitude) VALUES ${placeholders}`,
+        `INSERT INTO cities (id, state_id, name, slug, latitude, longitude) VALUES ${placeholders}`,
         values,
       );
       console.log(
@@ -98,7 +123,9 @@ async function seed() {
     );
 
     await client.query("COMMIT");
-    console.log("✅ Importación de geografía completa.");
+    console.log(
+      "✅ Importación de geografía completa con mapeo slug indexado.",
+    );
   } catch (error) {
     await client.query("ROLLBACK");
     console.error("❌ Error durante la importación, se hizo rollback:", error);

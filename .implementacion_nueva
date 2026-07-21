@@ -1,0 +1,84 @@
+Documento de Arquitectura: Modelo Híbrido de Mapas - Inmobitwo1. Objetivo Financiero y TécnicoEl ecosistema de Inmobitwo implementará una arquitectura dividida en dos capas para la geolocalización. El objetivo principal es mitigar por completo los cobros de las APIs de Google Maps en las zonas de alto tráfico de la aplicación web, centralizando el consumo únicamente en acciones transaccionales controladas (creación de inmuebles).2. Componente 1: Buscador de Inmuebles (Vista de Mapa con Pines)Propósito: Permitir el renderizado masivo e interactivo de los inmuebles sobre el mapa de Colombia.Costo operativo: $0 USD.A. Stack Tecnológico AplicadoFrontend (frontend-inmobitwo): react-leaflet (v5.0.0) + leaflet (v1.9.4) montado sobre React 19 y Vite 8. Estilizado limpio con Tailwind CSS v4.Capa Base (Tiles): CartoDB Positron u OpenStreetMap (Costo $0).Backend (backend-inmobitwo): express (v5.2.1) como servidor API y pg (v8.16.3) para comunicación nativa con PostgreSQL + PostGIS.B. Flujo Lógico y Consultas en Base de Datos1. Captura de Límites en el Frontend (frontend-inmobitwo)Utilizando un componente controlador dentro del árbol de react-leaflet, escuchamos el evento moveend (cuando el usuario termina de arrastrar o hacer zoom en el mapa) para extraer los límites visibles de la pantalla (Bounding Box):javascriptimport { useMapEvents } from 'react-leaflet';
+
+function MapController({ onBoundsChange }) {
+  useMapEvents({
+    moveend: (e) => {
+      const map = e.target;
+      const bounds = map.getBounds();
+      
+      // Enviamos las coordenadas de la "caja" visible
+      onBoundsChange({
+        sw_lng: bounds.getSouthWest().lng,
+        sw_lat: bounds.getSouthWest().lat,
+        ne_lng: bounds.getNorthEast().lng,
+        ne_lat: bounds.getNorthEast().lat
+      });
+    },
+  });
+  return null;
+}
+Usa el código con precaución.2. Endpoint del Backend (backend-inmobitwo)El controlador de Express recibirá las coordenadas mediante una petición GET /api/properties/map. Usando el cliente de pg, ejecutaremos una consulta geométrica de alta velocidad en PostGIS aprovechando los índices espaciales (GIST):javascript// src/controllers/property.controller.js
+export const getPropertiesInBounds = async (req, res) => {
+  const { sw_lng, sw_lat, ne_lng, ne_lat } = req.query;
+
+  try {
+    // Consulta que verifica qué propiedades están contenidas en el rectángulo (Envelope) visible
+    const query = `
+      SELECT id, title, price, stratum, ST_X(geom) as lng, ST_Y(geom) as lat 
+      FROM properties 
+      WHERE geom && ST_MakeEnvelope($1, $2, $3, $4, 4326)
+      LIMIT 500;
+    `;
+    
+    // Ejecución directa con el pool de 'pg'
+    const { rows } = await db.query(query, [sw_lng, sw_lat, ne_lng, ne_lat]);
+    return res.json(rows);
+  } catch (error) {
+    return res.status(500).json({ error: "Error en la consulta espacial" });
+  }
+};
+Usa el código con precaución.3. Componente 2: Creación del Inmueble (Registro y Normalización de Dirección)Propósito: Normalizar la nomenclatura urbana de Colombia y capturar coordenadas perfectas desde el inicio.Costo operativo: Pago por uso controlado (Google Places API).A. Integración en el Flujo Real1. Inyección en el FrontendPara mantener el proyecto libre de dependencias pesadas innecesarias en el package.json, cargaremos de forma dinámica el SDK de Google Places clásico en el formulario de creación usando un hook o agregándolo al index.html.javascript// Carga del script con tu API Key de Google Cloud Console
+// https://googleapis.com
+Usa el código con precaución.Vinculamos el input de la dirección al autocompletado de Google, restringiendo los resultados geográficamente para Colombia (co):javascript// Componente de React 19 para publicación
+import { useEffect, useRef } from 'react';
+
+export function AddressAutocomplete({ onLocationSelected }) {
+  const inputRef = useRef(null);
+
+  useEffect(() => {
+    if (!window.google) return;
+
+    const autocomplete = new window.google.maps.places.Autocomplete(inputRef.current, {
+      componentRestrictions: { country: "co" },
+      fields: ["geometry", "formatted_address"],
+    });
+
+    autocomplete.addListener("place_changed", () => {
+      const place = autocomplete.getPlace();
+      if (!place.geometry) return;
+
+      onLocationSelected({
+        address: place.formatted_address,
+        lat: place.geometry.location.lat(),
+        lng: place.geometry.location.lng(),
+      });
+    });
+  }, []);
+
+  return (
+    <input 
+      ref={inputRef} 
+      type="text" 
+      placeholder="Ej: Carrera 7 # 100-20, Bogotá" 
+      className="w-full h-11 px-4 border border-black/10 rounded-md text-sm"
+    />
+  );
+}
+Usa el código con precaución.2. Guardado en la Base de Datos (backend-inmobitwo)Cuando el cliente envía los datos del formulario al backend, backend-inmobitwo recibe las variables numéricas limpias de lat y lng e inserta la geometría nativa de PostGIS (POINT) en la tabla utilizando un formato de coordenadas estándar mundial (SRID 4326):javascript// Guardado del inmueble usando 'pg'
+const insertQuery = `
+  INSERT INTO properties (title, price, stratum, address, geom) 
+  VALUES ($1, $2, $3, $4, ST_SetSRID(ST_MakePoint($5, $6), 4326))
+  RETURNING id;
+`;
+await db.query(insertQuery, [title, price, stratum, address, lng, lat]);
+Usa el código con precaución.4. Ventajas Técnicas Específicas para tu EcosistemaSoporte Multi-tenant: Como tu backend gestiona dominios personalizados y múltiples inquilinos, la consulta de mapas por Bounding Box (ST_MakeEnvelope) se puede segmentar de forma ridículamente fácil por inquilino añadiendo un WHERE tenant_id = $5, logrando que cada sitio web clonado de tus inmobiliarias muestre únicamente sus propios pines en el mapa gratis.Cero Conflictos con React 19: react-leaflet v5 cuenta con soporte oficial y estable para el ciclo de vida y renderizado de React 19, evitando bugs de doble renderizado de mapas en desarrollo con Vite 8.Migración Sencilla de Datos (seed:geo): Tu script existente de npm "seed:geo" encaja perfectamente aquí para poblar la base de datos local con datos geométricos de prueba de barrios colombianos y así validar la velocidad de respuesta del backend antes de pasar a producción.

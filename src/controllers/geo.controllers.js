@@ -82,3 +82,47 @@ export const getCities = async (req, res) => {
     });
   }
 };
+
+export const suggestCities = async (req, res) => {
+  const { q } = req.query;
+
+  // Si la consulta está vacía o tiene menos de 2 letras, respondemos con arreglo vacío inmediatamente
+  if (!q || q.trim().length < 2) {
+    return res.json({ success: true, message: null, data: [], error: null });
+  }
+
+  try {
+    // Consulta SQL que une ciudades con sus respectivos departamentos usando slugs indexados
+    const query = `
+      SELECT 
+        c.id, 
+        c.name as city_name, 
+        c.slug as city_slug,
+        s.name as state_name,
+        s.slug as state_slug
+      FROM cities c
+      INNER JOIN states s ON c.state_id = s.id
+      WHERE c.name ILIKE $1
+      ORDER BY c.name ASC
+      LIMIT 5;
+    `;
+
+    // Buscamos cualquier coincidencia que comience con el texto enviado por el usuario
+    const { rows } = await pool.query(query, [`${q}%`]);
+
+    return res.json({
+      success: true,
+      message: null,
+      data: rows,
+      error: null,
+    });
+  } catch (error) {
+    console.error("Error en suggestCities:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Error interno al obtener sugerencias de ubicaciones",
+      data: null,
+      error: error.message,
+    });
+  }
+};
