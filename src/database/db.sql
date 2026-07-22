@@ -1,9 +1,9 @@
 -- ============================================================================
 -- SCHEMA COMPLETO — PLATAFORMA INMOBILIARIA
--- Versión: 3.3 — Agregados Slugs e Índices Espaciales GIST (Estilo Idealista)
+-- Versión: 3.5 — Agregado unaccent para búsqueda insensible a tildes (á=a, é=e, etc.)
 -- ============================================================================
 -- ORDEN DE CREACIÓN:
--- 0. extensiones (PostGIS)
+-- 0. extensiones (PostGIS, pg_trgm, unaccent)
 -- 1. usuarios
 -- 2. organizaciones (inmobiliarias / tenants)
 -- 3. organizacion_miembros (relación usuarios ↔ organizaciones)
@@ -18,9 +18,21 @@
 -- ============================================================================
 -- 0. EXTENSIONES PREVIAS REQUERIDAS
 -- ============================================================================
--- Activada para permitir búsquedas dinámicas en el mapa local mediante figuras 
+-- Activada para permitir búsquedas dinámicas en el mapa local mediante figuras
 -- geométricas o polígonos dibujados a mano de forma gratuita.
 CREATE EXTENSION IF NOT EXISTS postgis;
+-- 👈 NUEVO v3.4: Habilita búsqueda eficiente de substrings (ILIKE '%texto%')
+-- Necesaria para el autocompletado de ciudades tipo Idealista (suggest-cities)
+CREATE EXTENSION IF NOT EXISTS pg_trgm;
+-- 👈 NUEVO v3.5: Habilita búsqueda insensible a tildes (unaccent)
+-- Convierte á→a, é→e, í→i, ó→o, ú→u, ñ→n para que "malaga" encuentre "Málaga"
+CREATE EXTENSION IF NOT EXISTS unaccent;
+-- 👈 NUEVO v3.5: Wrapper IMMUTABLE de unaccent() para poder usarlo en índices
+-- PostgreSQL marca unaccent() como STABLE, pero los índices requieren IMMUTABLE
+CREATE OR REPLACE FUNCTION f_unaccent(text)
+RETURNS text
+LANGUAGE sql IMMUTABLE PARALLEL SAFE
+AS $$ SELECT public.unaccent('public.unaccent', $1) $$;
 -- ============================================================================
 -- 1. USUARIOS
 -- ============================================================================
@@ -177,6 +189,13 @@ CREATE INDEX IF NOT EXISTS idx_states_slug ON states(slug);
 -- 👈 NUEVO v3.3: Indexador B-Tree para llamadas de rutas
 CREATE INDEX IF NOT EXISTS idx_cities_slug ON cities(slug);
 -- 👈 NUEVO v3.3: Indexador B-Tree para llamadas de rutas
+-- 👈 NUEVO v3.4: Índice GIN por trigramas para autocompletado (ILIKE '%texto%')
+-- Permite que /suggest-cities busque coincidencias en cualquier parte del
+-- nombre de la ciudad de forma eficiente (no solo al inicio del string).
+CREATE INDEX IF NOT EXISTS idx_cities_name_trgm ON cities USING gin (name gin_trgm_ops);
+-- 👈 NUEVO v3.5: Índice GIN con unaccent() para búsqueda insensible a tildes
+-- Permite que /suggest-cities encuentre "Málaga" aunque el usuario escriba "malaga"
+CREATE INDEX IF NOT EXISTS idx_cities_name_unaccent ON cities USING gin (f_unaccent(name) gin_trgm_ops);
 -- ============================================================================
 -- 5. PROPIEDADES
 -- ============================================================================
@@ -294,5 +313,5 @@ UPDATE ON organizacion_miembros FOR EACH ROW EXECUTE FUNCTION update_updated_at_
 CREATE TRIGGER trg_propiedades_updated_at BEFORE
 UPDATE ON propiedades FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 -- ============================================================================
--- ✅ SCHEMA CREADO CORRECTAMENTE (Versión 3.3 - Inmobitwo Maps Engine)
+-- ✅ SCHEMA CREADO CORRECTAMENTE (Versión 3.4 - Inmobitwo Maps Engine + Trigram Search)
 -- ============================================================================
