@@ -86,13 +86,11 @@ export const getCities = async (req, res) => {
 export const suggestCities = async (req, res) => {
   const { q } = req.query;
 
-  // Si la consulta está vacía o tiene menos de 2 letras, respondemos con arreglo vacío inmediatamente
   if (!q || q.trim().length < 2) {
     return res.json({ success: true, message: null, data: [], error: null });
   }
 
   try {
-    // Consulta SQL que une ciudades con sus respectivos departamentos usando slugs indexados
     const query = `
       SELECT 
         c.id, 
@@ -102,13 +100,15 @@ export const suggestCities = async (req, res) => {
         s.slug as state_slug
       FROM cities c
       INNER JOIN states s ON c.state_id = s.id
-      WHERE c.name ILIKE $1
-      ORDER BY c.name ASC
+      WHERE f_unaccent(c.name) ILIKE f_unaccent($1)
+      ORDER BY 
+        -- Prioriza coincidencias que empiezan con el texto sobre las que solo lo contienen
+        CASE WHEN f_unaccent(c.name) ILIKE f_unaccent($2) THEN 0 ELSE 1 END,
+        c.name ASC
       LIMIT 5;
     `;
 
-    // Buscamos cualquier coincidencia que comience con el texto enviado por el usuario
-    const { rows } = await pool.query(query, [`${q}%`]);
+    const { rows } = await pool.query(query, [`%${q}%`, `${q}%`]);
 
     return res.json({
       success: true,

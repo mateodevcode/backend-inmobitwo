@@ -1,6 +1,6 @@
 -- ============================================================================
 -- SCRIPT DE LIMPIEZA TOTAL (DROP) — INMOBITWO Master Reset
--- Versión: 3.3 (Compatibilidad PostGIS y Clean URLs)
+-- Versión: 3.5 (Unaccent + pg_trgm + PostGIS)
 -- ============================================================================
 -- 1. Eliminación de Triggers de auditoría para evitar bloqueos de dependencias
 DROP TRIGGER IF EXISTS trg_usuarios_updated_at ON usuarios;
@@ -22,3 +22,6 @@ DROP TABLE IF EXISTS organizaciones CASCADE;
 DROP TABLE IF EXISTS usuarios CASCADE;
 -- 4. Desactivación de la Extensión Espacial (Solo si no hay objetos huérfanos)
 DROP EXTENSION IF EXISTS postgis;
+DROP EXTENSION IF EXISTS unaccent;
+DROP EXTENSION IF EXISTS pg_trgm;
+DROP FUNCTION IF EXISTS f_unaccent(text);
