@@ -120,10 +120,20 @@ export const getLocationInfo = async (req, res) => {
     }
 
     if (type) {
-      params.push(type);
-      filterConditions.push(
-        `AND LOWER(p.tipo) = LOWER($${params.length})`,
-      );
+      const types = type.split(",").map((t) => t.trim()).filter(Boolean);
+      if (types.length === 1) {
+        params.push(types[0]);
+        filterConditions.push(
+          `AND LOWER(p.tipo) = LOWER($${params.length})`,
+        );
+      } else if (types.length > 1) {
+        const startIdx = params.length + 1;
+        types.forEach((t) => params.push(t));
+        const placeholders = types.map((_, i) => `LOWER($${startIdx + i})`);
+        filterConditions.push(
+          `AND LOWER(p.tipo) IN (${placeholders.join(", ")})`,
+        );
+      }
     }
 
     const filterClause = filterConditions.join(" ");
@@ -152,20 +162,27 @@ export const getLocationInfo = async (req, res) => {
            INNER JOIN cities c ON p.city_id = c.id
            INNER JOIN states s ON c.state_id = s.id
            WHERE s.region_id = rd.region_id AND p.estado = 'publicado'
-          )::int as total_state_all
+           ${filterClause}
+          )::int as total_state_all,
+          (SELECT COUNT(*) FROM propiedades p
+           INNER JOIN cities c ON p.city_id = c.id
+           INNER JOIN states s ON c.state_id = s.id
+           WHERE s.region_id = rd.region_id AND p.estado = 'publicado'
+           ${filterClause}
+          )::int as total_region
         FROM region_data rd
       `;
     } else if (dept && !city) {
       query = `
         WITH state_data AS (
           SELECT s.id as state_id, s.name as state_name, s.slug as state_slug,
-                 r.name as region_name, r.slug as region_slug
+                 s.region_id as region_id, r.name as region_name, r.slug as region_slug
           FROM states s
           LEFT JOIN regions r ON s.region_id = r.id
           WHERE s.slug = $1
         )
         SELECT
-          NULL as region_id, sd.region_name, sd.region_slug,
+          sd.region_id, sd.region_name, sd.region_slug,
           NULL as city_id, NULL as city_name, NULL as city_slug,
           sd.state_id, sd.state_name, sd.state_slug,
           'departamento' as tipo,
@@ -177,11 +194,19 @@ export const getLocationInfo = async (req, res) => {
           (SELECT COUNT(*) FROM propiedades p
            INNER JOIN cities c ON p.city_id = c.id
            WHERE c.state_id = sd.state_id AND p.estado = 'publicado'
+           ${filterClause}
           )::int as total_state,
           (SELECT COUNT(*) FROM propiedades p
            INNER JOIN cities c ON p.city_id = c.id
            WHERE c.state_id = sd.state_id AND p.estado = 'publicado'
-          )::int as total_state_all
+           ${filterClause}
+          )::int as total_state_all,
+          (SELECT COUNT(*) FROM propiedades p
+           INNER JOIN cities c ON p.city_id = c.id
+           INNER JOIN states s2 ON c.state_id = s2.id
+           WHERE s2.region_id = sd.region_id AND p.estado = 'publicado'
+           ${filterClause}
+          )::int as total_region
         FROM state_data sd
       `;
     } else {
@@ -190,14 +215,14 @@ export const getLocationInfo = async (req, res) => {
           SELECT 
             c.id as city_id, c.name as city_name, c.slug as city_slug,
             s.id as state_id, s.name as state_name, s.slug as state_slug,
-            r.name as region_name, r.slug as region_slug
+            s.region_id as region_id, r.name as region_name, r.slug as region_slug
           FROM cities c
           INNER JOIN states s ON c.state_id = s.id
           LEFT JOIN regions r ON s.region_id = r.id
           WHERE c.slug = $1 AND s.slug = $2
         )
         SELECT 
-          NULL as region_id, cs.region_name, cs.region_slug,
+          cs.region_id, cs.region_name, cs.region_slug,
           cs.city_id, cs.city_name, cs.city_slug,
           cs.state_id, cs.state_name, cs.state_slug,
           'ciudad' as tipo,
@@ -207,6 +232,7 @@ export const getLocationInfo = async (req, res) => {
           )::int as total_matching,
           (SELECT COUNT(*) FROM propiedades p 
            WHERE p.city_id = cs.city_id AND p.estado = 'publicado'
+             ${filterClause}
           )::int as total_city,
           (SELECT COUNT(*) FROM propiedades p
            INNER JOIN cities c2 ON p.city_id = c2.id
@@ -216,7 +242,14 @@ export const getLocationInfo = async (req, res) => {
           (SELECT COUNT(*) FROM propiedades p
            INNER JOIN cities c2 ON p.city_id = c2.id
            WHERE c2.state_id = cs.state_id AND p.estado = 'publicado'
-          )::int as total_state_all
+             ${filterClause}
+          )::int as total_state_all,
+          (SELECT COUNT(*) FROM propiedades p
+           INNER JOIN cities c2 ON p.city_id = c2.id
+           INNER JOIN states s2 ON c2.state_id = s2.id
+           WHERE s2.region_id = cs.region_id AND p.estado = 'publicado'
+           ${filterClause}
+          )::int as total_region
         FROM city_state cs
       `;
     }
@@ -250,7 +283,7 @@ export const getLocationInfo = async (req, res) => {
 };
 
 export const suggestCities = async (req, res) => {
-  const { q } = req.query;
+  const { q, operation } = req.query;
 
   if (!q || q.trim().length < 2) {
     return res.json({ success: true, message: null, data: [], error: null });
@@ -258,6 +291,13 @@ export const suggestCities = async (req, res) => {
 
   try {
     const countryId = 2;
+    const params = [countryId, `%${q}%`, `${q}%`];
+
+    let operacionFilter = "";
+    if (operation) {
+      params.push(operation);
+      operacionFilter = `AND LOWER(p.operacion) = LOWER($${params.length})`;
+    }
 
     const query = `
       SELECT * FROM (
@@ -277,6 +317,7 @@ export const suggestCities = async (req, res) => {
            INNER JOIN cities c ON p.city_id = c.id
            INNER JOIN states s2 ON c.state_id = s2.id
            WHERE s2.region_id = r.id AND p.estado = 'publicado'
+           ${operacionFilter}
           )::int as total_propiedades
         FROM regions r
         WHERE r.country_id = $1
@@ -299,6 +340,7 @@ export const suggestCities = async (req, res) => {
           (SELECT COUNT(*) FROM propiedades p
            INNER JOIN cities c ON p.city_id = c.id
            WHERE c.state_id = s.id AND p.estado = 'publicado'
+           ${operacionFilter}
           )::int as total_propiedades
         FROM states s
         LEFT JOIN regions r ON s.region_id = r.id
@@ -324,6 +366,7 @@ export const suggestCities = async (req, res) => {
         INNER JOIN states s ON c.state_id = s.id
         LEFT JOIN regions r ON s.region_id = r.id
         LEFT JOIN propiedades p ON c.id = p.city_id AND p.estado = 'publicado'
+          ${operacionFilter}
         WHERE s.country_id = $1
           AND f_unaccent(c.name) ILIKE f_unaccent($2)
         GROUP BY c.id, c.name, c.slug, s.name, s.slug, r.name, r.slug
@@ -347,6 +390,7 @@ export const suggestCities = async (req, res) => {
         INNER JOIN states s ON c.state_id = s.id
         LEFT JOIN regions r ON s.region_id = r.id
         LEFT JOIN propiedades p ON c.id = p.city_id AND p.estado = 'publicado'
+          ${operacionFilter}
         WHERE s.country_id = $1
           AND f_unaccent(s.name) ILIKE f_unaccent($2)
           AND NOT f_unaccent(c.name) ILIKE f_unaccent($2)
@@ -363,7 +407,7 @@ export const suggestCities = async (req, res) => {
       LIMIT 12;
     `;
 
-    const { rows } = await pool.query(query, [countryId, `%${q}%`, `${q}%`]);
+    const { rows } = await pool.query(query, params);
 
     return res.json({
       success: true,
