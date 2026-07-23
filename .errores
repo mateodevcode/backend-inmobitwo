@@ -1,2 +1,0 @@
-OTICE: trigger "trg_organizacion_miembros_updated_at" for relation "organizacion_miembros" does not exist, skipping
-cannot drop function update_updated_at_column() because other objects depend on it
