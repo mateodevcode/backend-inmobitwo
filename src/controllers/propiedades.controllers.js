@@ -1039,8 +1039,7 @@ export const getPropiedadesByOrganizacion = async (req, res) => {
 export const getPropertiesBySlugs = async (req, res) => {
   const { operation, type, city, dept } = req.query;
 
-  // Validación rápida de parámetros de URL obligatorios
-  if (!operation || !type || !city || !dept) {
+  if (!operation || !type || !dept) {
     return res.status(400).json({
       success: false,
       message: "Faltan parámetros requeridos de geolocalización o negocio.",
@@ -1050,38 +1049,114 @@ export const getPropertiesBySlugs = async (req, res) => {
   }
 
   try {
-    // CONSULTA REAJUSTADA: Se elimina 'p.price' para que coincida con tu master.sql de producción
-    const query = `
-      SELECT 
-        p.id, 
-        p.tipo,
-        p.operacion,
-        p.titulo,
-        p.direccion,
-        p.imagen_principal_url,
-        c.name as city_name,
-        s.name as state_name,
-        p.longitude::float as longitude, 
-        p.latitude::float as latitude
-      FROM propiedades p
-      INNER JOIN cities c ON p.city_id = c.id
-      INNER JOIN states s ON c.state_id = s.id 
-      WHERE LOWER(p.operacion) = $1
-        AND LOWER(p.tipo) = $2
-        AND c.slug = $3
-        AND s.slug = $4
-        AND p.estado = 'publicado'
-      ORDER BY p.id DESC
-      LIMIT 100;
+    const params = [operation.toLowerCase()];
+
+    let typeCondition;
+    if (type.includes(",")) {
+      const types = type.split(",").map((t) => t.trim().toLowerCase()).filter(Boolean);
+      types.forEach((t) => params.push(t));
+      const placeholders = types.map((_, i) => `$${i + 2}`);
+      typeCondition = `AND LOWER(p.tipo) IN (${placeholders.join(", ")})`;
+    } else {
+      params.push(type.toLowerCase());
+      typeCondition = `AND LOWER(p.tipo) = $2`;
+    }
+
+    const galeriaSubquery = `
+      COALESCE(
+        (SELECT json_agg(json_build_object(
+          'id', pg.id,
+          'url', pg.url,
+          'orden', pg.orden
+        ) ORDER BY pg.orden)
+        FROM propiedades_galeria pg
+        WHERE pg.propiedad_id = p.id),
+        '[]'::json
+      ) as galeria
     `;
 
-    // Ejecutamos la petición pasando los slugs limpios e indexados en minúsculas
-    const { rows } = await pool.query(query, [
-      operation.toLowerCase(),
-      type.toLowerCase(),
-      city.toLowerCase(),
-      dept.toLowerCase(),
-    ]);
+    const selectFields = `
+      p.id, p.tipo, p.operacion, p.titulo, p.direccion,
+      p.imagen_principal_url,
+      p.es_de_organizacion,
+      ${galeriaSubquery},
+      c.name as city_name,
+      s.name as state_name,
+      o.nombre as organizacion_nombre,
+      o.logo_url as organizacion_logo_url,
+      p.longitude::float as longitude, 
+      p.latitude::float as latitude
+    `;
+
+    const orgJoin = `LEFT JOIN organizaciones o ON p.organizacion_id = o.id`;
+
+    let query;
+    if (city) {
+      params.push(city.toLowerCase(), dept.toLowerCase());
+      const cityIdx = params.length - 1;
+      const deptIdx = params.length;
+
+      query = `
+        SELECT ${selectFields}
+        FROM propiedades p
+        INNER JOIN cities c ON p.city_id = c.id
+        INNER JOIN states s ON c.state_id = s.id 
+        ${orgJoin}
+        WHERE LOWER(p.operacion) = $1
+          ${typeCondition}
+          AND c.slug = $${cityIdx}
+          AND s.slug = $${deptIdx}
+          AND p.estado = 'publicado'
+        ORDER BY p.id DESC
+        LIMIT 100;
+      `;
+    } else if (dept) {
+      params.push(dept.toLowerCase());
+      const geoIdx = params.length;
+
+      query = `
+        SELECT ${selectFields}
+        FROM propiedades p
+        INNER JOIN cities c ON p.city_id = c.id
+        INNER JOIN states s ON c.state_id = s.id 
+        ${orgJoin}
+        WHERE LOWER(p.operacion) = $1
+          ${typeCondition}
+          AND s.slug = $${geoIdx}
+          AND p.estado = 'publicado'
+        ORDER BY p.id DESC
+        LIMIT 100;
+      `;
+
+      const { rows: deptRows } = await pool.query(query, params);
+
+      if (deptRows.length > 0) {
+        return res.json({
+          success: true,
+          message: null,
+          data: deptRows,
+          error: null,
+        });
+      }
+
+      // No encontró como depto, intentar como región (mismo índice)
+      query = `
+        SELECT ${selectFields}
+        FROM propiedades p
+        INNER JOIN cities c ON p.city_id = c.id
+        INNER JOIN states s ON c.state_id = s.id
+        INNER JOIN regions r ON s.region_id = r.id
+        ${orgJoin}
+        WHERE LOWER(p.operacion) = $1
+          ${typeCondition}
+          AND r.slug = $${geoIdx}
+          AND p.estado = 'publicado'
+        ORDER BY p.id DESC
+        LIMIT 100;
+      `;
+    }
+
+    const { rows } = await pool.query(query, params);
 
     // Enviamos la respuesta estructurada respetando tu firma estándar del apiBackend
     return res.json({
