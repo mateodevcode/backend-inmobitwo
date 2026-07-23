@@ -150,8 +150,9 @@ CREATE TABLE IF NOT EXISTS organizacion_miembros (
     CONSTRAINT estado_miembro_valido CHECK (estado IN ('activo', 'suspendido'))
 );
 -- ============================================================================
--- 4. GEOGRAFÍA: countries → states → cities
+-- 4. GEOGRAFÍA: countries → regions → states → cities
 -- Alcance inicial: España y Colombia (ver scripts/seed-geo.js + data/seed_*.json)
+-- v4.0: Añadida tabla regions (regiones naturales Colombia / CCAA España)
 -- ============================================================================
 CREATE TABLE IF NOT EXISTS countries (
     id SERIAL PRIMARY KEY,
@@ -162,13 +163,19 @@ CREATE TABLE IF NOT EXISTS countries (
     latitude DECIMAL(10, 8),
     longitude DECIMAL(11, 8)
 );
+CREATE TABLE IF NOT EXISTS regions (
+    id SERIAL PRIMARY KEY,
+    country_id INTEGER NOT NULL REFERENCES countries(id) ON DELETE CASCADE,
+    name VARCHAR(150) NOT NULL,
+    slug VARCHAR(150)
+);
 -- "states" cubre tanto provincias (España) como departamentos (Colombia)
 CREATE TABLE IF NOT EXISTS states (
     id SERIAL PRIMARY KEY,
     country_id INTEGER NOT NULL REFERENCES countries(id) ON DELETE CASCADE,
+    region_id INTEGER REFERENCES regions(id) ON DELETE SET NULL,
     name VARCHAR(150) NOT NULL,
     slug VARCHAR(150),
-    -- 👈 NUEVO v3.3: Mapeo de URLs Amigables SEO (Ej: "antioquia")
     latitude DECIMAL(10, 8),
     longitude DECIMAL(11, 8)
 );
@@ -177,11 +184,13 @@ CREATE TABLE IF NOT EXISTS cities (
     state_id INTEGER NOT NULL REFERENCES states(id) ON DELETE CASCADE,
     name VARCHAR(150) NOT NULL,
     slug VARCHAR(150),
-    -- 👈 NUEVO v3.3: Mapeo de URLs Amigables SEO (Ej: "bogota")
     latitude DECIMAL(10, 8) NOT NULL,
     longitude DECIMAL(11, 8) NOT NULL
 );
+CREATE INDEX IF NOT EXISTS idx_regions_country_id ON regions(country_id);
+CREATE INDEX IF NOT EXISTS idx_regions_slug ON regions(slug);
 CREATE INDEX IF NOT EXISTS idx_states_country_id ON states(country_id);
+CREATE INDEX IF NOT EXISTS idx_states_region_id ON states(region_id);
 CREATE INDEX IF NOT EXISTS idx_cities_state_id ON cities(state_id);
 CREATE INDEX IF NOT EXISTS idx_states_name ON states(name);
 CREATE INDEX IF NOT EXISTS idx_cities_name ON cities(name);
@@ -196,6 +205,9 @@ CREATE INDEX IF NOT EXISTS idx_cities_name_trgm ON cities USING gin (name gin_tr
 -- 👈 NUEVO v3.5: Índice GIN con unaccent() para búsqueda insensible a tildes
 -- Permite que /suggest-cities encuentre "Málaga" aunque el usuario escriba "malaga"
 CREATE INDEX IF NOT EXISTS idx_cities_name_unaccent ON cities USING gin (f_unaccent(name) gin_trgm_ops);
+
+CREATE INDEX IF NOT EXISTS idx_regions_name_trgm ON regions USING gin (name gin_trgm_ops);
+CREATE INDEX IF NOT EXISTS idx_states_name_trgm ON states USING gin (name gin_trgm_ops);
 -- ============================================================================
 -- 5. PROPIEDADES
 -- ============================================================================

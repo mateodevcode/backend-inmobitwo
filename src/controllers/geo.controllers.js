@@ -83,6 +83,172 @@ export const getCities = async (req, res) => {
   }
 };
 
+export const getLocationInfo = async (req, res) => {
+  const { city, dept, region, operation, type } = req.query;
+
+  if (!city && !dept && !region) {
+    return res.status(400).json({
+      success: false,
+      message: "Se requiere al menos city, dept o region",
+      data: null,
+      error: null,
+    });
+  }
+
+  try {
+    const params = [];
+
+    let mainParamCount;
+    if (region) {
+      params.push(region);
+      mainParamCount = 1;
+    } else if (dept && !city) {
+      params.push(dept);
+      mainParamCount = 1;
+    } else {
+      params.push(city, dept);
+      mainParamCount = 2;
+    }
+
+    const filterConditions = [];
+
+    if (operation) {
+      params.push(operation);
+      filterConditions.push(
+        `AND LOWER(p.operacion) = LOWER($${params.length})`,
+      );
+    }
+
+    if (type) {
+      params.push(type);
+      filterConditions.push(
+        `AND LOWER(p.tipo) = LOWER($${params.length})`,
+      );
+    }
+
+    const filterClause = filterConditions.join(" ");
+
+    let query;
+
+    if (region) {
+      query = `
+        WITH region_data AS (
+          SELECT id as region_id, name as region_name, slug as region_slug
+          FROM regions WHERE slug = $1
+        )
+        SELECT
+          rd.region_id, rd.region_name, rd.region_slug,
+          NULL as city_id, NULL as city_name, NULL as city_slug,
+          NULL as state_id, NULL as state_name, NULL as state_slug,
+          'region' as tipo,
+          (SELECT COUNT(*) FROM propiedades p
+           INNER JOIN cities c ON p.city_id = c.id
+           INNER JOIN states s ON c.state_id = s.id
+           WHERE s.region_id = rd.region_id AND p.estado = 'publicado'
+           ${filterClause}
+          )::int as total_matching,
+          0::int as total_city,
+          (SELECT COUNT(*) FROM propiedades p
+           INNER JOIN cities c ON p.city_id = c.id
+           INNER JOIN states s ON c.state_id = s.id
+           WHERE s.region_id = rd.region_id AND p.estado = 'publicado'
+          )::int as total_state_all
+        FROM region_data rd
+      `;
+    } else if (dept && !city) {
+      query = `
+        WITH state_data AS (
+          SELECT s.id as state_id, s.name as state_name, s.slug as state_slug,
+                 r.name as region_name, r.slug as region_slug
+          FROM states s
+          LEFT JOIN regions r ON s.region_id = r.id
+          WHERE s.slug = $1
+        )
+        SELECT
+          NULL as region_id, sd.region_name, sd.region_slug,
+          NULL as city_id, NULL as city_name, NULL as city_slug,
+          sd.state_id, sd.state_name, sd.state_slug,
+          'departamento' as tipo,
+          (SELECT COUNT(*) FROM propiedades p
+           INNER JOIN cities c ON p.city_id = c.id
+           WHERE c.state_id = sd.state_id AND p.estado = 'publicado'
+           ${filterClause}
+          )::int as total_matching,
+          (SELECT COUNT(*) FROM propiedades p
+           INNER JOIN cities c ON p.city_id = c.id
+           WHERE c.state_id = sd.state_id AND p.estado = 'publicado'
+          )::int as total_state,
+          (SELECT COUNT(*) FROM propiedades p
+           INNER JOIN cities c ON p.city_id = c.id
+           WHERE c.state_id = sd.state_id AND p.estado = 'publicado'
+          )::int as total_state_all
+        FROM state_data sd
+      `;
+    } else {
+      query = `
+        WITH city_state AS (
+          SELECT 
+            c.id as city_id, c.name as city_name, c.slug as city_slug,
+            s.id as state_id, s.name as state_name, s.slug as state_slug,
+            r.name as region_name, r.slug as region_slug
+          FROM cities c
+          INNER JOIN states s ON c.state_id = s.id
+          LEFT JOIN regions r ON s.region_id = r.id
+          WHERE c.slug = $1 AND s.slug = $2
+        )
+        SELECT 
+          NULL as region_id, cs.region_name, cs.region_slug,
+          cs.city_id, cs.city_name, cs.city_slug,
+          cs.state_id, cs.state_name, cs.state_slug,
+          'ciudad' as tipo,
+          (SELECT COUNT(*) FROM propiedades p 
+           WHERE p.city_id = cs.city_id AND p.estado = 'publicado'
+             ${filterClause}
+          )::int as total_matching,
+          (SELECT COUNT(*) FROM propiedades p 
+           WHERE p.city_id = cs.city_id AND p.estado = 'publicado'
+          )::int as total_city,
+          (SELECT COUNT(*) FROM propiedades p
+           INNER JOIN cities c2 ON p.city_id = c2.id
+           WHERE c2.state_id = cs.state_id AND p.estado = 'publicado'
+             ${filterClause}
+          )::int as total_state,
+          (SELECT COUNT(*) FROM propiedades p
+           INNER JOIN cities c2 ON p.city_id = c2.id
+           WHERE c2.state_id = cs.state_id AND p.estado = 'publicado'
+          )::int as total_state_all
+        FROM city_state cs
+      `;
+    }
+
+    const { rows } = await pool.query(query, params);
+
+    if (rows.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: "Ubicación no encontrada",
+        data: null,
+        error: null,
+      });
+    }
+
+    return res.json({
+      success: true,
+      message: null,
+      data: rows[0],
+      error: null,
+    });
+  } catch (error) {
+    console.error("Error en getLocationInfo:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Error interno al obtener información de ubicación",
+      data: null,
+      error: error.message,
+    });
+  }
+};
+
 export const suggestCities = async (req, res) => {
   const { q } = req.query;
 
@@ -91,24 +257,113 @@ export const suggestCities = async (req, res) => {
   }
 
   try {
+    const countryId = 2;
+
     const query = `
-      SELECT 
-        c.id, 
-        c.name as city_name, 
-        c.slug as city_slug,
-        s.name as state_name,
-        s.slug as state_slug
-      FROM cities c
-      INNER JOIN states s ON c.state_id = s.id
-      WHERE f_unaccent(c.name) ILIKE f_unaccent($1)
-      ORDER BY 
-        -- Prioriza coincidencias que empiezan con el texto sobre las que solo lo contienen
-        CASE WHEN f_unaccent(c.name) ILIKE f_unaccent($2) THEN 0 ELSE 1 END,
-        c.name ASC
-      LIMIT 5;
+      SELECT * FROM (
+        -- Regiones (regiones naturales / CCAA)
+        SELECT 
+          r.id,
+          r.name as region_name,
+          r.slug as region_slug,
+          NULL as state_name,
+          NULL as state_slug,
+          NULL as city_name,
+          NULL as city_slug,
+          'region' as tipo,
+          0 as match_level,
+          0 as direct_match,
+          (SELECT COUNT(*) FROM propiedades p
+           INNER JOIN cities c ON p.city_id = c.id
+           INNER JOIN states s2 ON c.state_id = s2.id
+           WHERE s2.region_id = r.id AND p.estado = 'publicado'
+          )::int as total_propiedades
+        FROM regions r
+        WHERE r.country_id = $1
+          AND f_unaccent(r.name) ILIKE f_unaccent($2)
+
+        UNION ALL
+
+        -- Departamentos / Provincias
+        SELECT
+          s.id,
+          r.name as region_name,
+          r.slug as region_slug,
+          s.name as state_name,
+          s.slug as state_slug,
+          NULL as city_name,
+          NULL as city_slug,
+          'departamento' as tipo,
+          1 as match_level,
+          0 as direct_match,
+          (SELECT COUNT(*) FROM propiedades p
+           INNER JOIN cities c ON p.city_id = c.id
+           WHERE c.state_id = s.id AND p.estado = 'publicado'
+          )::int as total_propiedades
+        FROM states s
+        LEFT JOIN regions r ON s.region_id = r.id
+        WHERE s.country_id = $1
+          AND f_unaccent(s.name) ILIKE f_unaccent($2)
+
+        UNION ALL
+
+        -- Ciudades (coincidencia directa por nombre de ciudad)
+        SELECT
+          c.id,
+          r.name as region_name,
+          r.slug as region_slug,
+          s.name as state_name,
+          s.slug as state_slug,
+          c.name as city_name,
+          c.slug as city_slug,
+          'ciudad' as tipo,
+          2 as match_level,
+          0 as direct_match,
+          COUNT(p.id)::int as total_propiedades
+        FROM cities c
+        INNER JOIN states s ON c.state_id = s.id
+        LEFT JOIN regions r ON s.region_id = r.id
+        LEFT JOIN propiedades p ON c.id = p.city_id AND p.estado = 'publicado'
+        WHERE s.country_id = $1
+          AND f_unaccent(c.name) ILIKE f_unaccent($2)
+        GROUP BY c.id, c.name, c.slug, s.name, s.slug, r.name, r.slug
+
+        UNION ALL
+
+        -- Ciudades (coincidencia indirecta: el departamento hizo match, la ciudad no)
+        SELECT
+          c.id,
+          r.name as region_name,
+          r.slug as region_slug,
+          s.name as state_name,
+          s.slug as state_slug,
+          c.name as city_name,
+          c.slug as city_slug,
+          'ciudad' as tipo,
+          2 as match_level,
+          1 as direct_match,
+          COUNT(p.id)::int as total_propiedades
+        FROM cities c
+        INNER JOIN states s ON c.state_id = s.id
+        LEFT JOIN regions r ON s.region_id = r.id
+        LEFT JOIN propiedades p ON c.id = p.city_id AND p.estado = 'publicado'
+        WHERE s.country_id = $1
+          AND f_unaccent(s.name) ILIKE f_unaccent($2)
+          AND NOT f_unaccent(c.name) ILIKE f_unaccent($2)
+        GROUP BY c.id, c.name, c.slug, s.name, s.slug, r.name, r.slug
+      ) results
+      ORDER BY
+        match_level ASC,
+        direct_match ASC,
+        CASE
+          WHEN f_unaccent(COALESCE(region_name, state_name, city_name)) ILIKE f_unaccent($3) THEN 0
+          ELSE 1
+        END,
+        COALESCE(region_name, state_name, city_name) ASC
+      LIMIT 12;
     `;
 
-    const { rows } = await pool.query(query, [`%${q}%`, `${q}%`]);
+    const { rows } = await pool.query(query, [countryId, `%${q}%`, `${q}%`]);
 
     return res.json({
       success: true,
