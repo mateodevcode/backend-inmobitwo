@@ -37,6 +37,7 @@ function readJSON(filename) {
 
 async function seed() {
   const countries = readJSON("seed_countries.json");
+  const regions = readJSON("seed_regions.json");
   const states = readJSON("seed_states.json");
   const cities = readJSON("seed_cities.json");
 
@@ -47,7 +48,7 @@ async function seed() {
 
     console.log("Limpiando tablas existentes...");
     await client.query(
-      "TRUNCATE cities, states, countries RESTART IDENTITY CASCADE",
+      "TRUNCATE cities, states, regions, countries RESTART IDENTITY CASCADE",
     );
 
     console.log(`Insertando ${countries.length} países...`);
@@ -67,15 +68,25 @@ async function seed() {
       );
     }
 
+    console.log(`Insertando ${regions.length} regiones con auto-slug...`);
+    for (const r of regions) {
+      const regionSlug = generateSlug(r.name);
+      await client.query(
+        `INSERT INTO regions (id, country_id, name, slug)
+         VALUES ($1, $2, $3, $4)`,
+        [r.id, r.country_id, r.name, regionSlug],
+      );
+    }
+
     console.log(
       `Insertando ${states.length} provincias/departamentos con auto-slug...`,
     );
     for (const s of states) {
-      const stateSlug = generateSlug(s.name); // 👈 Generación dinámica v3.3
+      const stateSlug = generateSlug(s.name);
       await client.query(
-        `INSERT INTO states (id, country_id, name, slug, latitude, longitude)
-         VALUES ($1, $2, $3, $4, $5, $6)`,
-        [s.id, s.country_id, s.name, stateSlug, s.latitude, s.longitude],
+        `INSERT INTO states (id, country_id, region_id, name, slug, latitude, longitude)
+         VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+        [s.id, s.country_id, s.region_id, s.name, stateSlug, s.latitude, s.longitude],
       );
     }
 
@@ -114,6 +125,9 @@ async function seed() {
     // Reajustar las secuencias de SERIAL ya que insertamos IDs explícitos
     await client.query(
       `SELECT setval('countries_id_seq', (SELECT MAX(id) FROM countries))`,
+    );
+    await client.query(
+      `SELECT setval('regions_id_seq', (SELECT MAX(id) FROM regions))`,
     );
     await client.query(
       `SELECT setval('states_id_seq', (SELECT MAX(id) FROM states))`,

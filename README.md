@@ -87,6 +87,28 @@ src/
 | Leads | `/leads` | JWT |
 | Geografía | `/api/countries`, `/api/states`, `/api/cities` | No |
 | Geocoding | `/api/geocode` | No |
+| Sugerencias | `/api/suggest-cities?q=` | No |
+
+### Configuración de país para sugerencias de ciudades
+
+El endpoint `/api/suggest-cities` filtra ciudades por país. El país se define en `src/controllers/geo.controllers.js:94`:
+
+```js
+const countryId = 2; // Colombia
+```
+
+IDs de países disponibles en la tabla `countries`:
+
+| ID | País |
+|----|------|
+| 1 | Spain |
+| 2 | Colombia |
+
+Para cambiar el país, editar la variable `countryId` en esa línea y reiniciar el servidor.
+
+### Filtrado insensible a tildes
+
+La búsqueda usa la extensión `unaccent` de PostgreSQL, por lo que escribir "medellin" encuentra "Medellín", "malaga" encuentra "Málaga", etc. El índice `idx_cities_name_unaccent` en la BD asegura buen rendimiento.
 
 ## Deploy
 
