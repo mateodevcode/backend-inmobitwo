@@ -283,7 +283,7 @@ export const getLocationInfo = async (req, res) => {
 };
 
 export const suggestCities = async (req, res) => {
-  const { q, operation } = req.query;
+  const { q, operation, type } = req.query;
 
   if (!q || q.trim().length < 2) {
     return res.json({ success: true, message: null, data: [], error: null });
@@ -297,6 +297,20 @@ export const suggestCities = async (req, res) => {
     if (operation) {
       params.push(operation);
       operacionFilter = `AND LOWER(p.operacion) = LOWER($${params.length})`;
+    }
+
+    let typeFilter = "";
+    if (type) {
+      const types = type.split(",").map((t) => t.trim().toLowerCase()).filter(Boolean);
+      if (types.length === 1) {
+        params.push(types[0]);
+        typeFilter = `AND LOWER(p.tipo) = LOWER($${params.length})`;
+      } else if (types.length > 1) {
+        const startIdx = params.length + 1;
+        types.forEach((t) => params.push(t));
+        const placeholders = types.map((_, i) => `LOWER($${startIdx + i})`);
+        typeFilter = `AND LOWER(p.tipo) IN (${placeholders.join(", ")})`;
+      }
     }
 
     const query = `
@@ -317,8 +331,9 @@ export const suggestCities = async (req, res) => {
            INNER JOIN cities c ON p.city_id = c.id
            INNER JOIN states s2 ON c.state_id = s2.id
            WHERE s2.region_id = r.id AND p.estado = 'publicado'
-           ${operacionFilter}
-          )::int as total_propiedades
+            ${operacionFilter}
+            ${typeFilter}
+           )::int as total_propiedades
         FROM regions r
         WHERE r.country_id = $1
           AND f_unaccent(r.name) ILIKE f_unaccent($2)
@@ -340,8 +355,9 @@ export const suggestCities = async (req, res) => {
           (SELECT COUNT(*) FROM propiedades p
            INNER JOIN cities c ON p.city_id = c.id
            WHERE c.state_id = s.id AND p.estado = 'publicado'
-           ${operacionFilter}
-          )::int as total_propiedades
+            ${operacionFilter}
+            ${typeFilter}
+           )::int as total_propiedades
         FROM states s
         LEFT JOIN regions r ON s.region_id = r.id
         WHERE s.country_id = $1
@@ -367,6 +383,7 @@ export const suggestCities = async (req, res) => {
         LEFT JOIN regions r ON s.region_id = r.id
         LEFT JOIN propiedades p ON c.id = p.city_id AND p.estado = 'publicado'
           ${operacionFilter}
+          ${typeFilter}
         WHERE s.country_id = $1
           AND f_unaccent(c.name) ILIKE f_unaccent($2)
         GROUP BY c.id, c.name, c.slug, s.name, s.slug, r.name, r.slug
@@ -391,6 +408,7 @@ export const suggestCities = async (req, res) => {
         LEFT JOIN regions r ON s.region_id = r.id
         LEFT JOIN propiedades p ON c.id = p.city_id AND p.estado = 'publicado'
           ${operacionFilter}
+          ${typeFilter}
         WHERE s.country_id = $1
           AND f_unaccent(s.name) ILIKE f_unaccent($2)
           AND NOT f_unaccent(c.name) ILIKE f_unaccent($2)

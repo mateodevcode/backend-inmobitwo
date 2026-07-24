@@ -671,9 +671,12 @@ export const deletePropiedades = async (req, res) => {
 // ok
 export const publicarAnuncios = async (req, res) => {
   try {
+    const raw = req.body;
+
+    const operacion = raw.operacion || "venta";
+
     const {
       tipo,
-      operacion,
       country_id,
       state_id,
       city_id,
@@ -682,13 +685,13 @@ export const publicarAnuncios = async (req, res) => {
       latitude,
       longitude,
       estado,
-    } = req.body;
+    } = raw;
 
     const es_de_organizacion =
-      req.body.es_de_organizacion === "true" ||
-      req.body.es_de_organizacion === true;
+      raw.es_de_organizacion === "true" ||
+      raw.es_de_organizacion === true;
 
-    let organizacion_id = req.body.organizacion_id;
+    let organizacion_id = raw.organizacion_id;
     if (
       !organizacion_id ||
       organizacion_id === "null" ||
