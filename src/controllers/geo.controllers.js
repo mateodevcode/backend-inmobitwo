@@ -282,6 +282,325 @@ export const getLocationInfo = async (req, res) => {
   }
 };
 
+// ============================================================================
+// GeoJSON endpoints (para SelectZonaMap del frontend)
+// ============================================================================
+
+export const getStatesGeoJSON = async (_req, res) => {
+  try {
+    const { rows } = await pool.query(
+      `SELECT name, dane_code, slug,
+              ST_AsGeoJSON(geom)::json AS geometry
+       FROM states
+       WHERE geom IS NOT NULL
+       ORDER BY name ASC`,
+    );
+
+    const features = rows.map((r) => ({
+      type: "Feature",
+      properties: {
+        DPTO_CCDGO: r.dane_code,
+        DPTO_CNMBR: r.name,
+        slug: r.slug,
+      },
+      geometry: r.geometry,
+    }));
+
+    res.json({
+      success: true,
+      message: null,
+      data: { type: "FeatureCollection", features },
+      error: null,
+    });
+  } catch (error) {
+    console.error("Error en getStatesGeoJSON:", error);
+    res.status(500).json({
+      success: false,
+      message: "Error al obtener geometría de departamentos",
+      data: null,
+      error: error.message,
+    });
+  }
+};
+
+export const getCitiesGeoJSON = async (req, res) => {
+  const { stateDaneCode } = req.query;
+
+  if (!stateDaneCode) {
+    return res.status(400).json({
+      success: false,
+      message: "stateDaneCode es requerido",
+      data: null,
+      error: null,
+    });
+  }
+
+  try {
+    const { rows } = await pool.query(
+      `SELECT c.name, c.dane_code, c.slug, c.latitude, c.longitude,
+              ST_AsGeoJSON(c.geom)::json AS geometry
+       FROM cities c
+       INNER JOIN states s ON c.state_id = s.id
+       WHERE s.dane_code = $1 AND c.geom IS NOT NULL
+       ORDER BY c.name ASC`,
+      [stateDaneCode],
+    );
+
+    const features = rows.map((r) => ({
+      type: "Feature",
+      properties: {
+        MPIO_CCNCT: r.dane_code,
+        MPIO_CNMBR: r.name,
+        DPTO_CCDGO: stateDaneCode,
+        slug: r.slug,
+      },
+      geometry: r.geometry,
+    }));
+
+    res.json({
+      success: true,
+      message: null,
+      data: { type: "FeatureCollection", features },
+      error: null,
+    });
+  } catch (error) {
+    console.error("Error en getCitiesGeoJSON:", error);
+    res.status(500).json({
+      success: false,
+      message: "Error al obtener geometría de municipios",
+      data: null,
+      error: error.message,
+    });
+  }
+};
+
+export const getBarrios = async (req, res) => {
+  const { cityDaneCode } = req.query;
+
+  if (!cityDaneCode) {
+    return res.status(400).json({
+      success: false,
+      message: "cityDaneCode es requerido",
+      data: null,
+      error: null,
+    });
+  }
+
+  try {
+    const { rows } = await pool.query(
+      `SELECT b.name, b.dane_code, b.slug, b.latitude, b.longitude,
+              ST_AsGeoJSON(b.geom)::json AS geometry
+       FROM barrios b
+       INNER JOIN cities c ON b.city_id = c.id
+       WHERE c.dane_code = $1
+       ORDER BY b.name ASC`,
+      [cityDaneCode],
+    );
+
+    const features = rows.map((r) => ({
+      type: "Feature",
+      properties: {
+        BAR_COD: r.dane_code,
+        NOMB_BARR: r.name,
+        slug: r.slug,
+      },
+      geometry: r.geometry,
+    }));
+
+    res.json({
+      success: true,
+      message: null,
+      data: { type: "FeatureCollection", features },
+      error: null,
+    });
+  } catch (error) {
+    console.error("Error en getBarrios:", error);
+    res.status(500).json({
+      success: false,
+      message: "Error al obtener barrios",
+      data: null,
+      error: error.message,
+    });
+  }
+};
+
+export const getGeoCount = async (req, res) => {
+  const { type, daneCode, operation, inmueble } = req.query;
+
+  if (!type || !daneCode) {
+    return res.status(400).json({
+      success: false,
+      message: "type y daneCode son requeridos",
+      data: null,
+      error: null,
+    });
+  }
+
+  try {
+    const params = [];
+    const filters = ["p.estado = 'publicado'"];
+
+    if (operation) {
+      params.push(operation);
+      filters.push(`LOWER(p.operacion) = LOWER($${params.length})`);
+    }
+
+    if (inmueble) {
+      const tipos = inmueble.split(",").map((t) => t.trim().toLowerCase()).filter(Boolean);
+      if (tipos.length === 1) {
+        params.push(tipos[0]);
+        filters.push(`LOWER(p.tipo) = LOWER($${params.length})`);
+      } else if (tipos.length > 1) {
+        const start = params.length + 1;
+        tipos.forEach((t) => params.push(t));
+        const ph = tipos.map((_, i) => `LOWER($${start + i})`);
+        filters.push(`LOWER(p.tipo) IN (${ph.join(", ")})`);
+      }
+    }
+
+    const filterSQL = filters.join(" AND ");
+    let query;
+
+    if (type === "departamento") {
+      params.push(daneCode);
+      query = `
+        SELECT COUNT(p.id)::int AS total
+        FROM propiedades p
+        INNER JOIN cities c ON p.city_id = c.id
+        INNER JOIN states s ON c.state_id = s.id
+        WHERE s.dane_code = $${params.length} AND ${filterSQL}
+      `;
+    } else if (type === "municipio") {
+      params.push(daneCode);
+      query = `
+        SELECT COUNT(p.id)::int AS total
+        FROM propiedades p
+        INNER JOIN cities c ON p.city_id = c.id
+        WHERE c.dane_code = $${params.length} AND ${filterSQL}
+      `;
+    } else if (type === "barrio") {
+      params.push(daneCode);
+      query = `
+        SELECT COUNT(p.id)::int AS total
+        FROM propiedades p
+        INNER JOIN barrios b ON p.barrio_id = b.id
+        WHERE b.dane_code = $${params.length} AND ${filterSQL}
+      `;
+    } else {
+      params.push(daneCode);
+      query = `
+        SELECT COUNT(p.id)::int AS total
+        FROM propiedades p
+        INNER JOIN cities c ON p.city_id = c.id
+        INNER JOIN states s ON c.state_id = s.id
+        WHERE s.dane_code = $${params.length} AND ${filterSQL}
+      `;
+    }
+
+    const { rows } = await pool.query(query, params);
+    const total = rows[0]?.total || 0;
+
+    res.json({
+      success: true,
+      message: null,
+      data: { total },
+      error: null,
+    });
+  } catch (error) {
+    console.error("Error en getGeoCount:", error);
+    res.status(500).json({
+      success: false,
+      message: "Error al obtener conteo de propiedades",
+      data: null,
+      error: error.message,
+    });
+  }
+};
+
+// ============================================================================
+// GeoJSON de una zona específica para el mini-mapa en ListaPropiedades
+// ============================================================================
+
+export const getLocationGeoJSON = async (req, res) => {
+  const { tipo, city, dept, region } = req.query;
+
+  if (!tipo) {
+    return res.status(400).json({ success: false, message: "tipo es requerido", data: null, error: null });
+  }
+
+  try {
+    let query;
+    const params = [];
+
+    if (tipo === "ciudad") {
+      if (!city || !dept) return res.status(400).json({ success: false, message: "city y dept son requeridos", data: null, error: null });
+      params.push(city, dept);
+      query = `
+        SELECT c.name, c.slug, c.dane_code,
+               ST_AsGeoJSON(c.geom)::json AS geometry,
+               ST_XMin(c.geom) AS west, ST_YMin(c.geom) AS south,
+               ST_XMax(c.geom) AS east, ST_YMax(c.geom) AS north
+        FROM cities c
+        INNER JOIN states s ON c.state_id = s.id
+        WHERE c.slug = $1 AND s.slug = $2 AND c.geom IS NOT NULL
+        LIMIT 1
+      `;
+    } else if (tipo === "departamento") {
+      if (!dept) return res.status(400).json({ success: false, message: "dept es requerido", data: null, error: null });
+      params.push(dept);
+      query = `
+        SELECT name, slug, dane_code,
+               ST_AsGeoJSON(geom)::json AS geometry,
+               ST_XMin(geom) AS west, ST_YMin(geom) AS south,
+               ST_XMax(geom) AS east, ST_YMax(geom) AS north
+        FROM states
+        WHERE slug = $1 AND geom IS NOT NULL
+        LIMIT 1
+      `;
+    } else {
+      if (!region) return res.status(400).json({ success: false, message: "region es requerido", data: null, error: null });
+      params.push(region);
+      query = `
+        SELECT r.name, r.slug,
+               (SELECT string_agg(s.dane_code, ',') FROM states s WHERE s.region_id = r.id) AS dane_codes,
+               NULL::json AS geometry,
+               MIN(ST_XMin(s.geom)) AS west, MIN(ST_YMin(s.geom)) AS south,
+               MAX(ST_XMax(s.geom)) AS east, MAX(ST_YMax(s.geom)) AS north
+        FROM regions r
+        INNER JOIN states s ON s.region_id = r.id
+        WHERE r.slug = $1 AND s.geom IS NOT NULL
+        GROUP BY r.id, r.name, r.slug
+        LIMIT 1
+      `;
+    }
+
+    const { rows } = await pool.query(query, params);
+
+    if (rows.length === 0) {
+      return res.status(404).json({ success: false, message: "Zona no encontrada", data: null, error: null });
+    }
+
+    const row = rows[0];
+    res.json({
+      success: true,
+      message: null,
+      data: {
+        name: row.name,
+        slug: row.slug,
+        daneCode: row.dane_code || row.dane_codes,
+        geometry: row.geometry,
+        bounds: row.west && row.south && row.east && row.north
+          ? [[row.south, row.west], [row.north, row.east]]
+          : null,
+      },
+      error: null,
+    });
+  } catch (error) {
+    console.error("Error en getLocationGeoJSON:", error);
+    res.status(500).json({ success: false, message: "Error al obtener geometría de ubicación", data: null, error: error.message });
+  }
+};
+
 export const suggestCities = async (req, res) => {
   const { q, operation, type } = req.query;
 

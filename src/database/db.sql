@@ -1,19 +1,20 @@
 -- ============================================================================
 -- SCHEMA COMPLETO — PLATAFORMA INMOBILIARIA
--- Versión: 3.5 — Agregado unaccent para búsqueda insensible a tildes (á=a, é=e, etc.)
+-- Versión: 3.6 — Geometría PostGIS + DANE codes + Barrios completos
 -- ============================================================================
 -- ORDEN DE CREACIÓN:
 -- 0. extensiones (PostGIS, pg_trgm, unaccent)
 -- 1. usuarios
 -- 2. organizaciones (inmobiliarias / tenants)
 -- 3. organizacion_miembros (relación usuarios ↔ organizaciones)
--- 4. countries / states / cities
--- 5. propiedades
--- 6. propiedades_galeria
--- 7. usuario_favoritos
--- 8. refresh_tokens (para JWT)
--- 9. función update_updated_at
--- 10. triggers
+-- 4. countries / regions / states / cities
+-- 5. barrios (nuevo)
+-- 6. propiedades
+-- 7. propiedades_galeria
+-- 8. usuario_favoritos
+-- 9. refresh_tokens (para JWT)
+-- 10. función update_updated_at
+-- 11. triggers
 -- ============================================================================
 -- ============================================================================
 -- 0. EXTENSIONES PREVIAS REQUERIDAS
@@ -151,8 +152,6 @@ CREATE TABLE IF NOT EXISTS organizacion_miembros (
 );
 -- ============================================================================
 -- 4. GEOGRAFÍA: countries → regions → states → cities
--- Alcance inicial: España y Colombia (ver scripts/seed-geo.js + data/seed_*.json)
--- v4.0: Añadida tabla regions (regiones naturales Colombia / CCAA España)
 -- ============================================================================
 CREATE TABLE IF NOT EXISTS countries (
     id SERIAL PRIMARY KEY,
@@ -176,38 +175,36 @@ CREATE TABLE IF NOT EXISTS states (
     region_id INTEGER REFERENCES regions(id) ON DELETE SET NULL,
     name VARCHAR(150) NOT NULL,
     slug VARCHAR(150),
+    dane_code VARCHAR(5),
     latitude DECIMAL(10, 8),
-    longitude DECIMAL(11, 8)
+    longitude DECIMAL(11, 8),
+    geom GEOMETRY(MultiPolygon, 4326)
 );
 CREATE TABLE IF NOT EXISTS cities (
     id SERIAL PRIMARY KEY,
     state_id INTEGER NOT NULL REFERENCES states(id) ON DELETE CASCADE,
     name VARCHAR(150) NOT NULL,
     slug VARCHAR(150),
+    dane_code VARCHAR(8),
     latitude DECIMAL(10, 8) NOT NULL,
-    longitude DECIMAL(11, 8) NOT NULL
+    longitude DECIMAL(11, 8) NOT NULL,
+    geom GEOMETRY(MultiPolygon, 4326)
 );
-CREATE INDEX IF NOT EXISTS idx_regions_country_id ON regions(country_id);
-CREATE INDEX IF NOT EXISTS idx_regions_slug ON regions(slug);
-CREATE INDEX IF NOT EXISTS idx_states_country_id ON states(country_id);
-CREATE INDEX IF NOT EXISTS idx_states_region_id ON states(region_id);
-CREATE INDEX IF NOT EXISTS idx_cities_state_id ON cities(state_id);
-CREATE INDEX IF NOT EXISTS idx_states_name ON states(name);
-CREATE INDEX IF NOT EXISTS idx_cities_name ON cities(name);
-CREATE INDEX IF NOT EXISTS idx_states_slug ON states(slug);
--- 👈 NUEVO v3.3: Indexador B-Tree para llamadas de rutas
-CREATE INDEX IF NOT EXISTS idx_cities_slug ON cities(slug);
--- 👈 NUEVO v3.3: Indexador B-Tree para llamadas de rutas
--- 👈 NUEVO v3.4: Índice GIN por trigramas para autocompletado (ILIKE '%texto%')
--- Permite que /suggest-cities busque coincidencias en cualquier parte del
--- nombre de la ciudad de forma eficiente (no solo al inicio del string).
-CREATE INDEX IF NOT EXISTS idx_cities_name_trgm ON cities USING gin (name gin_trgm_ops);
--- 👈 NUEVO v3.5: Índice GIN con unaccent() para búsqueda insensible a tildes
--- Permite que /suggest-cities encuentre "Málaga" aunque el usuario escriba "malaga"
-CREATE INDEX IF NOT EXISTS idx_cities_name_unaccent ON cities USING gin (f_unaccent(name) gin_trgm_ops);
-
-CREATE INDEX IF NOT EXISTS idx_regions_name_trgm ON regions USING gin (name gin_trgm_ops);
-CREATE INDEX IF NOT EXISTS idx_states_name_trgm ON states USING gin (name gin_trgm_ops);
+-- ============================================================================
+-- 4.1 GEOGRAFÍA: BARRIOS (Neighborhoods)
+-- ============================================================================
+CREATE TABLE IF NOT EXISTS barrios (
+    id SERIAL PRIMARY KEY,
+    city_id INTEGER NOT NULL REFERENCES cities(id) ON DELETE CASCADE,
+    name VARCHAR(150) NOT NULL,
+    slug VARCHAR(150),
+    dane_code VARCHAR(100),
+    latitude DECIMAL(10, 8),
+    longitude DECIMAL(11, 8),
+    -- Polígono del barrio (acepta Polygon y MultiPolygon)
+    geom GEOMETRY(Geometry, 4326), 
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
 -- ============================================================================
 -- 5. PROPIEDADES
 -- ============================================================================
@@ -224,6 +221,7 @@ CREATE TABLE IF NOT EXISTS propiedades (
     country_id INTEGER,
     state_id INTEGER,
     city_id INTEGER,
+    barrio_id INTEGER REFERENCES barrios(id) ON DELETE SET NULL,
     -- Ubicación: texto libre (no existe en ningún catálogo)
     direccion VARCHAR(255),
     numero_direccion VARCHAR(50),
@@ -258,6 +256,7 @@ CREATE TABLE IF NOT EXISTS propiedades (
 CREATE INDEX IF NOT EXISTS idx_propiedades_country_id ON propiedades(country_id);
 CREATE INDEX IF NOT EXISTS idx_propiedades_state_id ON propiedades(state_id);
 CREATE INDEX IF NOT EXISTS idx_propiedades_city_id ON propiedades(city_id);
+CREATE INDEX IF NOT EXISTS idx_propiedades_barrio_id ON propiedades(barrio_id);
 CREATE INDEX IF NOT EXISTS idx_propiedades_organizacion_id ON propiedades(organizacion_id);
 CREATE INDEX IF NOT EXISTS idx_propiedades_geom ON propiedades USING GIST(geom);
 -- 👈 NUEVO v3.3: Índice espacial GIST para velocidad de pines en mapas
@@ -325,5 +324,55 @@ UPDATE ON organizacion_miembros FOR EACH ROW EXECUTE FUNCTION update_updated_at_
 CREATE TRIGGER trg_propiedades_updated_at BEFORE
 UPDATE ON propiedades FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 -- ============================================================================
--- ✅ SCHEMA CREADO CORRECTAMENTE (Versión 3.4 - Inmobitwo Maps Engine + Trigram Search)
+-- 11. ÍNDICES PARA BÚSQUEDA EFICIENTE
+-- ============================================================================
+-- Índices para la tabla countries
+CREATE INDEX IF NOT EXISTS idx_countries_name ON countries(name);
+CREATE INDEX IF NOT EXISTS idx_countries_name_trgm ON countries USING gin (name gin_trgm_ops);
+CREATE INDEX IF NOT EXISTS idx_countries_name_unaccent ON countries USING gin (f_unaccent(name) gin_trgm_ops);
+
+-- Índices para la tabla regions
+CREATE INDEX IF NOT EXISTS idx_regions_country_id ON regions(country_id);
+CREATE INDEX IF NOT EXISTS idx_regions_slug ON regions(slug);
+CREATE INDEX IF NOT EXISTS idx_regions_name ON regions(name);
+CREATE INDEX IF NOT EXISTS idx_regions_name_trgm ON regions USING gin (name gin_trgm_ops);
+CREATE INDEX IF NOT EXISTS idx_regions_name_unaccent ON regions USING gin (f_unaccent(name) gin_trgm_ops);
+
+-- Índices para la tabla states
+CREATE INDEX IF NOT EXISTS idx_states_country_id ON states(country_id);
+CREATE INDEX IF NOT EXISTS idx_states_region_id ON states(region_id);
+CREATE INDEX IF NOT EXISTS idx_states_name ON states(name);
+CREATE INDEX IF NOT EXISTS idx_states_name_trgm ON states USING gin (name gin_trgm_ops);
+CREATE INDEX IF NOT EXISTS idx_states_name_unaccent ON states USING gin (f_unaccent(name) gin_trgm_ops);
+CREATE INDEX IF NOT EXISTS idx_states_slug ON states(slug);
+
+-- Índices para la tabla states
+CREATE INDEX IF NOT EXISTS idx_states_country_id ON states(country_id);
+CREATE INDEX IF NOT EXISTS idx_states_region_id ON states(region_id);
+CREATE INDEX IF NOT EXISTS idx_states_name ON states(name);
+CREATE INDEX IF NOT EXISTS idx_states_name_trgm ON states USING gin (name gin_trgm_ops);
+CREATE INDEX IF NOT EXISTS idx_states_name_unaccent ON states USING gin (f_unaccent(name) gin_trgm_ops);
+CREATE INDEX IF NOT EXISTS idx_states_slug ON states(slug);
+CREATE INDEX IF NOT EXISTS idx_states_dane_code ON states(dane_code);
+CREATE INDEX IF NOT EXISTS idx_states_geom ON states USING GIST(geom);
+
+-- Índices para la tabla cities
+CREATE INDEX IF NOT EXISTS idx_cities_state_id ON cities(state_id);
+CREATE INDEX IF NOT EXISTS idx_cities_name ON cities(name);
+CREATE INDEX IF NOT EXISTS idx_cities_name_trgm ON cities USING gin (name gin_trgm_ops);
+CREATE INDEX IF NOT EXISTS idx_cities_name_unaccent ON cities USING gin (f_unaccent(name) gin_trgm_ops);
+CREATE INDEX IF NOT EXISTS idx_cities_slug ON cities(slug);
+CREATE INDEX IF NOT EXISTS idx_cities_dane_code ON cities(dane_code);
+CREATE INDEX IF NOT EXISTS idx_cities_geom ON cities USING GIST(geom);
+
+-- Índices para la tabla barrios
+CREATE INDEX IF NOT EXISTS idx_barrios_city_id ON barrios(city_id);
+CREATE INDEX IF NOT EXISTS idx_barrios_name ON barrios(name);
+CREATE INDEX IF NOT EXISTS idx_barrios_name_trgm ON barrios USING gin (name gin_trgm_ops);
+CREATE INDEX IF NOT EXISTS idx_barrios_name_unaccent ON barrios USING gin (f_unaccent(name) gin_trgm_ops);
+CREATE INDEX IF NOT EXISTS idx_barrios_slug ON barrios(slug);
+CREATE INDEX IF NOT EXISTS idx_barrios_dane_code ON barrios(dane_code);
+CREATE INDEX IF NOT EXISTS idx_barrios_geom ON barrios USING GIST(geom);
+-- ============================================================================
+-- ✅ SCHEMA CREADO CORRECTAMENTE (Versión 3.6 - Geometría + DANE + Barrios completos)
 -- ============================================================================
