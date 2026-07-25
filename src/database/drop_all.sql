@@ -1,6 +1,6 @@
 -- ============================================================================
 -- SCRIPT DE LIMPIEZA TOTAL (DROP) — INMOBITWO Master Reset
--- Versión: 4.0 (Regiones naturales + Unaccent + pg_trgm + PostGIS)
+-- Versión: 4.1 (Agregado DROP de tabla barrios)
 -- ============================================================================
 -- 1. Eliminación de Triggers de auditoría para evitar bloqueos de dependencias
 DROP TRIGGER IF EXISTS trg_usuarios_updated_at ON usuarios;
@@ -14,6 +14,8 @@ DROP TABLE IF EXISTS refresh_tokens CASCADE;
 DROP TABLE IF EXISTS usuario_favoritos CASCADE;
 DROP TABLE IF EXISTS propiedades_galeria CASCADE;
 DROP TABLE IF EXISTS propiedades CASCADE;
+DROP TABLE IF EXISTS barrios CASCADE;
+-- 👈 NUEVO: Se elimina antes que cities
 DROP TABLE IF EXISTS cities CASCADE;
 DROP TABLE IF EXISTS states CASCADE;
 DROP TABLE IF EXISTS regions CASCADE;

@@ -1,85 +1,266 @@
 [
-  { "id": 1,  "country_id": 1, "region_id": 18, "name": "A Coruña",                              "latitude": 43.3709703, "longitude": -8.3959425 },
-  { "id": 2,  "country_id": 1, "region_id": 14, "name": "Albacete",                              "latitude": 38.9950921, "longitude": -1.8559154 },
-  { "id": 3,  "country_id": 1, "region_id": 16, "name": "Alicante",                              "latitude": 38.3436365, "longitude": -0.4881708 },
-  { "id": 4,  "country_id": 1, "region_id": 7,  "name": "Almeria",                               "latitude": 36.8414197, "longitude": -2.4628135 },
-  { "id": 5,  "country_id": 1, "region_id": 22, "name": "Araba",                                 "latitude": 42.8440722, "longitude": -2.6820829 },
-  { "id": 6,  "country_id": 1, "region_id": 9,  "name": "Asturias",                              "latitude": 43.3133868, "longitude": -5.94192 },
-  { "id": 7,  "country_id": 1, "region_id": 13, "name": "Ávila",                                 "latitude": 40.6232768, "longitude": -4.8354202 },
-  { "id": 8,  "country_id": 1, "region_id": 17, "name": "Badajoz",                               "latitude": 38.878187,  "longitude": -6.9701115 },
-  { "id": 9,  "country_id": 1, "region_id": 15, "name": "Barcelona",                             "latitude": 41.3825802, "longitude": 2.177073 },
-  { "id": 10, "country_id": 1, "region_id": 22, "name": "Bizkaia",                               "latitude": 43.238482,  "longitude": -2.8516316 },
-  { "id": 11, "country_id": 1, "region_id": 13, "name": "Burgos",                                "latitude": 42.3247142, "longitude": -3.6765389 },
-  { "id": 12, "country_id": 1, "region_id": 17, "name": "Caceres",                               "latitude": 39.4745175, "longitude": -6.3716761 },
-  { "id": 13, "country_id": 1, "region_id": 7,  "name": "Cádiz",                                 "latitude": 36.5297438, "longitude": -6.2928976 },
-  { "id": 14, "country_id": 1, "region_id": 12, "name": "Cantabria",                             "latitude": 43.1595664, "longitude": -4.0878382 },
-  { "id": 15, "country_id": 1, "region_id": 16, "name": "Castellón",                             "latitude": 40.2518568, "longitude": -0.0615052 },
-  { "id": 16, "country_id": 1, "region_id": 14, "name": "Ciudad Real",                           "latitude": 38.9854201, "longitude": -3.9285138 },
-  { "id": 17, "country_id": 1, "region_id": 7,  "name": "Córdoba",                               "latitude": 37.9567116, "longitude": -4.8477241 },
-  { "id": 18, "country_id": 1, "region_id": 14, "name": "Cuenca",                                "latitude": 40.0661031, "longitude": -2.1313528 },
-  { "id": 19, "country_id": 1, "region_id": 22, "name": "Gipuzkoa",                              "latitude": 43.1445278, "longitude": -2.2037955 },
-  { "id": 20, "country_id": 1, "region_id": 15, "name": "Girona",                                "latitude": 41.9793006, "longitude": 2.8199439 },
-  { "id": 21, "country_id": 1, "region_id": 7,  "name": "Granada",                               "latitude": 37.1734995, "longitude": -3.5995337 },
-  { "id": 22, "country_id": 1, "region_id": 14, "name": "Guadalajara",                           "latitude": 40.6326979, "longitude": -3.1646067 },
-  { "id": 23, "country_id": 1, "region_id": 7,  "name": "Huelva",                                "latitude": 37.2575874, "longitude": -6.9484945 },
-  { "id": 24, "country_id": 1, "region_id": 8,  "name": "Huesca",                                "latitude": 42.1363786, "longitude": -0.4365837 },
-  { "id": 25, "country_id": 1, "region_id": 10, "name": "Islas Baleares",                        "latitude": 39.613432,  "longitude": 2.8829185 },
-  { "id": 26, "country_id": 1, "region_id": 7,  "name": "Jaén",                                  "latitude": 37.7728858, "longitude": -3.7883289 },
-  { "id": 27, "country_id": 1, "region_id": 23, "name": "La Rioja",                              "latitude": 42.2814642, "longitude": -2.482805 },
-  { "id": 28, "country_id": 1, "region_id": 11, "name": "Las Palmas",                            "latitude": 27.9580004, "longitude": -15.6062305 },
-  { "id": 29, "country_id": 1, "region_id": 13, "name": "León",                                  "latitude": 42.5987041, "longitude": -5.5670839 },
-  { "id": 30, "country_id": 1, "region_id": 15, "name": "Lleida",                                "latitude": 41.6147605, "longitude": 0.6267842 },
-  { "id": 31, "country_id": 1, "region_id": 18, "name": "Lugo",                                  "latitude": 43.0118437, "longitude": -7.5565749 },
-  { "id": 32, "country_id": 1, "region_id": 19, "name": "Madrid",                                "latitude": 40.4167515, "longitude": -3.7038322 },
-  { "id": 33, "country_id": 1, "region_id": 7,  "name": "Málaga",                                "latitude": 36.7213028, "longitude": -4.4216366 },
-  { "id": 34, "country_id": 1, "region_id": 20, "name": "Murcia",                                "latitude": 37.9923795, "longitude": -1.1305431 },
-  { "id": 35, "country_id": 1, "region_id": 21, "name": "Navarra",                               "latitude": 42.6125488, "longitude": -1.8307877 },
-  { "id": 36, "country_id": 1, "region_id": 18, "name": "Ourense",                               "latitude": 42.3438932, "longitude": -7.8571792 },
-  { "id": 37, "country_id": 1, "region_id": 13, "name": "Palencia",                              "latitude": 42.0096832, "longitude": -4.5287949 },
-  { "id": 38, "country_id": 1, "region_id": 18, "name": "Pontevedra",                            "latitude": 42.4318876, "longitude": -8.6431592 },
-  { "id": 39, "country_id": 1, "region_id": 13, "name": "Salamanca",                             "latitude": 40.7665582, "longitude": -6.021765 },
-  { "id": 40, "country_id": 1, "region_id": 11, "name": "Santa Cruz de Tenerife",                "latitude": 28.467178,  "longitude": -16.2507843 },
-  { "id": 41, "country_id": 1, "region_id": 13, "name": "Segovia",                               "latitude": 40.9429296, "longitude": -4.1088942 },
-  { "id": 42, "country_id": 1, "region_id": 7,  "name": "Sevilla",                               "latitude": 37.3886303, "longitude": -5.9953403 },
-  { "id": 43, "country_id": 1, "region_id": 13, "name": "Soria",                                 "latitude": 41.7633842, "longitude": -2.4642041 },
-  { "id": 44, "country_id": 1, "region_id": 15, "name": "Tarragona",                             "latitude": 41.1172364, "longitude": 1.2546057 },
-  { "id": 45, "country_id": 1, "region_id": 8,  "name": "Teruel",                                "latitude": 40.345041,  "longitude": -1.1184744 },
-  { "id": 46, "country_id": 1, "region_id": 14, "name": "Toledo",                                "latitude": 39.8560679, "longitude": -4.0239568 },
-  { "id": 47, "country_id": 1, "region_id": 16, "name": "Valencia",                              "latitude": 39.3342058, "longitude": -0.7973474 },
-  { "id": 48, "country_id": 1, "region_id": 13, "name": "Valladolid",                            "latitude": 41.6517375, "longitude": -4.724495 },
-  { "id": 49, "country_id": 1, "region_id": 13, "name": "Zamora",                                "latitude": 41.6857693, "longitude": -5.942315 },
-  { "id": 50, "country_id": 1, "region_id": 8,  "name": "Zaragoza",                              "latitude": 41.6521342, "longitude": -0.8809428 },
-  { "id": 51, "country_id": 2, "region_id": 5,  "name": "Amazonas",                              "latitude": -1.305299,  "longitude": -71.4659212 },
-  { "id": 52, "country_id": 2, "region_id": 2,  "name": "Antioquia",                             "latitude": 7.0000085,  "longitude": -75.5000086 },
-  { "id": 53, "country_id": 2, "region_id": 4,  "name": "Arauca",                                "latitude": 6.6666755,  "longitude": -71.0000086 },
-  { "id": 54, "country_id": 2, "region_id": 1,  "name": "Atlántico",                             "latitude": 10.6773422, "longitude": -74.9718666 },
-  { "id": 55, "country_id": 2, "region_id": 2,  "name": "Bogotá D.C.",                           "latitude": 4.2834715,  "longitude": -74.1753606 },
-  { "id": 56, "country_id": 2, "region_id": 1,  "name": "Bolívar",                               "latitude": 9.3660477,  "longitude": -74.8023636 },
-  { "id": 57, "country_id": 2, "region_id": 2,  "name": "Boyacá",                                "latitude": 5.4428193,  "longitude": -73.3745224 },
-  { "id": 58, "country_id": 2, "region_id": 2,  "name": "Caldas",                                "latitude": 5.3302514,  "longitude": -75.2873471 },
-  { "id": 59, "country_id": 2, "region_id": 5,  "name": "Caquetá",                               "latitude": 1.1153385,  "longitude": -74.1056838 },
-  { "id": 60, "country_id": 2, "region_id": 4,  "name": "Casanare",                              "latitude": 5.5000085,  "longitude": -71.5000086 },
-  { "id": 61, "country_id": 2, "region_id": 3,  "name": "Cauca",                                 "latitude": 2.715645,   "longitude": -76.662665 },
-  { "id": 62, "country_id": 2, "region_id": 1,  "name": "Cesar",                                 "latitude": 9.3333415,  "longitude": -73.5000086 },
-  { "id": 63, "country_id": 2, "region_id": 3,  "name": "Chocó",                                 "latitude": 6.0000085,  "longitude": -77.0000086 },
-  { "id": 64, "country_id": 2, "region_id": 1,  "name": "Córdoba",                               "latitude": 8.3344713,  "longitude": -75.6666238 },
-  { "id": 65, "country_id": 2, "region_id": 2,  "name": "Cundinamarca",                          "latitude": 5.1096596,  "longitude": -74.0995854 },
-  { "id": 66, "country_id": 2, "region_id": 5,  "name": "Guainía",                               "latitude": 2.5000086,  "longitude": -69.0000086 },
-  { "id": 67, "country_id": 2, "region_id": 5,  "name": "Guaviare",                              "latitude": 1.7899198,  "longitude": -72.3761784 },
-  { "id": 68, "country_id": 2, "region_id": 2,  "name": "Huila",                                 "latitude": 2.4738993,  "longitude": -75.5900113 },
-  { "id": 69, "country_id": 2, "region_id": 1,  "name": "La Guajira",                            "latitude": 11.4354118, "longitude": -72.9002161 },
-  { "id": 70, "country_id": 2, "region_id": 1,  "name": "Magdalena",                             "latitude": 10.5808075, "longitude": -74.0685669 },
-  { "id": 71, "country_id": 2, "region_id": 4,  "name": "Meta",                                  "latitude": 5.1554448,  "longitude": -70.8653784 },
-  { "id": 72, "country_id": 2, "region_id": 3,  "name": "Nariño",                                "latitude": 1.289151,   "longitude": -77.35794 },
-  { "id": 73, "country_id": 2, "region_id": 2,  "name": "Norte de Santander",                    "latitude": 8.4417924,  "longitude": -73.0492505 },
-  { "id": 74, "country_id": 2, "region_id": 5,  "name": "Putumayo",                              "latitude": 0.5000086,  "longitude": -76.0000086 },
-  { "id": 75, "country_id": 2, "region_id": 2,  "name": "Quindío",                               "latitude": 4.4028313,  "longitude": -75.7025795 },
-  { "id": 76, "country_id": 2, "region_id": 2,  "name": "Risaralda",                             "latitude": 5.2102948,  "longitude": -75.9842236 },
-  { "id": 77, "country_id": 2, "region_id": 6,  "name": "San Andrés, Providencia y Santa Catalina","latitude": 12.5375979,"longitude": -81.7204155 },
-  { "id": 78, "country_id": 2, "region_id": 2,  "name": "Santander",                             "latitude": 7.0000085,  "longitude": -73.2500086 },
-  { "id": 79, "country_id": 2, "region_id": 1,  "name": "Sucre",                                 "latitude": 9.0,        "longitude": -75.0 },
-  { "id": 80, "country_id": 2, "region_id": 2,  "name": "Tolima",                                "latitude": 4.0355786,  "longitude": -75.2086642 },
-  { "id": 81, "country_id": 2, "region_id": 3,  "name": "Valle del Cauca",                       "latitude": 3.6984053,  "longitude": -76.5501996 },
-  { "id": 82, "country_id": 2, "region_id": 5,  "name": "Vaupés",                                "latitude": 0.4228124,  "longitude": -70.9468372 },
-  { "id": 83, "country_id": 2, "region_id": 4,  "name": "Vichada",                               "latitude": 4.8686613,  "longitude": -69.3736658 }
+  {
+    "id": 51,
+    "country_id": 2,
+    "region_id": 5,
+    "name": "Amazonas",
+    "latitude": -1.305299,
+    "longitude": -71.4659212
+  },
+  {
+    "id": 52,
+    "country_id": 2,
+    "region_id": 2,
+    "name": "Antioquia",
+    "latitude": 7.0000085,
+    "longitude": -75.5000086
+  },
+  {
+    "id": 53,
+    "country_id": 2,
+    "region_id": 4,
+    "name": "Arauca",
+    "latitude": 6.6666755,
+    "longitude": -71.0000086
+  },
+  {
+    "id": 54,
+    "country_id": 2,
+    "region_id": 1,
+    "name": "Atlántico",
+    "latitude": 10.6773422,
+    "longitude": -74.9718666
+  },
+  {
+    "id": 55,
+    "country_id": 2,
+    "region_id": 2,
+    "name": "Bogotá D.C.",
+    "latitude": 4.2834715,
+    "longitude": -74.1753606
+  },
+  {
+    "id": 56,
+    "country_id": 2,
+    "region_id": 1,
+    "name": "Bolívar",
+    "latitude": 9.3660477,
+    "longitude": -74.8023636
+  },
+  {
+    "id": 57,
+    "country_id": 2,
+    "region_id": 2,
+    "name": "Boyacá",
+    "latitude": 5.4428193,
+    "longitude": -73.3745224
+  },
+  {
+    "id": 58,
+    "country_id": 2,
+    "region_id": 2,
+    "name": "Caldas",
+    "latitude": 5.3302514,
+    "longitude": -75.2873471
+  },
+  {
+    "id": 59,
+    "country_id": 2,
+    "region_id": 5,
+    "name": "Caquetá",
+    "latitude": 1.1153385,
+    "longitude": -74.1056838
+  },
+  {
+    "id": 60,
+    "country_id": 2,
+    "region_id": 4,
+    "name": "Casanare",
+    "latitude": 5.5000085,
+    "longitude": -71.5000086
+  },
+  {
+    "id": 61,
+    "country_id": 2,
+    "region_id": 3,
+    "name": "Cauca",
+    "latitude": 2.715645,
+    "longitude": -76.662665
+  },
+  {
+    "id": 62,
+    "country_id": 2,
+    "region_id": 1,
+    "name": "Cesar",
+    "latitude": 9.3333415,
+    "longitude": -73.5000086
+  },
+  {
+    "id": 63,
+    "country_id": 2,
+    "region_id": 3,
+    "name": "Chocó",
+    "latitude": 6.0000085,
+    "longitude": -77.0000086
+  },
+  {
+    "id": 64,
+    "country_id": 2,
+    "region_id": 1,
+    "name": "Córdoba",
+    "latitude": 8.3344713,
+    "longitude": -75.6666238
+  },
+  {
+    "id": 65,
+    "country_id": 2,
+    "region_id": 2,
+    "name": "Cundinamarca",
+    "latitude": 5.1096596,
+    "longitude": -74.0995854
+  },
+  {
+    "id": 66,
+    "country_id": 2,
+    "region_id": 5,
+    "name": "Guainía",
+    "latitude": 2.5000086,
+    "longitude": -69.0000086
+  },
+  {
+    "id": 67,
+    "country_id": 2,
+    "region_id": 5,
+    "name": "Guaviare",
+    "latitude": 1.7899198,
+    "longitude": -72.3761784
+  },
+  {
+    "id": 68,
+    "country_id": 2,
+    "region_id": 2,
+    "name": "Huila",
+    "latitude": 2.4738993,
+    "longitude": -75.5900113
+  },
+  {
+    "id": 69,
+    "country_id": 2,
+    "region_id": 1,
+    "name": "La Guajira",
+    "latitude": 11.4354118,
+    "longitude": -72.9002161
+  },
+  {
+    "id": 70,
+    "country_id": 2,
+    "region_id": 1,
+    "name": "Magdalena",
+    "latitude": 10.5808075,
+    "longitude": -74.0685669
+  },
+  {
+    "id": 71,
+    "country_id": 2,
+    "region_id": 4,
+    "name": "Meta",
+    "latitude": 5.1554448,
+    "longitude": -70.8653784
+  },
+  {
+    "id": 72,
+    "country_id": 2,
+    "region_id": 3,
+    "name": "Nariño",
+    "latitude": 1.289151,
+    "longitude": -77.35794
+  },
+  {
+    "id": 73,
+    "country_id": 2,
+    "region_id": 2,
+    "name": "Norte de Santander",
+    "latitude": 8.4417924,
+    "longitude": -73.0492505
+  },
+  {
+    "id": 74,
+    "country_id": 2,
+    "region_id": 5,
+    "name": "Putumayo",
+    "latitude": 0.5000086,
+    "longitude": -76.0000086
+  },
+  {
+    "id": 75,
+    "country_id": 2,
+    "region_id": 2,
+    "name": "Quindío",
+    "latitude": 4.4028313,
+    "longitude": -75.7025795
+  },
+  {
+    "id": 76,
+    "country_id": 2,
+    "region_id": 2,
+    "name": "Risaralda",
+    "latitude": 5.2102948,
+    "longitude": -75.9842236
+  },
+  {
+    "id": 77,
+    "country_id": 2,
+    "region_id": 6,
+    "name": "San Andrés, Providencia y Santa Catalina",
+    "latitude": 12.5375979,
+    "longitude": -81.7204155
+  },
+  {
+    "id": 78,
+    "country_id": 2,
+    "region_id": 2,
+    "name": "Santander",
+    "latitude": 7.0000085,
+    "longitude": -73.2500086
+  },
+  {
+    "id": 79,
+    "country_id": 2,
+    "region_id": 1,
+    "name": "Sucre",
+    "latitude": 9,
+    "longitude": -75
+  },
+  {
+    "id": 80,
+    "country_id": 2,
+    "region_id": 2,
+    "name": "Tolima",
+    "latitude": 4.0355786,
+    "longitude": -75.2086642
+  },
+  {
+    "id": 81,
+    "country_id": 2,
+    "region_id": 3,
+    "name": "Valle del Cauca",
+    "latitude": 3.6984053,
+    "longitude": -76.5501996
+  },
+  {
+    "id": 82,
+    "country_id": 2,
+    "region_id": 5,
+    "name": "Vaupés",
+    "latitude": 0.4228124,
+    "longitude": -70.9468372
+  },
+  {
+    "id": 83,
+    "country_id": 2,
+    "region_id": 4,
+    "name": "Vichada",
+    "latitude": 4.8686613,
+    "longitude": -69.3736658
+  }
 ]

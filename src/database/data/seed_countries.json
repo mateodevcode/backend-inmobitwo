@@ -1,20 +1,11 @@
 [
   {
-    "id": 1,
-    "name": "Spain",
-    "iso2": "ES",
-    "phonecode": "34",
-    "flag_emoji": "🇪🇸",
-    "latitude": 40.0,
-    "longitude": -4.0
-  },
-  {
     "id": 2,
     "name": "Colombia",
     "iso2": "CO",
     "phonecode": "57",
     "flag_emoji": "🇨🇴",
-    "latitude": 4.0,
-    "longitude": -72.0
+    "latitude": 4,
+    "longitude": -72
   }
 ]
