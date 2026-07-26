@@ -231,6 +231,7 @@ CREATE TABLE IF NOT EXISTS propiedades (
     geom GEOMETRY(Point, 4326),
     -- 👈 NUEVO v3.3: Punto geográfico nativo indexado para mapas eficientes
     titulo VARCHAR(255),
+    precio INTEGER,
     -- Imagenes
     imagen_principal_url VARCHAR(500),
     imagen_principal_public_id VARCHAR(255),
@@ -308,6 +309,16 @@ CREATE OR REPLACE FUNCTION update_updated_at_column() RETURNS TRIGGER AS $$ BEGI
 RETURN NEW;
 END;
 $$ LANGUAGE plpgsql;
+
+-- 👈 NUEVO v3.6: Mantiene geom sincronizado con lat/lng
+CREATE OR REPLACE FUNCTION sync_geom_from_lat_lng() RETURNS TRIGGER AS $$
+BEGIN
+  IF NEW.latitude IS NOT NULL AND NEW.longitude IS NOT NULL THEN
+    NEW.geom = ST_SetSRID(ST_MakePoint(NEW.longitude, NEW.latitude), 4326);
+  END IF;
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
 -- ============================================================================
 -- 10. TRIGGERS
 -- ============================================================================
@@ -323,6 +334,9 @@ CREATE TRIGGER trg_org_miembros_updated_at BEFORE
 UPDATE ON organizacion_miembros FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 CREATE TRIGGER trg_propiedades_updated_at BEFORE
 UPDATE ON propiedades FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+DROP TRIGGER IF EXISTS trg_propiedades_geom_sync ON propiedades;
+CREATE TRIGGER trg_propiedades_geom_sync BEFORE INSERT OR UPDATE ON propiedades
+FOR EACH ROW EXECUTE FUNCTION sync_geom_from_lat_lng();
 -- ============================================================================
 -- 11. ÍNDICES PARA BÚSQUEDA EFICIENTE
 -- ============================================================================

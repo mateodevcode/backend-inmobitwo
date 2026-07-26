@@ -641,8 +641,10 @@ export const suggestCities = async (req, res) => {
           r.slug as region_slug,
           NULL as state_name,
           NULL as state_slug,
+          NULL as state_dane_code,
           NULL as city_name,
           NULL as city_slug,
+          NULL as city_dane_code,
           'region' as tipo,
           0 as match_level,
           0 as direct_match,
@@ -666,8 +668,10 @@ export const suggestCities = async (req, res) => {
           r.slug as region_slug,
           s.name as state_name,
           s.slug as state_slug,
+          s.dane_code as state_dane_code,
           NULL as city_name,
           NULL as city_slug,
+          NULL as city_dane_code,
           'departamento' as tipo,
           1 as match_level,
           0 as direct_match,
@@ -691,8 +695,10 @@ export const suggestCities = async (req, res) => {
           r.slug as region_slug,
           s.name as state_name,
           s.slug as state_slug,
+          s.dane_code as state_dane_code,
           c.name as city_name,
           c.slug as city_slug,
+          c.dane_code as city_dane_code,
           'ciudad' as tipo,
           2 as match_level,
           0 as direct_match,
@@ -705,7 +711,7 @@ export const suggestCities = async (req, res) => {
           ${typeFilter}
         WHERE s.country_id = $1
           AND f_unaccent(c.name) ILIKE f_unaccent($2)
-        GROUP BY c.id, c.name, c.slug, s.name, s.slug, r.name, r.slug
+        GROUP BY c.id, c.name, c.slug, c.dane_code, s.name, s.slug, s.dane_code, r.name, r.slug
 
         UNION ALL
 
@@ -716,8 +722,10 @@ export const suggestCities = async (req, res) => {
           r.slug as region_slug,
           s.name as state_name,
           s.slug as state_slug,
+          s.dane_code as state_dane_code,
           c.name as city_name,
           c.slug as city_slug,
+          c.dane_code as city_dane_code,
           'ciudad' as tipo,
           2 as match_level,
           1 as direct_match,
@@ -731,7 +739,7 @@ export const suggestCities = async (req, res) => {
         WHERE s.country_id = $1
           AND f_unaccent(s.name) ILIKE f_unaccent($2)
           AND NOT f_unaccent(c.name) ILIKE f_unaccent($2)
-        GROUP BY c.id, c.name, c.slug, s.name, s.slug, r.name, r.slug
+        GROUP BY c.id, c.name, c.slug, c.dane_code, s.name, s.slug, s.dane_code, r.name, r.slug
       ) results
       ORDER BY
         match_level ASC,
