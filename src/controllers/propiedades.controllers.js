@@ -473,6 +473,12 @@ export const updatePropiedades = async (req, res) => {
       values.push(estado);
       paramCount++;
     }
+    const rawPrecio = formDataObj.precio;
+    if (rawPrecio !== undefined && rawPrecio !== null && rawPrecio !== "") {
+      updates.push(`precio = $${paramCount}`);
+      values.push(parseInt(rawPrecio));
+      paramCount++;
+    }
     if (uploadResponse) {
       updates.push(`imagen_principal_url = $${paramCount}`);
       values.push(uploadResponse.url);
@@ -685,6 +691,7 @@ export const publicarAnuncios = async (req, res) => {
       latitude,
       longitude,
       estado,
+      precio,
     } = raw;
 
     const es_de_organizacion =
@@ -744,9 +751,9 @@ export const publicarAnuncios = async (req, res) => {
     const query = `
       INSERT INTO propiedades (
         tipo, operacion, country_id, state_id, city_id, direccion, numero_direccion, latitude, longitude,
-        titulo, estado, es_de_organizacion, organizacion_id, publicado_por_id,
+        titulo, precio, estado, es_de_organizacion, organizacion_id, publicado_por_id,
         created_at, updated_at
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
       RETURNING *;
     `;
     const values = [
@@ -760,6 +767,7 @@ export const publicarAnuncios = async (req, res) => {
       latitude,
       longitude,
       tituloFinal,
+      precio ? parseInt(precio) : null,
       estado || "disponible",
       es_de_organizacion || false,
       organizacion_id,
@@ -1079,7 +1087,7 @@ export const getPropertiesBySlugs = async (req, res) => {
     `;
 
     const selectFields = `
-      p.id, p.tipo, p.operacion, p.titulo, p.direccion,
+      p.id, p.tipo, p.operacion, p.titulo, p.direccion, p.precio,
       p.imagen_principal_url,
       p.es_de_organizacion,
       ${galeriaSubquery},
@@ -1109,6 +1117,34 @@ export const getPropertiesBySlugs = async (req, res) => {
           ${typeCondition}
           AND c.slug = $${cityIdx}
           AND s.slug = $${deptIdx}
+          AND p.estado = 'publicado'
+        ORDER BY p.id DESC
+        LIMIT 100;
+      `;
+
+      const { rows: cityRows } = await pool.query(query, params);
+
+      if (cityRows.length > 0) {
+        return res.json({
+          success: true, message: null, data: cityRows, error: null,
+        });
+      }
+
+      // Fallback: El "city" podria ser parte de un depto con guion (ej: "la" + "guajira")
+      params.splice(-2);
+      const fullSlug = `${city.toLowerCase()}-${dept.toLowerCase()}`;
+      params.push(fullSlug);
+      const fallbackIdx = params.length;
+
+      query = `
+        SELECT ${selectFields}
+        FROM propiedades p
+        INNER JOIN cities c ON p.city_id = c.id
+        INNER JOIN states s ON c.state_id = s.id 
+        ${orgJoin}
+        WHERE LOWER(p.operacion) = $1
+          ${typeCondition}
+          AND s.slug = $${fallbackIdx}
           AND p.estado = 'publicado'
         ORDER BY p.id DESC
         LIMIT 100;
@@ -1175,6 +1211,86 @@ export const getPropertiesBySlugs = async (req, res) => {
     return res.status(500).json({
       success: false,
       message: "Error interno al procesar la búsqueda geográfica",
+      data: null,
+      error: error.message,
+    });
+  }
+};
+
+// NUEVO v3.6: Inmuebles dentro de un bounding box (para MapaInmuebles)
+export const getInmueblesEnBbox = async (req, res) => {
+  const { minLat, minLng, maxLat, maxLng, operation, tipoInmueble } = req.query;
+
+  if (!minLat || !minLng || !maxLat || !maxLng) {
+    return res.status(400).json({
+      success: false,
+      message: "minLat, minLng, maxLat, maxLng son requeridos",
+      data: null,
+      error: null,
+    });
+  }
+
+  try {
+    const params = [];
+    const filters = ["p.estado = 'publicado'", "p.geom IS NOT NULL"];
+
+    if (operation) {
+      params.push(operation.toLowerCase());
+      filters.push(`LOWER(p.operacion) = LOWER($${params.length})`);
+    }
+
+    if (tipoInmueble) {
+      const tipos = tipoInmueble.split(",").map((t) => t.trim().toLowerCase()).filter(Boolean);
+      if (tipos.length === 1) {
+        params.push(tipos[0]);
+        filters.push(`LOWER(p.tipo) = LOWER($${params.length})`);
+      } else if (tipos.length > 1) {
+        const startIdx = params.length + 1;
+        tipos.forEach((t) => params.push(t));
+        const placeholders = tipos.map((_, i) => `$${startIdx + i}`);
+        filters.push(`LOWER(p.tipo) IN (${placeholders.join(", ")})`);
+      }
+    }
+
+    params.push(minLng, minLat, maxLng, maxLat);
+    const bboxParamIdx = params.length - 3;
+
+    const query = `
+      SELECT p.id, p.titulo, p.precio, p.operacion, p.tipo,
+             p.imagen_principal_url,
+             ST_Y(p.geom) AS lat, ST_X(p.geom) AS lng
+      FROM propiedades p
+      WHERE ST_Intersects(
+        p.geom,
+        ST_MakeEnvelope(
+          $${bboxParamIdx}::float,
+          $${bboxParamIdx + 1}::float,
+          $${bboxParamIdx + 2}::float,
+          $${bboxParamIdx + 3}::float,
+          4326
+        )
+      )
+      AND ${filters.join(" AND ")}
+      LIMIT 1000
+    `;
+
+    const { rows } = await pool.query(query, params);
+
+    res.json({
+      success: true,
+      message: null,
+      data: rows.map((r) => ({
+        ...r,
+        lat: parseFloat(r.lat),
+        lng: parseFloat(r.lng),
+      })),
+      error: null,
+    });
+  } catch (error) {
+    console.error("Error en getInmueblesEnBbox:", error);
+    res.status(500).json({
+      success: false,
+      message: "Error al obtener inmuebles",
       data: null,
       error: error.message,
     });

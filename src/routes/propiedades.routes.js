@@ -10,6 +10,7 @@ import {
   getPropiedadesMisAnuncios,
   getPropiedadesByOrganizacion,
   getPropertiesBySlugs,
+  getInmueblesEnBbox,
 } from "../controllers/propiedades.controllers.js";
 import { createRateLimitMiddleware, defaultLimiter } from "../lib/rateLimit.js";
 import { APIKEY } from "../config.js";
@@ -39,6 +40,9 @@ router.get(
 
 // 2. NUEVA RUTA POR SLUG ESTILO IDEALISTA (Corregida con el prefijo ${ruta} y bien posicionada)
 router.get(`${ruta}/search-slugs`, rateLimit, getPropertiesBySlugs);
+
+// Búsqueda por bounding box (MapaInmuebles)
+router.get(`${ruta}/inmuebles-en-bbox`, rateLimit, getInmueblesEnBbox);
 
 // 3. VISTA DE ORGANIZACIÓN (TENANT) - Va antes de los parámetros dinámicos generales
 router.get(
