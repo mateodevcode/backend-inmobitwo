@@ -53,7 +53,13 @@ function normalizeName(n) {
     .toLowerCase();
 }
 
-// Mapeo de nombres GeoJSON → nombres DB (cuando difieren)
+// Mapeo de nombres DB → nombres GeoJSON (cuando difieren)
+const DB_TO_GEOJSON_NAME = {
+  "san andres providencia y santa catalina": "archipielago de san andres providencia y santa catalina",
+  "bogota d c": "bogota d c",
+};
+
+// Mapeo de nombres GeoJSON → nombres DB (para ciudades)
 const CITY_NAME_OVERRIDES = {
   "san jose de cucuta": "cucuta",
 };
@@ -118,7 +124,8 @@ async function seed() {
     }
 
     for (const s of states) {
-      const daneInfo = dptoDaneGeo[normalizeName(s.name)];
+      const normName = normalizeName(s.name);
+      const daneInfo = dptoDaneGeo[normName] || dptoDaneGeo[DB_TO_GEOJSON_NAME[normName]];
       const daneCode = daneInfo ? daneInfo.dane_code : null;
       const geom = daneInfo
         ? `ST_GeomFromGeoJSON('${JSON.stringify(daneInfo.geometry)}')`
@@ -132,7 +139,23 @@ async function seed() {
     }
 
     // =====================================================================
-    // 5. Ciudades (municipios) con DANE + geometría
+    // 5. Poblar geometría de regiones (ST_Union de sus departamentos)
+    // =====================================================================
+    console.log("Calculando geometría de regiones...");
+    await client.query(`
+      UPDATE regions r SET geom = sub.geom
+      FROM (
+        SELECT s.region_id, ST_Multi(ST_Union(s.geom))::geometry(MultiPolygon,4326) AS geom
+        FROM states s
+        WHERE s.region_id IS NOT NULL AND s.geom IS NOT NULL
+        GROUP BY s.region_id
+      ) sub
+      WHERE r.id = sub.region_id
+    `);
+    console.log("   ✅ regiones con geometría actualizadas");
+
+    // =====================================================================
+    // 6. Ciudades (municipios) con DANE + geometría
     // =====================================================================
     console.log(`Insertando ${cities.length} ciudades con geometría...`);
 
@@ -189,7 +212,7 @@ async function seed() {
     }
 
     // =====================================================================
-    // 6. Barrios con geometría
+    // 7. Barrios con geometría
     // =====================================================================
     console.log("Insertando barrios...");
 
@@ -240,7 +263,7 @@ async function seed() {
     }
 
     // =====================================================================
-    // 7. Reajustar secuencias
+    // 8. Reajustar secuencias
     // =====================================================================
     await client.query(`SELECT setval('countries_id_seq', (SELECT MAX(id) FROM countries))`);
     await client.query(`SELECT setval('regions_id_seq', (SELECT MAX(id) FROM regions))`);
