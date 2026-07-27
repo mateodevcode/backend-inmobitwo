@@ -12,6 +12,7 @@ DROP FUNCTION IF EXISTS update_updated_at_column();
 -- 3. Eliminación de Tablas Secundarias y relacionales (Orden Inverso de dependencias)
 DROP TABLE IF EXISTS refresh_tokens CASCADE;
 DROP TABLE IF EXISTS usuario_favoritos CASCADE;
+DROP TABLE IF EXISTS propiedades_planos CASCADE;
 DROP TABLE IF EXISTS propiedades_galeria CASCADE;
 DROP TABLE IF EXISTS propiedades CASCADE;
 DROP TABLE IF EXISTS barrios CASCADE;

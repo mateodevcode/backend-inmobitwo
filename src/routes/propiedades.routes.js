@@ -24,6 +24,7 @@ const rateLimit = createRateLimitMiddleware(defaultLimiter);
 const uploadFields = upload.fields([
   { name: "imagenPrincipal", maxCount: 1 },
   { name: "galeria", maxCount: 20 },
+  { name: "planos", maxCount: 20 },
 ]);
 
 const ruta = "/propiedades";
