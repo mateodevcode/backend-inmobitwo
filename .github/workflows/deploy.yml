@@ -16,11 +16,19 @@ jobs:
                   username: root
                   key: ${{ secrets.SSH_KEY }}
                   script: |
+                      set -e  # ← detiene el script si cualquier comando falla
+
                       echo "🚀 Iniciando despliegue..."
 
                       cd /var/www/inmobitwo/backend-inmobitwo
 
-                      git pull origin main
+                      echo "→ Descartando cambios locales no versionados..."
+                      git reset --hard HEAD
+                      git clean -fd
+
+                      echo "→ Actualizando código..."
+                      git fetch origin main
+                      git reset --hard origin/main
 
                       echo "→ Reconstruyendo y levantando contenedor..."
                       docker compose up -d --build
@@ -28,7 +36,11 @@ jobs:
                       echo "→ Limpiando imágenes viejas sin uso..."
                       docker image prune -f
 
-                      echo "→ Estado:"
+                      echo "→ Verificando que el contenedor esté corriendo..."
+                      sleep 5
+                      docker compose ps | grep "Up" || (echo "❌ El contenedor no está corriendo" && exit 1)
+
+                      echo "→ Estado final:"
                       docker compose ps
 
                       echo "✅ Despliegue completado!"
