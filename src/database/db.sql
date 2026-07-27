@@ -166,7 +166,8 @@ CREATE TABLE IF NOT EXISTS regions (
     id SERIAL PRIMARY KEY,
     country_id INTEGER NOT NULL REFERENCES countries(id) ON DELETE CASCADE,
     name VARCHAR(150) NOT NULL,
-    slug VARCHAR(150)
+    slug VARCHAR(150),
+    geom GEOMETRY(MultiPolygon, 4326)
 );
 -- "states" cubre tanto provincias (España) como departamentos (Colombia)
 CREATE TABLE IF NOT EXISTS states (

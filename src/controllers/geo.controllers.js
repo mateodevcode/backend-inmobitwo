@@ -374,6 +374,43 @@ export const getCitiesGeoJSON = async (req, res) => {
   }
 };
 
+export const getRegionsGeoJSON = async (_req, res) => {
+  try {
+    const { rows } = await pool.query(
+      `SELECT name, slug,
+              ST_AsGeoJSON(geom)::json AS geometry
+       FROM regions
+       WHERE geom IS NOT NULL
+       ORDER BY name ASC`,
+    );
+
+    const features = rows.map((r, i) => ({
+      type: "Feature",
+      properties: {
+        REG_ID: i + 1,
+        REG_NAME: r.name,
+        slug: r.slug,
+      },
+      geometry: r.geometry,
+    }));
+
+    res.json({
+      success: true,
+      message: null,
+      data: { type: "FeatureCollection", features },
+      error: null,
+    });
+  } catch (error) {
+    console.error("Error en getRegionsGeoJSON:", error);
+    res.status(500).json({
+      success: false,
+      message: "Error al obtener geometria de regiones",
+      data: null,
+      error: error.message,
+    });
+  }
+};
+
 export const getBarrios = async (req, res) => {
   const { cityDaneCode } = req.query;
 
@@ -562,14 +599,11 @@ export const getLocationGeoJSON = async (req, res) => {
       params.push(region);
       query = `
         SELECT r.name, r.slug,
-               (SELECT string_agg(s.dane_code, ',') FROM states s WHERE s.region_id = r.id) AS dane_codes,
-               NULL::json AS geometry,
-               MIN(ST_XMin(s.geom)) AS west, MIN(ST_YMin(s.geom)) AS south,
-               MAX(ST_XMax(s.geom)) AS east, MAX(ST_YMax(s.geom)) AS north
+               COALESCE(ST_AsGeoJSON(r.geom)::json, NULL) AS geometry,
+               ST_XMin(r.geom) AS west, ST_YMin(r.geom) AS south,
+               ST_XMax(r.geom) AS east, ST_YMax(r.geom) AS north
         FROM regions r
-        INNER JOIN states s ON s.region_id = r.id
-        WHERE r.slug = $1 AND s.geom IS NOT NULL
-        GROUP BY r.id, r.name, r.slug
+        WHERE r.slug = $1 AND r.geom IS NOT NULL
         LIMIT 1
       `;
     }

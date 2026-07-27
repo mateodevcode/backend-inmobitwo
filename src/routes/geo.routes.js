@@ -7,6 +7,7 @@ import {
   getLocationInfo,
   getStatesGeoJSON,
   getCitiesGeoJSON,
+  getRegionsGeoJSON,
   getBarrios,
   getGeoCount,
   getLocationGeoJSON,
@@ -28,6 +29,7 @@ router.get("/suggest-cities", rateLimit, suggestCities);
 router.get("/location-info", rateLimit, getLocationInfo);
 
 // GeoJSON para el mapa SelectZona (polígonos reales)
+router.get("/regions/geojson", rateLimit, getRegionsGeoJSON);
 router.get("/states/geojson", rateLimit, getStatesGeoJSON);
 router.get("/cities/geojson", rateLimit, getCitiesGeoJSON);
 router.get("/barrios", rateLimit, getBarrios);
