@@ -275,6 +275,18 @@ CREATE TABLE IF NOT EXISTS propiedades_galeria (
     FOREIGN KEY (propiedad_id) REFERENCES propiedades(id) ON DELETE CASCADE
 );
 -- ============================================================================
+-- 6b. PROPIEDADES_PLANOS
+-- ============================================================================
+CREATE TABLE IF NOT EXISTS propiedades_planos (
+    id SERIAL PRIMARY KEY,
+    propiedad_id INTEGER NOT NULL,
+    url VARCHAR(500) NOT NULL,
+    public_id VARCHAR(255),
+    orden INTEGER DEFAULT 0,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (propiedad_id) REFERENCES propiedades(id) ON DELETE CASCADE
+);
+-- ============================================================================
 -- 7. USUARIO_FAVORITOS
 -- ============================================================================
 CREATE TABLE IF NOT EXISTS usuario_favoritos (

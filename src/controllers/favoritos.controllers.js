@@ -102,7 +102,22 @@ export const getMisFavoritos = async (req, res) => {
             WHERE pg.propiedad_id = f.id
           ), 
           '[]'::json
-        ) as galeria
+        ) as galeria,
+        COALESCE(
+          (
+            SELECT json_agg(
+              json_build_object(
+                'id', pp.id,
+                'url', pp.url,
+                'public_id', pp.public_id,
+                'orden', pp.orden
+              ) ORDER BY pp.orden ASC
+            )
+            FROM propiedades_planos pp 
+            WHERE pp.propiedad_id = f.id
+          ), 
+          '[]'::json
+        ) as planos
       FROM favoritos f
       ORDER BY f.fecha_guardado DESC`,
       [usuarioId],

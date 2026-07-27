@@ -26,6 +26,15 @@ export const getPropiedades = async (req, res) => {
           [propiedad.id],
         );
 
+        // Planos
+        const { rows: planos } = await pool.query(
+          `SELECT id, url, public_id, orden 
+           FROM propiedades_planos 
+           WHERE propiedad_id = $1 
+           ORDER BY orden ASC`,
+          [propiedad.id],
+        );
+
         // Publicador
         let publicador = null;
 
@@ -62,6 +71,7 @@ export const getPropiedades = async (req, res) => {
         return {
           ...propiedad,
           galeria: galeria || [],
+          planos: planos || [],
           publicador,
           tiempo_relativo: tiempoRelativo(propiedad.created_at),
         };
@@ -187,6 +197,41 @@ export const createPropiedades = async (req, res) => {
     }
 
     // ========================================
+    // PROCESAR PLANOS
+    // ========================================
+    let imagenesPlanos = [];
+    if (req.files?.planos) {
+      const planosFiles = req.files.planos;
+      for (let i = 0; i < planosFiles.length; i++) {
+        const imageFile = planosFiles[i];
+
+        if (!imageFile.mimetype.startsWith("image/")) {
+          console.warn(
+            `⚠️ Archivo ${imageFile.originalname} no es imagen, saltando...`,
+          );
+          continue;
+        }
+        if (imageFile.size > 10 * 1024 * 1024) {
+          console.warn(
+            `⚠️ Archivo ${imageFile.originalname} supera 10MB, saltando...`,
+          );
+          continue;
+        }
+
+        const fileName = `${carpeta}/propiedades/planos/propiedad_${titulo
+          .toLowerCase()
+          .replace(/\s+/g, "-")}_${Date.now()}_${i}.jpg`;
+
+        const url = await uploadToS3(
+          imageFile.buffer,
+          fileName,
+          imageFile.mimetype,
+        );
+        imagenesPlanos.push({ url, public_id: fileName, orden: i });
+      }
+    }
+
+    // ========================================
     // INSERTAR EN BD
     // ========================================
     const query = `
@@ -221,10 +266,20 @@ export const createPropiedades = async (req, res) => {
       }
     }
 
+    if (imagenesPlanos.length > 0) {
+      for (const imagen of imagenesPlanos) {
+        await pool.query(
+          `INSERT INTO propiedades_planos (propiedad_id, url, public_id, orden, created_at)
+           VALUES ($1, $2, $3, $4, CURRENT_TIMESTAMP)`,
+          [nuevaPropiedad.id, imagen.url, imagen.public_id, imagen.orden],
+        );
+      }
+    }
+
     return res.status(201).json({
       success: true,
       message: "Propiedad creada.",
-      data: { ...nuevaPropiedad, galeria: imagenesGaleria },
+      data: { ...nuevaPropiedad, galeria: imagenesGaleria, planos: imagenesPlanos },
     });
   } catch (error) {
     console.error("❌ Error en POST /propiedades:", error);
@@ -270,12 +325,21 @@ export const getPropiedadesById = async (req, res) => {
       [id],
     );
 
+    const { rows: planos } = await pool.query(
+      `SELECT id, url, public_id, orden 
+       FROM propiedades_planos 
+       WHERE propiedad_id = $1 
+       ORDER BY orden ASC`,
+      [id],
+    );
+
     res.status(200).json({
       success: true,
       message: "Propiedad obtenida.",
       data: {
         ...propiedad,
         galeria: galeria || [],
+        planos: planos || [],
       },
     });
   } catch (error) {
@@ -320,6 +384,7 @@ export const updatePropiedades = async (req, res) => {
     let formDataObj = {};
     let file = null;
     let files = [];
+    let planosFiles = [];
 
     const contentType = req.headers["content-type"] || "";
 
@@ -329,6 +394,9 @@ export const updatePropiedades = async (req, res) => {
       }
       if (req.files?.galeria) {
         files = req.files.galeria;
+      }
+      if (req.files?.planos) {
+        planosFiles = req.files.planos;
       }
       formDataObj = req.body;
     } else {
@@ -359,6 +427,18 @@ export const updatePropiedades = async (req, res) => {
             : formDataObj.imagesToDelete;
       } catch (err) {
         imagesToDelete = [];
+      }
+    }
+
+    let planosToDelete = [];
+    if (formDataObj.planosToDelete) {
+      try {
+        planosToDelete =
+          typeof formDataObj.planosToDelete === "string"
+            ? JSON.parse(formDataObj.planosToDelete)
+            : formDataObj.planosToDelete;
+      } catch (err) {
+        planosToDelete = [];
       }
     }
 
@@ -435,6 +515,33 @@ export const updatePropiedades = async (req, res) => {
     }
 
     // ========================================
+    // PROCESAR PLANOS NUEVOS
+    // ========================================
+    let imagenesPlanos = [];
+    if (planosFiles.length > 0) {
+      const carpeta = AWS_BUCKET_SUBFOLDER || "inmobitwo";
+      for (let i = 0; i < planosFiles.length; i++) {
+        const imageFile = planosFiles[i];
+
+        if (!imageFile.mimetype.startsWith("image/")) continue;
+        if (imageFile.size > 10 * 1024 * 1024) continue;
+
+        const fileName = `${carpeta}/propiedades/planos/propiedad_${(
+          titulo || "imagen"
+        )
+          .toLowerCase()
+          .replace(/\s+/g, "-")}_${Date.now()}_${i}.jpg`;
+
+        const url = await uploadToS3(
+          imageFile.buffer,
+          fileName,
+          imageFile.mimetype,
+        );
+        imagenesPlanos.push({ url, public_id: fileName, orden: i });
+      }
+    }
+
+    // ========================================
     // ELIMINAR IMÁGENES DE GALERÍA MARCADAS
     // ========================================
     if (imagesToDelete.length > 0) {
@@ -452,6 +559,28 @@ export const updatePropiedades = async (req, res) => {
         }
         await pool.query("DELETE FROM propiedades_galeria WHERE id = $1", [
           imagenId,
+        ]);
+      }
+    }
+
+    // ========================================
+    // ELIMINAR PLANOS MARCADOS
+    // ========================================
+    if (planosToDelete.length > 0) {
+      for (const planoId of planosToDelete) {
+        const img = await pool.query(
+          "SELECT public_id FROM propiedades_planos WHERE id = $1",
+          [planoId],
+        );
+        if (img.rows.length > 0) {
+          try {
+            await deleteFromS3(img.rows[0].public_id);
+          } catch (err) {
+            console.warn(`⚠️ No se pudo eliminar plano de S3: ${err.message}`);
+          }
+        }
+        await pool.query("DELETE FROM propiedades_planos WHERE id = $1", [
+          planoId,
         ]);
       }
     }
@@ -491,7 +620,9 @@ export const updatePropiedades = async (req, res) => {
     if (
       updates.length === 0 &&
       imagenesGaleria.length === 0 &&
-      imagesToDelete.length === 0
+      imagesToDelete.length === 0 &&
+      imagenesPlanos.length === 0 &&
+      planosToDelete.length === 0
     ) {
       return res.status(400).json({
         success: false,
@@ -542,6 +673,19 @@ export const updatePropiedades = async (req, res) => {
     }
 
     // ========================================
+    // AGREGAR NUEVOS PLANOS
+    // ========================================
+    if (imagenesPlanos.length > 0) {
+      for (const imagen of imagenesPlanos) {
+        await pool.query(
+          `INSERT INTO propiedades_planos (propiedad_id, url, public_id, orden, created_at)
+           VALUES ($1, $2, $3, $4, CURRENT_TIMESTAMP)`,
+          [id, imagen.url, imagen.public_id, imagen.orden],
+        );
+      }
+    }
+
+    // ========================================
     // RETORNAR PROPIEDAD ACTUALIZADA
     // ========================================
     const propiedadActualizada = await pool.query(
@@ -553,6 +697,11 @@ export const updatePropiedades = async (req, res) => {
        WHERE propiedad_id = $1 ORDER BY orden ASC`,
       [id],
     );
+    const planosActualizados = await pool.query(
+      `SELECT id, url, public_id, orden FROM propiedades_planos
+       WHERE propiedad_id = $1 ORDER BY orden ASC`,
+      [id],
+    );
 
     return res.status(200).json({
       success: true,
@@ -560,6 +709,7 @@ export const updatePropiedades = async (req, res) => {
       data: {
         ...propiedadActualizada.rows[0],
         galeria: galeriaActualizada.rows,
+        planos: planosActualizados.rows,
       },
     });
   } catch (error) {
@@ -636,8 +786,31 @@ export const deletePropiedades = async (req, res) => {
       }
     }
 
+    const planosResult = await pool.query(
+      "SELECT id, public_id FROM propiedades_planos WHERE propiedad_id = $1",
+      [id],
+    );
+    const planosImgs = planosResult.rows;
+
+    let planosEliminadosS3 = 0;
+    for (const img of planosImgs) {
+      try {
+        await deleteFromS3(img.public_id);
+        planosEliminadosS3++;
+      } catch (err) {
+        console.warn(
+          `⚠️ No se pudo eliminar plano de S3: ${err.message}`,
+        );
+      }
+    }
+
     const galeriaDeleteResult = await pool.query(
       "DELETE FROM propiedades_galeria WHERE propiedad_id = $1",
+      [id],
+    );
+
+    const planosDeleteResult = await pool.query(
+      "DELETE FROM propiedades_planos WHERE propiedad_id = $1",
       [id],
     );
 
@@ -661,6 +834,8 @@ export const deletePropiedades = async (req, res) => {
         imagenPrincipalEliminada: !!imagenPrincipalPublicId,
         imagenesGaleriaEliminadas: imagenesEliminadasS3,
         totalImagenesGaleria: galeriaImgs.length,
+        planosEliminados: planosEliminadosS3,
+        totalPlanos: planosImgs.length,
       },
     });
   } catch (error) {
@@ -828,6 +1003,14 @@ export const getPropiedadesHome = async (req, res) => {
           [propiedad.id],
         );
 
+        const { rows: planos } = await pool.query(
+          `SELECT id, url, public_id, orden 
+           FROM propiedades_planos 
+           WHERE propiedad_id = $1 
+           ORDER BY orden ASC`,
+          [propiedad.id],
+        );
+
         let publicador = null;
         if (propiedad.es_de_organizacion) {
           const { rows } = await pool.query(
@@ -848,6 +1031,7 @@ export const getPropiedadesHome = async (req, res) => {
         return {
           ...propiedad,
           galeria: galeria || [],
+          planos: planos || [],
           publicador,
           tiempo_relativo: tiempoRelativo(propiedad.created_at),
         };
@@ -901,6 +1085,15 @@ export const getPropiedadesMisAnuncios = async (req, res) => {
           [propiedad.id],
         );
 
+        // Planos
+        const { rows: planos } = await pool.query(
+          `SELECT id, url, public_id, orden
+           FROM propiedades_planos
+           WHERE propiedad_id = $1
+           ORDER BY orden ASC`,
+          [propiedad.id],
+        );
+
         // Publicador
         let publicador = null;
 
@@ -937,6 +1130,7 @@ export const getPropiedadesMisAnuncios = async (req, res) => {
         return {
           ...propiedad,
           galeria: galeria || [],
+          planos: planos || [],
           publicador,
           tiempo_relativo: tiempoRelativo(propiedad.created_at),
         };
@@ -1015,9 +1209,18 @@ export const getPropiedadesByOrganizacion = async (req, res) => {
           [propiedad.id],
         );
 
+        const { rows: planos } = await pool.query(
+          `SELECT id, url, public_id, orden 
+           FROM propiedades_planos 
+           WHERE propiedad_id = $1 
+           ORDER BY orden ASC`,
+          [propiedad.id],
+        );
+
         return {
           ...propiedad,
           galeria: galeria || [],
+          planos: planos || [],
           publicador: { tipo: "organizacion", ...organizacion },
           tiempo_relativo: tiempoRelativo(propiedad.created_at),
         };
@@ -1086,11 +1289,25 @@ export const getPropertiesBySlugs = async (req, res) => {
       ) as galeria
     `;
 
+    const planosSubquery = `
+      COALESCE(
+        (SELECT json_agg(json_build_object(
+          'id', pp.id,
+          'url', pp.url,
+          'orden', pp.orden
+        ) ORDER BY pp.orden)
+        FROM propiedades_planos pp
+        WHERE pp.propiedad_id = p.id),
+        '[]'::json
+      ) as planos
+    `;
+
     const selectFields = `
       p.id, p.tipo, p.operacion, p.titulo, p.direccion, p.precio,
       p.imagen_principal_url,
       p.es_de_organizacion,
       ${galeriaSubquery},
+      ${planosSubquery},
       c.name as city_name,
       s.name as state_name,
       o.nombre as organizacion_nombre,
