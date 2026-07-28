@@ -635,6 +635,116 @@ export const getLocationGeoJSON = async (req, res) => {
   }
 };
 
+export const getInmueblesEnPoligono = async (req, res) => {
+  const { polygon, operation, tipoInmueble } = req.body;
+
+  if (!polygon || !polygon.geometry) {
+    return res.status(400).json({
+      success: false,
+      message: "polygon con geometry (GeoJSON Feature) es requerido",
+      data: null,
+      error: null,
+    });
+  }
+
+  const geomType = polygon.geometry.type;
+  if (geomType !== "Polygon" && geomType !== "MultiPolygon") {
+    return res.status(400).json({
+      success: false,
+      message: "La geometría debe ser Polygon o MultiPolygon",
+      data: null,
+      error: null,
+    });
+  }
+
+  const coords = geomType === "Polygon"
+    ? polygon.geometry.coordinates.flat()
+    : polygon.geometry.coordinates.flat(2);
+  const vertexCount = coords.length;
+
+  if (vertexCount > 500) {
+    return res.status(400).json({
+      success: false,
+      message: `Demasiados vértices (${vertexCount}). Máximo permitido: 500.`,
+      data: null,
+      error: null,
+    });
+  }
+
+  try {
+    const geoJSONStr = JSON.stringify(polygon.geometry);
+
+    const validResult = await pool.query(
+      `SELECT ST_IsValid(ST_GeomFromGeoJSON($1::jsonb)) AS is_valid`,
+      [geoJSONStr],
+    );
+
+    if (!validResult.rows[0]?.is_valid) {
+      return res.status(400).json({
+        success: false,
+        message: "La geometría del polígono no es válida",
+        data: null,
+        error: null,
+      });
+    }
+
+    const params = [geoJSONStr];
+    const filters = ["p.estado = 'publicado'"];
+
+    if (operation) {
+      params.push(operation);
+      filters.push(`LOWER(p.operacion) = LOWER($${params.length})`);
+    }
+
+    if (tipoInmueble) {
+      const tipos = tipoInmueble.split(",").map((t) => t.trim().toLowerCase()).filter(Boolean);
+      if (tipos.length === 1) {
+        params.push(tipos[0]);
+        filters.push(`LOWER(p.tipo) = LOWER($${params.length})`);
+      } else if (tipos.length > 1) {
+        const start = params.length + 1;
+        tipos.forEach((t) => params.push(t));
+        const ph = tipos.map((_, i) => `LOWER($${start + i})`);
+        filters.push(`LOWER(p.tipo) IN (${ph.join(", ")})`);
+      }
+    }
+
+    const filterSQL = filters.join(" AND ");
+
+    const { rows } = await pool.query(
+      `SELECT
+         p.id, p.titulo, p.precio, p.operacion, p.tipo,
+         p.latitude, p.longitude,
+         p.imagen_principal_url, p.estado
+       FROM propiedades p
+       WHERE ${filterSQL}
+         AND p.geom IS NOT NULL
+         AND ST_Contains(
+           ST_SetSRID(ST_GeomFromGeoJSON($1::jsonb), 4326),
+           p.geom
+         )
+       ORDER BY p.id DESC
+       LIMIT 200`,
+      params,
+    );
+
+    res.json({
+      success: true,
+      message: null,
+      data: { total: rows.length, propiedades: rows },
+      error: null,
+    });
+  } catch (error) {
+    console.error("Error en getInmueblesEnPoligono:", error);
+    res.status(500).json({
+      success: false,
+      message: "Error al buscar inmuebles en el polígono",
+      data: null,
+      error: error.message,
+    });
+  }
+};
+
 export const suggestCities = async (req, res) => {
   const { q, operation, type } = req.query;
 

@@ -11,6 +11,7 @@ import {
   getBarrios,
   getGeoCount,
   getLocationGeoJSON,
+  getInmueblesEnPoligono,
 } from "../controllers/geo.controllers.js";
 import { createRateLimitMiddleware, defaultLimiter } from "../lib/rateLimit.js";
 
@@ -39,5 +40,8 @@ router.get("/geo-count", rateLimit, getGeoCount);
 
 // GeoJSON de una zona específica (mini-mapa en ListaPropiedades)
 router.get("/location-geojson", rateLimit, getLocationGeoJSON);
+
+// Filtrado de inmuebles dentro de un polígono dibujado por el usuario
+router.post("/inmuebles-en-poligono", rateLimit, getInmueblesEnPoligono);
 
 export default router;
