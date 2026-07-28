@@ -1513,3 +1513,32 @@ export const getInmueblesEnBbox = async (req, res) => {
     });
   }
 };
+
+export const getPropiedadResumen = async (req, res) => {
+  const { id } = req.params;
+
+  if (!id) {
+    return res.status(400).json({ success: false, message: "id es requerido", data: null, error: null });
+  }
+
+  try {
+    const { rows } = await pool.query(
+      `SELECT
+         p.latitude, p.longitude,
+         (SELECT COUNT(*) FROM propiedades_galeria pg WHERE pg.propiedad_id = p.id)::int AS galeria_count,
+         (SELECT COUNT(*) FROM propiedades_planos pp WHERE pp.propiedad_id = p.id)::int AS planos_count
+       FROM propiedades p
+       WHERE p.id = $1`,
+      [id],
+    );
+
+    if (!rows.length) {
+      return res.status(404).json({ success: false, message: "Propiedad no encontrada", data: null, error: null });
+    }
+
+    res.json({ success: true, message: null, data: rows[0], error: null });
+  } catch (error) {
+    console.error("Error en getPropiedadResumen:", error);
+    res.status(500).json({ success: false, message: "Error al obtener resumen", data: null, error: error.message });
+  }
+};

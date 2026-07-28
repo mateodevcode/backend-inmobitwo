@@ -28,7 +28,7 @@ app.use(cookieParser()); // ← necesario para leer req.cookies
 if (process.env.NODE_ENV !== "production") {
   app.use(morgan("dev"));
 }
-app.use(express.json());
+app.use(express.json({ limit: "5mb" }));
 
 // Rutas
 app.use(authRoutes);

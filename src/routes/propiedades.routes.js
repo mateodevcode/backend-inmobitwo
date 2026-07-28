@@ -11,6 +11,7 @@ import {
   getPropiedadesByOrganizacion,
   getPropertiesBySlugs,
   getInmueblesEnBbox,
+  getPropiedadResumen,
 } from "../controllers/propiedades.controllers.js";
 import { createRateLimitMiddleware, defaultLimiter } from "../lib/rateLimit.js";
 import { APIKEY } from "../config.js";
@@ -44,6 +45,9 @@ router.get(`${ruta}/search-slugs`, rateLimit, getPropertiesBySlugs);
 
 // Búsqueda por bounding box (MapaInmuebles)
 router.get(`${ruta}/inmuebles-en-bbox`, rateLimit, getInmueblesEnBbox);
+
+// Resumen ligero de propiedad para PropertyCard
+router.get(`${ruta}/:id/resumen`, rateLimit, getPropiedadResumen);
 
 // 3. VISTA DE ORGANIZACIÓN (TENANT) - Va antes de los parámetros dinámicos generales
 router.get(
