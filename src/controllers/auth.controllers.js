@@ -203,7 +203,7 @@ export const login = async (req, res) => {
 
 // ─────────────────────────────────────────────
 // POST /auth/refresh
-// Renueva el access_token usando el refresh_token de la cookie
+// Renueva el access_token y rota el refresh_token
 // ─────────────────────────────────────────────
 export const refresh = async (req, res) => {
   try {
@@ -216,7 +216,18 @@ export const refresh = async (req, res) => {
       });
     }
 
-    // Verificar que no esté revocado
+    // 1. Verificar firma JWT antes de tocar la base de datos
+    let decoded;
+    try {
+      decoded = jwt.verify(token, JWT_REFRESH_SECRET);
+    } catch (jwtError) {
+      return res.status(403).json({
+        success: false,
+        error: "Refresh token inválido o expirado.",
+      });
+    }
+
+    // 2. Verificar que exista en DB y no esté revocado
     const { rows } = await pool.query(
       `SELECT * FROM refresh_tokens 
        WHERE token = $1 AND revocado = false AND expira_en > NOW()`,
@@ -230,10 +241,7 @@ export const refresh = async (req, res) => {
       });
     }
 
-    // Verificar firma del token
-    const decoded = jwt.verify(token, JWT_REFRESH_SECRET);
-
-    // Buscar usuario actualizado
+    // 3. Buscar usuario actualizado
     const { rows: usuarioRows } = await pool.query(
       "SELECT id, name, email, rol FROM usuarios WHERE id = $1",
       [decoded.id],
@@ -246,8 +254,24 @@ export const refresh = async (req, res) => {
         .json({ success: false, error: "Usuario no encontrado." });
     }
 
-    // Generar nuevo access token
+    // 4. Generar nuevo access token
     const nuevoAccessToken = generarAccessToken(usuario);
+
+    // 5. Rotación del refresh token: revocar el viejo y crear uno nuevo
+    const nuevoRefreshToken = generarRefreshToken(usuario);
+
+    await pool.query(
+      "UPDATE refresh_tokens SET revocado = true WHERE token = $1",
+      [token],
+    );
+
+    await pool.query(
+      `INSERT INTO refresh_tokens (usuario_id, token, expira_en)
+       VALUES ($1, $2, NOW() + INTERVAL '7 days')`,
+      [usuario.id, nuevoRefreshToken],
+    );
+
+    res.cookie("refresh_token", nuevoRefreshToken, cookieOpciones);
 
     return res.status(200).json({
       success: true,
@@ -255,7 +279,7 @@ export const refresh = async (req, res) => {
     });
   } catch (error) {
     console.error("❌ Error en POST /auth/refresh:", error);
-    res.status(403).json({ success: false, error: "Refresh token inválido." });
+    res.status(500).json({ success: false, error: "Error interno del servidor." });
   }
 };
 
