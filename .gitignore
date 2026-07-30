@@ -10,3 +10,5 @@ MIGRACION_GO.md
 .securitydocker-compose.override.yml
 docker-compose.override.yml
 .security
+dev-up.sh
+dev-down.sh
