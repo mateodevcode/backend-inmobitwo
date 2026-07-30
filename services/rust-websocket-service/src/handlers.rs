@@ -13,7 +13,7 @@ pub async fn health_check() -> impl Responder {
 pub async fn ws_handler(
     req: HttpRequest,
     stream: web::Payload,
-    _state: web::Data<AppState>,
+    state: web::Data<AppState>,
 ) -> impl Responder {
     let session_id = Uuid::new_v4();
     let room = req
@@ -25,6 +25,7 @@ pub async fn ws_handler(
     let session = WebSocketSession {
         id: session_id,
         room,
+        redis_client: state.redis_client.clone(),
     };
 
     ws::start(session, &req, stream)

@@ -27,7 +27,7 @@ async fn main() -> std::io::Result<()> {
 
     let redis_client = redis::Client::open(redis_url).expect("Error creating Redis client");
     let redis_conn = redis_client
-        .get_async_connection()
+        .get_multiplexed_async_connection()
         .await
         .expect("Error connecting to Redis");
 
@@ -36,6 +36,7 @@ async fn main() -> std::io::Result<()> {
     let state = web::Data::new(AppState {
         db: pool,
         redis: redis_conn,
+        redis_client: redis_client.clone(),
         rooms,
     });
 

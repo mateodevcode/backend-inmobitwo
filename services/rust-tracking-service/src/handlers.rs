@@ -83,7 +83,7 @@ pub async fn registrar_evento(
     };
 
     let redis_key = format!("score:{}:{}", evento.sesion_id, evento.propiedad_id);
-    let _ = state.redis.clone().set_ex(&redis_key, nuevo_score, 3600).await;
+    let _: Result<(), redis::RedisError> = state.redis.clone().set_ex(&redis_key, nuevo_score, 3600).await;
 
     if nuevo_score >= scoring::UMBRAL_LEAD {
         let lead_exists = sqlx::query_scalar::<_, i32>(
