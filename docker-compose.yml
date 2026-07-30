@@ -4,12 +4,91 @@ services:
     container_name: inmobitwo-backend
     env_file:
       - .env
+    environment:
+      - RUST_TRACKING_URL=http://inmobitwo-rust-tracking:3002
+      - RUST_MEDIA_URL=http://inmobitwo-rust-media:3003
+      - RUST_WEBSOCKET_URL=ws://inmobitwo-rust-websocket:3004
+      - REDIS_URL=redis://inmobitwo-redis:6379
     ports:
       - "127.0.0.1:3001:3001"
     restart: unless-stopped
     networks:
       - postgres_central_postgres_network
 
+  redis:
+    image: redis:7-alpine
+    container_name: inmobitwo-redis
+    command: redis-server /usr/local/etc/redis/redis.conf
+    volumes:
+      - redis_data:/data
+      - ./redis/redis.conf:/usr/local/etc/redis/redis.conf
+    networks:
+      - postgres_central_postgres_network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    restart: unless-stopped
+
+  rust-tracking:
+    build:
+      context: ./services/rust-tracking-service
+      dockerfile: Dockerfile
+    container_name: inmobitwo-rust-tracking
+    env_file:
+      - .env
+    environment:
+      - DATABASE_URL=postgres://${DB_USER}:${DB_PASSWORD}@postgres_central:5432/${DB_NAME}
+      - REDIS_URL=redis://inmobitwo-redis:6379
+      - RUST_LOG=info
+    networks:
+      - postgres_central_postgres_network
+    depends_on:
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+  rust-media:
+    build:
+      context: ./services/rust-media-service
+      dockerfile: Dockerfile
+    container_name: inmobitwo-rust-media
+    env_file:
+      - .env
+    environment:
+      - REDIS_URL=redis://inmobitwo-redis:6379
+      - RUST_LOG=info
+    networks:
+      - postgres_central_postgres_network
+    depends_on:
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+  rust-websocket:
+    build:
+      context: ./services/rust-websocket-service
+      dockerfile: Dockerfile
+    container_name: inmobitwo-rust-websocket
+    env_file:
+      - .env
+    environment:
+      - DATABASE_URL=postgres://${DB_USER}:${DB_PASSWORD}@postgres_central:5432/${DB_NAME}
+      - REDIS_URL=redis://inmobitwo-redis:6379
+      - RUST_LOG=info
+    ports:
+      - "127.0.0.1:3004:3004"
+    networks:
+      - postgres_central_postgres_network
+    depends_on:
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
 networks:
   postgres_central_postgres_network:
     external: true
+
+volumes:
+  redis_data:

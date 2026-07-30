@@ -1,50 +1,41 @@
-// lib/rateLimit.js
-const rateLimitMap = new Map();
+import { redis } from "./redis.js";
 
 export function createRateLimiter(maxRequests = 10, windowMs = 60000) {
-  return (req) => {
-    const identifier = req.headers["x-api-key"] || req.ip || "anonymous";
-    const now = Date.now();
-    const key = `${identifier}-${Math.floor(now / windowMs)}`;
+  return async (req) => {
+    const key = req.headers["x-api-key"] || req.ip || "anonymous";
+    const limiterKey = `rate_limit:${key}`;
 
-    if (!rateLimitMap.has(key)) {
-      rateLimitMap.set(key, 0);
+    const current = await redis.incr(limiterKey);
+
+    if (current === 1) {
+      await redis.pexpire(limiterKey, windowMs);
     }
 
-    const count = rateLimitMap.get(key);
+    const ttl = await redis.pttl(limiterKey);
 
-    if (count >= maxRequests) {
-      return {
-        isLimited: true,
-        message: `Límite de ${maxRequests} solicitudes por minuto excedido`,
-        retryAfter: Math.ceil((windowMs - (now % windowMs)) / 1000),
-      };
-    }
-
-    rateLimitMap.set(key, count + 1);
-
-    if (Math.random() < 0.01) {
-      const cutoff = now - windowMs * 2;
-      for (const [mapKey] of rateLimitMap) {
-        if (parseInt(mapKey.split("-")[1]) * windowMs < cutoff) {
-          rateLimitMap.delete(mapKey);
-        }
-      }
-    }
-
-    return { isLimited: false };
+    return {
+      isLimited: current > maxRequests,
+      message:
+        current > maxRequests
+          ? "Demasiadas solicitudes"
+          : null,
+      retryAfter: Math.ceil(ttl / 1000),
+    };
   };
 }
 
 export function createRateLimitMiddleware(limiter) {
-  return (req, res, next) => {
-    const result = limiter(req);
+  return async (req, res, next) => {
+    const { isLimited, message, retryAfter } = await limiter(req);
 
-    if (result.isLimited) {
-      return res.status(429).set("Retry-After", result.retryAfter).json({
-        success: false,
-        error: result.message,
-      });
+    if (isLimited) {
+      return res
+        .status(429)
+        .set("Retry-After", retryAfter)
+        .json({
+          success: false,
+          error: message,
+        });
     }
 
     next();
@@ -54,4 +45,4 @@ export function createRateLimitMiddleware(limiter) {
 export const registerLimiter = createRateLimiter(10, 60000);
 export const loginLimiter = createRateLimiter(10, 60000);
 export const defaultLimiter = createRateLimiter(50, 60000);
-export const verificacionCodigoLimiter = createRateLimiter(5, 10 * 60000); // 5 intentos cada 10 min
+export const verificacionCodigoLimiter = createRateLimiter(5, 10 * 60000);
