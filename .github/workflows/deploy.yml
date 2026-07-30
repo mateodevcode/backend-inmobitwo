@@ -7,7 +7,7 @@ on:
 jobs:
     deploy:
         runs-on: ubuntu-latest
-        timeout-minutes: 45
+        timeout-minutes: 100
 
         steps:
             - name: SSH Deploy
@@ -16,9 +16,9 @@ jobs:
                   host: ${{ secrets.SERVER_IP }}
                   username: root
                   key: ${{ secrets.SSH_KEY }}
-                  command_timeout: 40m
+                  command_timeout: 90m
                   script: |
-                      set -e  # ← detiene el script si cualquier comando falla
+                      set -e
 
                       echo "🚀 Iniciando despliegue..."
 
@@ -32,8 +32,14 @@ jobs:
                       git fetch origin main
                       git reset --hard origin/main
 
-                      echo "→ Reconstruyendo y levantando contenedor..."
-                      docker compose up -d --build
+                      echo "→ Construyendo servicios uno por uno (evita saturar los 4 nucleos)..."
+                      docker compose build backend
+                      docker compose build rust-tracking
+                      docker compose build rust-media
+                      docker compose build rust-websocket
+
+                      echo "→ Levantando todos los contenedores..."
+                      docker compose up -d
 
                       echo "→ Limpiando imágenes viejas sin uso..."
                       docker image prune -f
