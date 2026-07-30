@@ -1,0 +1,15 @@
+services:
+  rust-tracking:
+    ports:
+      - "3002:3002"
+    environment:
+      - DATABASE_URL=postgres://${DB_USER}:${DB_PASSWORD}@${DB_HOST}:${DB_PORT}/${DB_NAME}
+      - REDIS_URL=redis://localhost:6379
+
+  rust-media:
+    ports:
+      - "3003:3003"
+
+  rust-websocket:
+    ports:
+      - "3004:3004"
