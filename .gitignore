@@ -8,3 +8,5 @@ resumen.md
 .opencode
 MIGRACION_GO.md
 .securitydocker-compose.override.yml
+docker-compose.override.yml
+.security
