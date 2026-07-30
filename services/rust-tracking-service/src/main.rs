@@ -26,7 +26,7 @@ async fn main() -> std::io::Result<()> {
         .expect("Error connecting to database");
 
     let redis_client = redis::Client::open(redis_url).expect("Error creating Redis client");
-    let redis_conn = redis_client.get_async_connection().await.expect("Error connecting to Redis");
+    let redis_conn = redis_client.get_multiplexed_async_connection().await.expect("Error connecting to Redis");
 
     let scoring_cache = Arc::new(DashMap::new());
 
