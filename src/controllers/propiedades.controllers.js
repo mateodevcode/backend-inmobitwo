@@ -8,6 +8,8 @@ import {
   publicar_anuncio_validate,
 } from "../validations/propiedad_validate.js";
 
+const RUST_MEDIA_URL = process.env.RUST_MEDIA_URL || "http://localhost:3003";
+
 // ok
 export const getPropiedades = async (req, res) => {
   try {
@@ -140,6 +142,95 @@ export const createPropiedades = async (req, res) => {
     }
 
     // ========================================
+    // RUTA RÁPIDA: Delegar procesamiento de imágenes a Rust
+    // ========================================
+    let uploadResponse = null;
+    let imagenesGaleria = [];
+    let imagenesPlanos = [];
+
+    let usarRustMedia = !!process.env.RUST_MEDIA_URL && file && file.buffer;
+
+    if (usarRustMedia) {
+      try {
+        const FormData = (await import("form-data")).default;
+        const axios = (await import("axios")).default;
+        const formData = new FormData();
+
+        formData.append("imagenPrincipal", file.buffer, {
+          filename: file.originalname,
+          contentType: file.mimetype,
+        });
+
+        if (req.files?.galeria) {
+          req.files.galeria.forEach((f) => {
+            formData.append("galeria", f.buffer, {
+              filename: f.originalname,
+              contentType: f.mimetype,
+            });
+          });
+        }
+
+        if (req.files?.planos) {
+          req.files.planos.forEach((f) => {
+            formData.append("planos", f.buffer, {
+              filename: f.originalname,
+              contentType: f.mimetype,
+            });
+          });
+        }
+
+        const mediaResponse = await axios.post(
+          `${RUST_MEDIA_URL}/media/upload/imagen`,
+          formData,
+          {
+            headers: { ...formData.getHeaders() },
+            timeout: 30000,
+          },
+        );
+
+        if (mediaResponse.data?.success && mediaResponse.data?.data?.length > 0) {
+          const images = mediaResponse.data.data;
+          uploadResponse = {
+            fileId: `rust_${Date.now()}`,
+            url: images[0].original || images[0].thumbnail,
+          };
+
+          images.slice(1).forEach((img, i) => {
+            imagenesGaleria.push({
+              url: img.thumbnail || img.medium,
+              public_id: `rust_galeria_${Date.now()}_${i}`,
+              orden: i,
+            });
+          });
+
+          // Fotos de planos se procesan igual que galería por ahora
+          if (req.files?.planos && images.length > 1 + (req.files.galeria?.length || 0)) {
+            const planosStartIdx = 1 + (req.files.galeria?.length || 0);
+            images.slice(planosStartIdx).forEach((img, i) => {
+              imagenesPlanos.push({
+                url: img.thumbnail || img.medium,
+                public_id: `rust_planos_${Date.now()}_${i}`,
+                orden: i,
+              });
+            });
+          }
+
+          console.log("Imagenes procesadas via Rust media service");
+        } else {
+          throw new Error("Respuesta invalida del servicio Rust de media");
+        }
+      } catch (rustError) {
+        console.warn("Rust media no disponible, usando subida directa:", rustError.message);
+        usarRustMedia = false; // caer al fallback
+      }
+    }
+
+    // ========================================
+    // FALLBACK: Subida directa a S3 desde Express
+    // ========================================
+    if (!usarRustMedia) {
+
+    // ========================================
     // PROCESAR IMAGEN PRINCIPAL
     // ========================================
     if (!file.mimetype.startsWith("image/")) {
@@ -160,12 +251,11 @@ export const createPropiedades = async (req, res) => {
       .replace(/\s+/g, "-")}_${Date.now()}.jpg`;
 
     const url = await uploadToS3(file.buffer, fileName, file.mimetype);
-    const uploadResponse = { fileId: fileName, url };
+    uploadResponse = { fileId: fileName, url };
 
     // ========================================
     // PROCESAR GALERÍA
     // ========================================
-    let imagenesGaleria = [];
     if (files.length > 0) {
       for (let i = 0; i < files.length; i++) {
         const imageFile = files[i];
@@ -199,7 +289,6 @@ export const createPropiedades = async (req, res) => {
     // ========================================
     // PROCESAR PLANOS
     // ========================================
-    let imagenesPlanos = [];
     if (req.files?.planos) {
       const planosFiles = req.files.planos;
       for (let i = 0; i < planosFiles.length; i++) {
@@ -230,6 +319,8 @@ export const createPropiedades = async (req, res) => {
         imagenesPlanos.push({ url, public_id: fileName, orden: i });
       }
     }
+
+    } // fin fallback S3 directo
 
     // ========================================
     // INSERTAR EN BD

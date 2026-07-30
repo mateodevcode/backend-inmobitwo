@@ -9,6 +9,23 @@ import { createTransporter } from "../utils/createTransporter.js";
 import { nuevoLead as plantillaNuevoLead } from "../utils/emails/nuevoLead.js";
 import { BREVO_EMAIL_NO_REPLY, FRONTEND_URL } from "../config.js";
 
+const RUST_TRACKING_URL = process.env.RUST_TRACKING_URL || "http://localhost:3002";
+
+const fetchOrNull = async (...args) => {
+  try {
+    const { default: fetch } = await import("node-fetch");
+    return await fetch(...args);
+  } catch {
+    // node-fetch not available, try axios
+    try {
+      const axios = (await import("axios")).default;
+      return await axios(...args);
+    } catch {
+      return null;
+    }
+  }
+};
+
 // ─────────────────────────────────────────────
 // Busca a quién notificar (dueño de la propiedad, o agentes de la organización)
 // y le envía el correo. Marca el lead como notificado.
@@ -72,14 +89,24 @@ const notificarLead = async (lead) => {
       lead.id,
     ]);
   } catch (error) {
-    console.error("❌ Error notificando lead:", error.message);
-    // No relanzamos — un fallo de correo no debe romper la petición original
+    console.error("Error notificando lead:", error.message);
   }
 };
 
-// Crea o recupera una sesión de tracking
+// Crea o recupera una sesión de tracking — delegado a Rust
 export const registrarSesion = async (req, res) => {
   try {
+    if (process.env.RUST_TRACKING_URL) {
+      const axios = (await import("axios")).default;
+      const response = await axios.post(
+        `${RUST_TRACKING_URL}/tracking/sesion`,
+        req.body,
+        { timeout: 5000 },
+      );
+      return res.status(200).json(response.data);
+    }
+
+    // Fallback Express
     const { session_id, consentimiento_dado } = req.body;
     const usuario_id = req.usuario?.id || null;
     const ip_address = req.ip;
@@ -110,18 +137,63 @@ export const registrarSesion = async (req, res) => {
       data: rows[0],
     });
   } catch (error) {
-    console.error("❌ Error en POST /tracking/sesion:", error);
-    res.status(500).json({
-      success: false,
-      error: "Error interno del servidor.",
-      details: error.message,
-    });
+    console.error("Error en POST /tracking/sesion:", error.message);
+
+    // Fallback si Rust no está disponible
+    try {
+      const { session_id, consentimiento_dado } = req.body;
+      const usuario_id = req.usuario?.id || null;
+      const ip_address = req.ip;
+      const user_agent = req.headers["user-agent"];
+
+      if (!session_id) {
+        return res.status(400).json({
+          success: false,
+          error: "session_id es requerido.",
+        });
+      }
+
+      const { rows } = await pool.query(
+        `INSERT INTO sesiones_tracking 
+          (session_id, usuario_id, ip_address, user_agent, consentimiento_dado)
+         VALUES ($1, $2, $3, $4, $5)
+         ON CONFLICT (session_id) 
+         DO UPDATE SET 
+           ultima_actividad = CURRENT_TIMESTAMP,
+           usuario_id = COALESCE(sesiones_tracking.usuario_id, EXCLUDED.usuario_id)
+         RETURNING *`,
+        [session_id, usuario_id, ip_address, user_agent, !!consentimiento_dado],
+      );
+
+      res.status(200).json({
+        success: true,
+        message: "Sesión registrada (fallback Express).",
+        data: rows[0],
+      });
+    } catch (fallbackError) {
+      res.status(500).json({
+        success: false,
+        error: "Error interno del servidor.",
+        details: fallbackError.message,
+      });
+    }
   }
 };
 
-// Registra un evento y evalúa si dispara un lead
+// Registra un evento y evalúa si dispara un lead — delegado a Rust
 export const registrarEvento = async (req, res) => {
   try {
+    if (process.env.RUST_TRACKING_URL) {
+      const axios = (await import("axios")).default;
+      const response = await axios.post(
+        `${RUST_TRACKING_URL}/tracking/evento`,
+        req.body,
+        { timeout: 5000 },
+      );
+      return res.status(200).json(response.data);
+    }
+
+    // Fallback Express
     const { session_id, propiedad_id, tipo_evento, metadata } = req.body;
 
     if (!session_id || !propiedad_id || !tipo_evento) {
@@ -158,7 +230,6 @@ export const registrarEvento = async (req, res) => {
       [sesion.id, propiedad_id, tipo_evento, metadata || {}],
     );
 
-    // Conteo por tipo de evento (para todos menos tiempo_en_pagina)
     const { rows: eventosRows } = await pool.query(
       `SELECT tipo_evento, COUNT(*)::int as cantidad
        FROM eventos_tracking
@@ -169,7 +240,6 @@ export const registrarEvento = async (req, res) => {
     const eventosPorTipo = {};
     eventosRows.forEach((r) => (eventosPorTipo[r.tipo_evento] = r.cantidad));
 
-    // tiempo_en_pagina se mide aparte, por duración acumulada, no por conteo
     const { rows: tiempoRows } = await pool.query(
       `SELECT COALESCE(SUM((metadata->>'segundos')::int), 0) AS segundos_totales
        FROM eventos_tracking
@@ -185,7 +255,6 @@ export const registrarEvento = async (req, res) => {
     let leadCreado = null;
 
     if (score >= UMBRAL_LEAD) {
-      // Si la sesión ya está identificada, traemos los datos reales de contacto
       let datosUsuario = null;
       if (sesion.usuario_id) {
         const { rows: usuarioRows } = await pool.query(
@@ -196,11 +265,6 @@ export const registrarEvento = async (req, res) => {
       }
       const tieneContacto = !!(datosUsuario?.email || datosUsuario?.telefono);
 
-      // INSERT atómico con ON CONFLICT: si dos eventos llegan casi al mismo
-      // tiempo (ej. "vio la propiedad" + "agregó a favoritos" en el mismo
-      // segundo), solo UNO de los dos puede crear el lead. El constraint
-      // UNIQUE (sesion_id, propiedad_id) en la tabla `leads` es lo que lo
-      // garantiza a nivel de base de datos.
       const { rows: insertadoRows } = await pool.query(
         `INSERT INTO leads (propiedad_id, sesion_id, usuario_id, nombre, email, telefono, score, origen)
          VALUES ($1, $2, $3, $4, $5, $6, $7, 'scoring_comportamiento')
@@ -218,18 +282,12 @@ export const registrarEvento = async (req, res) => {
       );
 
       if (insertadoRows.length > 0) {
-        // Este request ganó la carrera: es el único que crea el lead de verdad
         leadCreado = insertadoRows[0];
 
-        // Solo notificamos si hay contacto real (usuario logueado con datos)
         if (tieneContacto) {
           notificarLead(leadCreado);
         }
-        // Si no hay contacto, el ModalContactoLead + PATCH
-        // /tracking/lead/:id/contacto se encarga de disparar notificarLead()
-        // más adelante, cuando el visitante complete sus datos.
       } else {
-        // Ya existía (perdió la carrera, o el lead ya venía de antes)
         const { rows: leadExistenteRows } = await pool.query(
           "SELECT * FROM leads WHERE sesion_id = $1 AND propiedad_id = $2",
           [sesion.id, propiedad_id],
@@ -237,9 +295,6 @@ export const registrarEvento = async (req, res) => {
         const leadActual = leadExistenteRows[0];
 
         if (leadActual) {
-          // Caso borde: el lead ya existía sin contacto, pero AHORA la
-          // sesión se identificó con un usuario logueado (ej. hizo login a
-          // mitad de la visita). Completamos el contacto y notificamos.
           if (!leadActual.email && !leadActual.telefono && tieneContacto) {
             const { rows: actualizadoRows } = await pool.query(
               `UPDATE leads
@@ -274,12 +329,80 @@ export const registrarEvento = async (req, res) => {
       data: { score, leadCreado },
     });
   } catch (error) {
-    console.error("❌ Error en POST /tracking/evento:", error);
-    res.status(500).json({
-      success: false,
-      error: "Error interno del servidor.",
-      details: error.message,
-    });
+    console.error("Error en POST /tracking/evento:", error.message);
+
+    // Fallback si Rust no está disponible — usar lógica Express original
+    try {
+      const { session_id, propiedad_id, tipo_evento, metadata } = req.body;
+
+      if (!session_id || !propiedad_id || !tipo_evento) {
+        return res.status(400).json({
+          success: false,
+          error: "session_id, propiedad_id y tipo_evento son requeridos.",
+        });
+      }
+
+      const { rows: sesionRows } = await pool.query(
+        "SELECT id, usuario_id, consentimiento_dado FROM sesiones_tracking WHERE session_id = $1",
+        [session_id],
+      );
+      const sesion = sesionRows[0];
+
+      if (!sesion) {
+        return res.status(404).json({
+          success: false,
+          error: "Sesión no encontrada.",
+        });
+      }
+
+      if (!sesion.consentimiento_dado) {
+        return res.status(200).json({
+          success: true,
+          message: "Evento no registrado: sin consentimiento.",
+          data: null,
+        });
+      }
+
+      await pool.query(
+        `INSERT INTO eventos_tracking (sesion_id, propiedad_id, tipo_evento, metadata)
+         VALUES ($1, $2, $3, $4)`,
+        [sesion.id, propiedad_id, tipo_evento, metadata || {}],
+      );
+
+      const { rows: eventosRows } = await pool.query(
+        `SELECT tipo_evento, COUNT(*)::int as cantidad
+         FROM eventos_tracking
+         WHERE sesion_id = $1 AND propiedad_id = $2
+         GROUP BY tipo_evento`,
+        [sesion.id, propiedad_id],
+      );
+      const eventosPorTipo = {};
+      eventosRows.forEach((r) => (eventosPorTipo[r.tipo_evento] = r.cantidad));
+
+      const { rows: tiempoRows } = await pool.query(
+        `SELECT COALESCE(SUM((metadata->>'segundos')::int), 0) AS segundos_totales
+         FROM eventos_tracking
+         WHERE sesion_id = $1 AND propiedad_id = $2 AND tipo_evento = 'tiempo_en_pagina'`,
+        [sesion.id, propiedad_id],
+      );
+      const segundosTotales = tiempoRows[0]?.segundos_totales || 0;
+
+      const score = Math.round(
+        calcularScore(eventosPorTipo) + calcularPuntosTiempo(segundosTotales),
+      );
+
+      res.status(200).json({
+        success: true,
+        message: "Evento registrado (fallback Express).",
+        data: { score },
+      });
+    } catch (fallbackError) {
+      res.status(500).json({
+        success: false,
+        error: "Error interno del servidor.",
+        details: fallbackError.message,
+      });
+    }
   }
 };
 
