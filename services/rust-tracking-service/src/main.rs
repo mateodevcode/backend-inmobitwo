@@ -36,7 +36,7 @@ async fn main() -> std::io::Result<()> {
         scoring_cache,
     });
 
-    tracing::info!("Rust Tracking Service iniciando en puerto 3002");
+    tracing::info!("Rust Tracking Service iniciando en puerto 3002 (prueba deploy automatico)");
 
     HttpServer::new(move || {
         let cors = Cors::default().allow_any_origin().allow_any_method().allow_any_header().max_age(3600);
