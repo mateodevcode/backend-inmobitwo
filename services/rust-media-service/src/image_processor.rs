@@ -10,7 +10,16 @@ pub struct ImageVersions {
     pub xlarge: Vec<u8>,
 }
 
-pub async fn process_image(buffer: &[u8]) -> Result<ImageVersions, Box<dyn std::error::Error + Send + Sync>> {
+// Ya NO es async: esto es 100% trabajo de CPU (decode + resize + encode),
+// nunca hace .await de nada. Quien la llame debe correrla dentro de
+// tokio::task::spawn_blocking para obtener paralelismo real entre imágenes
+// (ver handlers.rs). Si se deja como async y se llama directo con .await,
+// el runtime de un solo hilo por worker de Actix la ejecuta de punta a
+// punta sin ceder el paso, y varias imágenes "spawneadas" terminan
+// corriendo en fila una tras otra (justo lo que se veía en el log del VPS).
+pub fn process_image(
+    buffer: &[u8],
+) -> Result<ImageVersions, Box<dyn std::error::Error + Send + Sync>> {
     let total_start = Instant::now();
 
     let decode_start = Instant::now();
@@ -28,23 +37,38 @@ pub async fn process_image(buffer: &[u8]) -> Result<ImageVersions, Box<dyn std::
     // incluso en zoom a pantalla completa. Nada se guarda a resolución de cámara.
     let thumb_start = Instant::now();
     let thumbnail = resize_and_optimize(&img, 200, 70.0)?;
-    tracing::info!("⏱️ resize+encode thumbnail (200px, q70): {:?}", thumb_start.elapsed());
+    tracing::info!(
+        "⏱️ resize+encode thumbnail (200px, q70): {:?}",
+        thumb_start.elapsed()
+    );
 
     let small_start = Instant::now();
     let small = resize_and_optimize(&img, 480, 75.0)?;
-    tracing::info!("⏱️ resize+encode small (480px, q75): {:?}", small_start.elapsed());
+    tracing::info!(
+        "⏱️ resize+encode small (480px, q75): {:?}",
+        small_start.elapsed()
+    );
 
     let medium_start = Instant::now();
     let medium = resize_and_optimize(&img, 900, 80.0)?;
-    tracing::info!("⏱️ resize+encode medium (900px, q80): {:?}", medium_start.elapsed());
+    tracing::info!(
+        "⏱️ resize+encode medium (900px, q80): {:?}",
+        medium_start.elapsed()
+    );
 
     let large_start = Instant::now();
     let large = resize_and_optimize(&img, 1400, 85.0)?;
-    tracing::info!("⏱️ resize+encode large (1400px, q85): {:?}", large_start.elapsed());
+    tracing::info!(
+        "⏱️ resize+encode large (1400px, q85): {:?}",
+        large_start.elapsed()
+    );
 
     let xlarge_start = Instant::now();
     let xlarge = resize_and_optimize(&img, 2000, 85.0)?;
-    tracing::info!("⏱️ resize+encode xlarge (2000px, q85): {:?}", xlarge_start.elapsed());
+    tracing::info!(
+        "⏱️ resize+encode xlarge (2000px, q85): {:?}",
+        xlarge_start.elapsed()
+    );
 
     tracing::info!("⏱️ TOTAL procesamiento (CPU): {:?}", total_start.elapsed());
 
@@ -63,11 +87,18 @@ fn resize_and_optimize(
     quality: f32,
 ) -> Result<Vec<u8>, Box<dyn std::error::Error + Send + Sync>> {
     let (width, height) = img.dimensions();
-
     let resized = if width > height && width > max_dimension {
-        img.resize(max_dimension, u32::MAX, image::imageops::FilterType::Lanczos3)
+        img.resize(
+            max_dimension,
+            u32::MAX,
+            image::imageops::FilterType::Lanczos3,
+        )
     } else if height > max_dimension {
-        img.resize(u32::MAX, max_dimension, image::imageops::FilterType::Lanczos3)
+        img.resize(
+            u32::MAX,
+            max_dimension,
+            image::imageops::FilterType::Lanczos3,
+        )
     } else {
         img.clone()
     };
@@ -77,6 +108,5 @@ fn resize_and_optimize(
     let rgba = resized.to_rgba8();
     let encoder = Encoder::from_rgba(&rgba, rgba.width(), rgba.height());
     let encoded = encoder.encode(quality);
-
     Ok(encoded.to_vec())
 }

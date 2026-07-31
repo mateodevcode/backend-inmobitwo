@@ -18,34 +18,41 @@ async fn procesar_una_imagen(
     timestamp: i64,
     idx: usize,
 ) -> Result<serde_json::Value, String> {
-    match image_processor::process_image(&buffer).await {
-        Ok(versions) => {
-            let base_key = format!("propiedades/imagenes/{}_{}", timestamp, idx);
+    // El decode + resize + encode es puro trabajo de CPU (bloqueante, sin
+    // ningún .await interno). Correrlo con spawn_blocking lo manda al pool
+    // de hilos "blocking" de Tokio, que sí da paralelismo real entre
+    // imágenes (varios hilos de sistema operativo a la vez) — a diferencia
+    // de tokio::spawn a secas, que en un runtime de un solo hilo por worker
+    // de Actix termina ejecutando las tareas una tras otra si nunca ceden
+    // el paso con un .await.
+    let versions = tokio::task::spawn_blocking(move || image_processor::process_image(&buffer))
+        .await
+        .map_err(|e| format!("Tarea de procesamiento (blocking) falló: {}", e))?
+        .map_err(|e| format!("Error procesando imagen: {}", e))?;
 
-            let key_thumbnail = format!("{}_thumbnail.webp", base_key);
-            let key_small = format!("{}_small.webp", base_key);
-            let key_medium = format!("{}_medium.webp", base_key);
-            let key_large = format!("{}_large.webp", base_key);
-            let key_xlarge = format!("{}_xlarge.webp", base_key);
+    let base_key = format!("propiedades/imagenes/{}_{}", timestamp, idx);
 
-            let (thumbnail_url, small_url, medium_url, large_url, xlarge_url) = tokio::join!(
-                s3_client::upload_to_s3(&state.s3_client, &versions.thumbnail, &key_thumbnail, "image/webp", &state.bucket),
-                s3_client::upload_to_s3(&state.s3_client, &versions.small, &key_small, "image/webp", &state.bucket),
-                s3_client::upload_to_s3(&state.s3_client, &versions.medium, &key_medium, "image/webp", &state.bucket),
-                s3_client::upload_to_s3(&state.s3_client, &versions.large, &key_large, "image/webp", &state.bucket),
-                s3_client::upload_to_s3(&state.s3_client, &versions.xlarge, &key_xlarge, "image/webp", &state.bucket),
-            );
+    let key_thumbnail = format!("{}_thumbnail.webp", base_key);
+    let key_small = format!("{}_small.webp", base_key);
+    let key_medium = format!("{}_medium.webp", base_key);
+    let key_large = format!("{}_large.webp", base_key);
+    let key_xlarge = format!("{}_xlarge.webp", base_key);
 
-            Ok(serde_json::json!({
-                "thumbnail": thumbnail_url,
-                "small": small_url,
-                "medium": medium_url,
-                "large": large_url,
-                "xlarge": xlarge_url
-            }))
-        }
-        Err(e) => Err(format!("Error procesando imagen: {}", e)),
-    }
+    let (thumbnail_url, small_url, medium_url, large_url, xlarge_url) = tokio::join!(
+        s3_client::upload_to_s3(&state.s3_client, &versions.thumbnail, &key_thumbnail, "image/webp", &state.bucket),
+        s3_client::upload_to_s3(&state.s3_client, &versions.small, &key_small, "image/webp", &state.bucket),
+        s3_client::upload_to_s3(&state.s3_client, &versions.medium, &key_medium, "image/webp", &state.bucket),
+        s3_client::upload_to_s3(&state.s3_client, &versions.large, &key_large, "image/webp", &state.bucket),
+        s3_client::upload_to_s3(&state.s3_client, &versions.xlarge, &key_xlarge, "image/webp", &state.bucket),
+    );
+
+    Ok(serde_json::json!({
+        "thumbnail": thumbnail_url,
+        "small": small_url,
+        "medium": medium_url,
+        "large": large_url,
+        "xlarge": xlarge_url
+    }))
 }
 
 pub async fn upload_imagen(
@@ -78,8 +85,9 @@ pub async fn upload_imagen(
 
     let timestamp = chrono::Utc::now().timestamp_millis();
 
-    // Cada imagen se procesa en su propia tarea (tokio::spawn), repartidas entre
-    // los núcleos disponibles — antes se procesaban una detrás de otra.
+    // Cada imagen se procesa en su propia tarea (tokio::spawn) y, dentro de
+    // ella, el trabajo de CPU va a spawn_blocking — así sí se reparten entre
+    // los núcleos disponibles de verdad, en vez de solo en apariencia.
     let handles: Vec<_> = buffers
         .into_iter()
         .enumerate()
