@@ -184,7 +184,7 @@ export const createPropiedades = async (req, res) => {
           formData,
           {
             headers: { ...formData.getHeaders() },
-            timeout: 30000,
+            timeout: 90000,
           },
         );
 
@@ -356,23 +356,27 @@ export const createPropiedades = async (req, res) => {
     const nuevaPropiedad = result.rows[0];
 
     if (imagenesGaleria.length > 0) {
-      for (const imagen of imagenesGaleria) {
-        await pool.query(
-          `INSERT INTO propiedades_galeria (propiedad_id, url, public_id, orden, created_at)
-           VALUES ($1, $2, $3, $4, CURRENT_TIMESTAMP)`,
-          [nuevaPropiedad.id, imagen.url, imagen.public_id, imagen.orden],
-        );
-      }
+      await Promise.all(
+        imagenesGaleria.map((imagen) =>
+          pool.query(
+            `INSERT INTO propiedades_galeria (propiedad_id, url, public_id, orden, created_at)
+         VALUES ($1, $2, $3, $4, CURRENT_TIMESTAMP)`,
+            [nuevaPropiedad.id, imagen.url, imagen.public_id, imagen.orden],
+          ),
+        ),
+      );
     }
 
     if (imagenesPlanos.length > 0) {
-      for (const imagen of imagenesPlanos) {
-        await pool.query(
-          `INSERT INTO propiedades_planos (propiedad_id, url, public_id, orden, created_at)
+      await Promise.all(
+        imagenesPlanos.map((imagen) =>
+          pool.query(
+            `INSERT INTO propiedades_planos (propiedad_id, url, public_id, orden, created_at)
            VALUES ($1, $2, $3, $4, CURRENT_TIMESTAMP)`,
-          [nuevaPropiedad.id, imagen.url, imagen.public_id, imagen.orden],
-        );
-      }
+            [nuevaPropiedad.id, imagen.url, imagen.public_id, imagen.orden],
+          ),
+        ),
+      );
     }
 
     return res.status(201).json({
@@ -620,7 +624,7 @@ export const updatePropiedades = async (req, res) => {
           formData,
           {
             headers: { ...formData.getHeaders() },
-            timeout: 30000,
+            timeout: 90000,
           },
         );
 
@@ -870,26 +874,30 @@ export const updatePropiedades = async (req, res) => {
     // AGREGAR NUEVAS IMÁGENES A GALERÍA
     // ========================================
     if (imagenesGaleria.length > 0) {
-      for (const imagen of imagenesGaleria) {
-        await pool.query(
-          `INSERT INTO propiedades_galeria (propiedad_id, url, public_id, orden, created_at)
-           VALUES ($1, $2, $3, $4, CURRENT_TIMESTAMP)`,
-          [id, imagen.url, imagen.public_id, imagen.orden],
-        );
-      }
+      await Promise.all(
+        imagenesGaleria.map((imagen) =>
+          pool.query(
+            `INSERT INTO propiedades_galeria (propiedad_id, url, public_id, orden, created_at)
+         VALUES ($1, $2, $3, $4, CURRENT_TIMESTAMP)`,
+            [id, imagen.url, imagen.public_id, imagen.orden],
+          ),
+        ),
+      );
     }
 
     // ========================================
     // AGREGAR NUEVOS PLANOS
     // ========================================
     if (imagenesPlanos.length > 0) {
-      for (const imagen of imagenesPlanos) {
-        await pool.query(
-          `INSERT INTO propiedades_planos (propiedad_id, url, public_id, orden, created_at)
+      await Promise.all(
+        imagenesPlanos.map((imagen) =>
+          pool.query(
+            `INSERT INTO propiedades_planos (propiedad_id, url, public_id, orden, created_at)
            VALUES ($1, $2, $3, $4, CURRENT_TIMESTAMP)`,
-          [id, imagen.url, imagen.public_id, imagen.orden],
-        );
-      }
+            [id, imagen.url, imagen.public_id, imagen.orden],
+          ),
+        ),
+      );
     }
 
     // ========================================
