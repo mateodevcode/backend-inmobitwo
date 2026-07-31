@@ -1,6 +1,7 @@
 use aws_sdk_s3::Client;
 use aws_sdk_s3::primitives::ByteStream;
 use std::path::Path;
+use std::time::Instant;
 
 pub async fn upload_to_s3(
     client: &Client,
@@ -9,9 +10,10 @@ pub async fn upload_to_s3(
     content_type: &str,
     bucket: &str,
 ) -> String {
+    let start = Instant::now();
+    let size = data.len();
     let body = ByteStream::from(data.to_vec());
-
-    match client
+    let result = match client
         .put_object()
         .bucket(bucket)
         .key(key)
@@ -25,7 +27,9 @@ pub async fn upload_to_s3(
             tracing::error!("Error uploading to S3: {}", e);
             String::new()
         }
-    }
+    };
+    tracing::info!("⏱️ S3 upload [{}] ({} bytes): {:?}", key, size, start.elapsed());
+    result
 }
 
 pub async fn upload_file_to_s3(
@@ -35,9 +39,9 @@ pub async fn upload_file_to_s3(
     content_type: &str,
     bucket: &str,
 ) -> String {
+    let start = Instant::now();
     let body = ByteStream::from_path(Path::new(local_path)).await;
-
-    match body {
+    let result = match body {
         Ok(body) => match client
             .put_object()
             .bucket(bucket)
@@ -57,7 +61,9 @@ pub async fn upload_file_to_s3(
             tracing::error!("Error reading file for S3 upload: {}", e);
             String::new()
         }
-    }
+    };
+    tracing::info!("⏱️ S3 upload archivo [{}]: {:?}", key, start.elapsed());
+    result
 }
 
 fn get_bucket_url(bucket: &str) -> String {
