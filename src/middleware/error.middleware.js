@@ -1,6 +1,15 @@
 export function errorHandler(err, req, res, next) {
   console.error("❌ Error:", err.stack || err.message || err);
 
+  // Manejo específico para archivos demasiado grandes (Multer)
+  if (err.code === "LIMIT_FILE_SIZE") {
+    return res.status(413).json({
+      success: false,
+      error:
+        "Esta imagen pesa demasiado (máx. 15MB). Cámbiala o redúcela e inténtalo de nuevo.",
+    });
+  }
+
   const status = err.status || err.statusCode || 500;
   const message =
     status === 500 ? "Error interno del servidor" : err.message || "Error";

@@ -5,7 +5,7 @@ const storage = multer.memoryStorage(); // guarda el archivo en RAM como buffer,
 
 export const upload = multer({
   storage,
-  limits: { fileSize: 10 * 1024 * 1024 }, // 10MB máximo
+  limits: { fileSize: 15 * 1024 * 1024 }, // 15MB máximo (holgado para fotos de celular reales)
   fileFilter: (req, file, cb) => {
     if (!file.mimetype.startsWith("image/")) {
       return cb(new Error("Solo se permiten imágenes"));
