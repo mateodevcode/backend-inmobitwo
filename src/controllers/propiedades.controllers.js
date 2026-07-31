@@ -88,7 +88,7 @@ export const getPropiedades = async (req, res) => {
   } catch (error) {
     res.status(500).json({
       success: false,
-      error: error,
+      error: error.message,
     });
   }
 };
@@ -188,7 +188,10 @@ export const createPropiedades = async (req, res) => {
           },
         );
 
-        if (mediaResponse.data?.success && mediaResponse.data?.data?.length > 0) {
+        if (
+          mediaResponse.data?.success &&
+          mediaResponse.data?.data?.length > 0
+        ) {
           const images = mediaResponse.data.data;
           uploadResponse = {
             fileId: `rust_${Date.now()}`,
@@ -204,7 +207,10 @@ export const createPropiedades = async (req, res) => {
           });
 
           // Fotos de planos se procesan igual que galería por ahora
-          if (req.files?.planos && images.length > 1 + (req.files.galeria?.length || 0)) {
+          if (
+            req.files?.planos &&
+            images.length > 1 + (req.files.galeria?.length || 0)
+          ) {
             const planosStartIdx = 1 + (req.files.galeria?.length || 0);
             images.slice(planosStartIdx).forEach((img, i) => {
               imagenesPlanos.push({
@@ -220,7 +226,10 @@ export const createPropiedades = async (req, res) => {
           throw new Error("Respuesta invalida del servicio Rust de media");
         }
       } catch (rustError) {
-        console.warn("Rust media no disponible, usando subida directa:", rustError.message);
+        console.warn(
+          "Rust media no disponible, usando subida directa:",
+          rustError.message,
+        );
         usarRustMedia = false; // caer al fallback
       }
     }
@@ -229,97 +238,96 @@ export const createPropiedades = async (req, res) => {
     // FALLBACK: Subida directa a S3 desde Express
     // ========================================
     if (!usarRustMedia) {
-
-    // ========================================
-    // PROCESAR IMAGEN PRINCIPAL
-    // ========================================
-    if (!file.mimetype.startsWith("image/")) {
-      return res.status(400).json({
-        success: false,
-        error: "Solo se permiten imágenes (tipo: image/*).",
-      });
-    }
-    if (file.size > 10 * 1024 * 1024) {
-      return res
-        .status(400)
-        .json({ success: false, error: "La imagen debe pesar menos de 10MB." });
-    }
-
-    const carpeta = AWS_BUCKET_SUBFOLDER || "inmobitwo";
-    const fileName = `${carpeta}/propiedades/imagenes_principal/propiedad_${titulo
-      .toLowerCase()
-      .replace(/\s+/g, "-")}_${Date.now()}.jpg`;
-
-    const url = await uploadToS3(file.buffer, fileName, file.mimetype);
-    uploadResponse = { fileId: fileName, url };
-
-    // ========================================
-    // PROCESAR GALERÍA
-    // ========================================
-    if (files.length > 0) {
-      for (let i = 0; i < files.length; i++) {
-        const imageFile = files[i];
-
-        if (!imageFile.mimetype.startsWith("image/")) {
-          console.warn(
-            `⚠️ Archivo ${imageFile.originalname} no es imagen, saltando...`,
-          );
-          continue;
-        }
-        if (imageFile.size > 10 * 1024 * 1024) {
-          console.warn(
-            `⚠️ Archivo ${imageFile.originalname} supera 10MB, saltando...`,
-          );
-          continue;
-        }
-
-        const fileName = `${carpeta}/propiedades/galeria/propiedad_${titulo
-          .toLowerCase()
-          .replace(/\s+/g, "-")}_${Date.now()}_${i}.jpg`;
-
-        const url = await uploadToS3(
-          imageFile.buffer,
-          fileName,
-          imageFile.mimetype,
-        );
-        imagenesGaleria.push({ url, public_id: fileName, orden: i });
+      // ========================================
+      // PROCESAR IMAGEN PRINCIPAL
+      // ========================================
+      if (!file.mimetype.startsWith("image/")) {
+        return res.status(400).json({
+          success: false,
+          error: "Solo se permiten imágenes (tipo: image/*).",
+        });
       }
-    }
-
-    // ========================================
-    // PROCESAR PLANOS
-    // ========================================
-    if (req.files?.planos) {
-      const planosFiles = req.files.planos;
-      for (let i = 0; i < planosFiles.length; i++) {
-        const imageFile = planosFiles[i];
-
-        if (!imageFile.mimetype.startsWith("image/")) {
-          console.warn(
-            `⚠️ Archivo ${imageFile.originalname} no es imagen, saltando...`,
-          );
-          continue;
-        }
-        if (imageFile.size > 10 * 1024 * 1024) {
-          console.warn(
-            `⚠️ Archivo ${imageFile.originalname} supera 10MB, saltando...`,
-          );
-          continue;
-        }
-
-        const fileName = `${carpeta}/propiedades/planos/propiedad_${titulo
-          .toLowerCase()
-          .replace(/\s+/g, "-")}_${Date.now()}_${i}.jpg`;
-
-        const url = await uploadToS3(
-          imageFile.buffer,
-          fileName,
-          imageFile.mimetype,
-        );
-        imagenesPlanos.push({ url, public_id: fileName, orden: i });
+      if (file.size > 10 * 1024 * 1024) {
+        return res.status(400).json({
+          success: false,
+          error: "La imagen debe pesar menos de 10MB.",
+        });
       }
-    }
 
+      const carpeta = AWS_BUCKET_SUBFOLDER || "inmobitwo";
+      const fileName = `${carpeta}/propiedades/imagenes_principal/propiedad_${titulo
+        .toLowerCase()
+        .replace(/\s+/g, "-")}_${Date.now()}.jpg`;
+
+      const url = await uploadToS3(file.buffer, fileName, file.mimetype);
+      uploadResponse = { fileId: fileName, url };
+
+      // ========================================
+      // PROCESAR GALERÍA
+      // ========================================
+      if (files.length > 0) {
+        for (let i = 0; i < files.length; i++) {
+          const imageFile = files[i];
+
+          if (!imageFile.mimetype.startsWith("image/")) {
+            console.warn(
+              `⚠️ Archivo ${imageFile.originalname} no es imagen, saltando...`,
+            );
+            continue;
+          }
+          if (imageFile.size > 10 * 1024 * 1024) {
+            console.warn(
+              `⚠️ Archivo ${imageFile.originalname} supera 10MB, saltando...`,
+            );
+            continue;
+          }
+
+          const fileName = `${carpeta}/propiedades/galeria/propiedad_${titulo
+            .toLowerCase()
+            .replace(/\s+/g, "-")}_${Date.now()}_${i}.jpg`;
+
+          const url = await uploadToS3(
+            imageFile.buffer,
+            fileName,
+            imageFile.mimetype,
+          );
+          imagenesGaleria.push({ url, public_id: fileName, orden: i });
+        }
+      }
+
+      // ========================================
+      // PROCESAR PLANOS
+      // ========================================
+      if (req.files?.planos) {
+        const planosFiles = req.files.planos;
+        for (let i = 0; i < planosFiles.length; i++) {
+          const imageFile = planosFiles[i];
+
+          if (!imageFile.mimetype.startsWith("image/")) {
+            console.warn(
+              `⚠️ Archivo ${imageFile.originalname} no es imagen, saltando...`,
+            );
+            continue;
+          }
+          if (imageFile.size > 10 * 1024 * 1024) {
+            console.warn(
+              `⚠️ Archivo ${imageFile.originalname} supera 10MB, saltando...`,
+            );
+            continue;
+          }
+
+          const fileName = `${carpeta}/propiedades/planos/propiedad_${titulo
+            .toLowerCase()
+            .replace(/\s+/g, "-")}_${Date.now()}_${i}.jpg`;
+
+          const url = await uploadToS3(
+            imageFile.buffer,
+            fileName,
+            imageFile.mimetype,
+          );
+          imagenesPlanos.push({ url, public_id: fileName, orden: i });
+        }
+      }
     } // fin fallback S3 directo
 
     // ========================================
@@ -370,7 +378,11 @@ export const createPropiedades = async (req, res) => {
     return res.status(201).json({
       success: true,
       message: "Propiedad creada.",
-      data: { ...nuevaPropiedad, galeria: imagenesGaleria, planos: imagenesPlanos },
+      data: {
+        ...nuevaPropiedad,
+        galeria: imagenesGaleria,
+        planos: imagenesPlanos,
+      },
     });
   } catch (error) {
     console.error("❌ Error en POST /propiedades:", error);
@@ -446,10 +458,10 @@ export const updatePropiedades = async (req, res) => {
   try {
     const { id } = req.params;
 
-    if (!id) {
+    if (!id || id === "null" || id === "undefined" || isNaN(parseInt(id))) {
       return res.status(400).json({
         success: false,
-        error: "ID de propiedad requerido",
+        error: "ID de propiedad inválido o requerido",
       });
     }
 
@@ -535,9 +547,11 @@ export const updatePropiedades = async (req, res) => {
 
     let uploadResponse = null;
     let oldPublicId = null;
+    let imagenesGaleria = [];
+    let imagenesPlanos = [];
 
     // ========================================
-    // PROCESAR IMAGEN PRINCIPAL
+    // VALIDACIONES BÁSICAS (antes de intentar Rust o el fallback)
     // ========================================
     if (file && file.size > 0) {
       if (!file.mimetype.startsWith("image/")) {
@@ -546,7 +560,6 @@ export const updatePropiedades = async (req, res) => {
           error: "Solo se permiten imágenes (tipo: image/*).",
         });
       }
-
       if (file.size > 10 * 1024 * 1024) {
         return res.status(400).json({
           success: false,
@@ -566,69 +579,165 @@ export const updatePropiedades = async (req, res) => {
       }
 
       oldPublicId = result.rows[0].imagen_principal_public_id;
-
-      const carpeta = AWS_BUCKET_SUBFOLDER || "inmobitwo";
-      const fileName = `${carpeta}/propiedades/imagenes_principal/propiedad_${(
-        titulo || "imagen"
-      )
-        .toLowerCase()
-        .replace(/\s+/g, "-")}_${Date.now()}.jpg`;
-
-      const url = await uploadToS3(file.buffer, fileName, file.mimetype);
-      uploadResponse = { fileId: fileName, url };
     }
 
+    let usarRustMedia =
+      !!process.env.RUST_MEDIA_URL &&
+      ((file && file.size > 0) || files.length > 0 || planosFiles.length > 0);
+
     // ========================================
-    // PROCESAR GALERÍA NUEVAS
+    // RUTA RÁPIDA: Delegar procesamiento de imágenes a Rust
     // ========================================
-    let imagenesGaleria = [];
-    if (files.length > 0) {
-      const carpeta = AWS_BUCKET_SUBFOLDER || "inmobitwo";
-      for (let i = 0; i < files.length; i++) {
-        const imageFile = files[i];
+    if (usarRustMedia) {
+      try {
+        const FormData = (await import("form-data")).default;
+        const axios = (await import("axios")).default;
+        const formData = new FormData();
 
-        if (!imageFile.mimetype.startsWith("image/")) continue;
-        if (imageFile.size > 10 * 1024 * 1024) continue;
+        if (file && file.size > 0) {
+          formData.append("imagenPrincipal", file.buffer, {
+            filename: file.originalname,
+            contentType: file.mimetype,
+          });
+        }
 
-        const fileName = `${carpeta}/propiedades/galeria/propiedad_${(
-          titulo || "imagen"
-        )
-          .toLowerCase()
-          .replace(/\s+/g, "-")}_${Date.now()}_${i}.jpg`;
+        files.forEach((f) => {
+          formData.append("galeria", f.buffer, {
+            filename: f.originalname,
+            contentType: f.mimetype,
+          });
+        });
 
-        const url = await uploadToS3(
-          imageFile.buffer,
-          fileName,
-          imageFile.mimetype,
+        planosFiles.forEach((f) => {
+          formData.append("planos", f.buffer, {
+            filename: f.originalname,
+            contentType: f.mimetype,
+          });
+        });
+
+        const mediaResponse = await axios.post(
+          `${RUST_MEDIA_URL}/media/upload/imagen`,
+          formData,
+          {
+            headers: { ...formData.getHeaders() },
+            timeout: 30000,
+          },
         );
-        imagenesGaleria.push({ url, public_id: fileName, orden: i });
+
+        if (
+          mediaResponse.data?.success &&
+          mediaResponse.data?.data?.length > 0
+        ) {
+          const images = mediaResponse.data.data;
+          let idx = 0;
+
+          // El orden de las imágenes en la respuesta sigue el mismo orden
+          // en que se agregaron al FormData: principal -> galería -> planos
+          if (file && file.size > 0) {
+            const img = images[idx++];
+            uploadResponse = {
+              fileId: `rust_${Date.now()}`,
+              url: img.original || img.thumbnail,
+            };
+          }
+
+          files.forEach((_, i) => {
+            const img = images[idx++];
+            imagenesGaleria.push({
+              url: img.thumbnail || img.medium,
+              public_id: `rust_galeria_${Date.now()}_${i}`,
+              orden: i,
+            });
+          });
+
+          planosFiles.forEach((_, i) => {
+            const img = images[idx++];
+            imagenesPlanos.push({
+              url: img.thumbnail || img.medium,
+              public_id: `rust_planos_${Date.now()}_${i}`,
+              orden: i,
+            });
+          });
+
+          console.log("Imagenes procesadas via Rust media service (update)");
+        } else {
+          throw new Error("Respuesta invalida del servicio Rust de media");
+        }
+      } catch (rustError) {
+        console.warn(
+          "Rust media no disponible en update, usando subida directa:",
+          rustError.message,
+        );
+        usarRustMedia = false; // caer al fallback
+        uploadResponse = null;
+        imagenesGaleria = [];
+        imagenesPlanos = [];
       }
     }
 
     // ========================================
-    // PROCESAR PLANOS NUEVOS
+    // FALLBACK: Subida directa a S3 desde Express
     // ========================================
-    let imagenesPlanos = [];
-    if (planosFiles.length > 0) {
-      const carpeta = AWS_BUCKET_SUBFOLDER || "inmobitwo";
-      for (let i = 0; i < planosFiles.length; i++) {
-        const imageFile = planosFiles[i];
-
-        if (!imageFile.mimetype.startsWith("image/")) continue;
-        if (imageFile.size > 10 * 1024 * 1024) continue;
-
-        const fileName = `${carpeta}/propiedades/planos/propiedad_${(
+    if (!usarRustMedia) {
+      // PROCESAR IMAGEN PRINCIPAL
+      if (file && file.size > 0) {
+        const carpeta = AWS_BUCKET_SUBFOLDER || "inmobitwo";
+        const fileName = `${carpeta}/propiedades/imagenes_principal/propiedad_${(
           titulo || "imagen"
         )
           .toLowerCase()
-          .replace(/\s+/g, "-")}_${Date.now()}_${i}.jpg`;
+          .replace(/\s+/g, "-")}_${Date.now()}.jpg`;
 
-        const url = await uploadToS3(
-          imageFile.buffer,
-          fileName,
-          imageFile.mimetype,
-        );
-        imagenesPlanos.push({ url, public_id: fileName, orden: i });
+        const url = await uploadToS3(file.buffer, fileName, file.mimetype);
+        uploadResponse = { fileId: fileName, url };
+      }
+
+      // PROCESAR GALERÍA NUEVAS
+      if (files.length > 0) {
+        const carpeta = AWS_BUCKET_SUBFOLDER || "inmobitwo";
+        for (let i = 0; i < files.length; i++) {
+          const imageFile = files[i];
+
+          if (!imageFile.mimetype.startsWith("image/")) continue;
+          if (imageFile.size > 10 * 1024 * 1024) continue;
+
+          const fileName = `${carpeta}/propiedades/galeria/propiedad_${(
+            titulo || "imagen"
+          )
+            .toLowerCase()
+            .replace(/\s+/g, "-")}_${Date.now()}_${i}.jpg`;
+
+          const url = await uploadToS3(
+            imageFile.buffer,
+            fileName,
+            imageFile.mimetype,
+          );
+          imagenesGaleria.push({ url, public_id: fileName, orden: i });
+        }
+      }
+
+      // PROCESAR PLANOS NUEVOS
+      if (planosFiles.length > 0) {
+        const carpeta = AWS_BUCKET_SUBFOLDER || "inmobitwo";
+        for (let i = 0; i < planosFiles.length; i++) {
+          const imageFile = planosFiles[i];
+
+          if (!imageFile.mimetype.startsWith("image/")) continue;
+          if (imageFile.size > 10 * 1024 * 1024) continue;
+
+          const fileName = `${carpeta}/propiedades/planos/propiedad_${(
+            titulo || "imagen"
+          )
+            .toLowerCase()
+            .replace(/\s+/g, "-")}_${Date.now()}_${i}.jpg`;
+
+          const url = await uploadToS3(
+            imageFile.buffer,
+            fileName,
+            imageFile.mimetype,
+          );
+          imagenesPlanos.push({ url, public_id: fileName, orden: i });
+        }
       }
     }
 
@@ -695,8 +804,15 @@ export const updatePropiedades = async (req, res) => {
     }
     const rawPrecio = formDataObj.precio;
     if (rawPrecio !== undefined && rawPrecio !== null && rawPrecio !== "") {
+      const precioParsed = parseInt(rawPrecio);
+      if (isNaN(precioParsed)) {
+        return res.status(400).json({
+          success: false,
+          error: "El precio debe ser un número válido.",
+        });
+      }
       updates.push(`precio = $${paramCount}`);
-      values.push(parseInt(rawPrecio));
+      values.push(precioParsed);
       paramCount++;
     }
     if (uploadResponse) {
@@ -889,9 +1005,7 @@ export const deletePropiedades = async (req, res) => {
         await deleteFromS3(img.public_id);
         planosEliminadosS3++;
       } catch (err) {
-        console.warn(
-          `⚠️ No se pudo eliminar plano de S3: ${err.message}`,
-        );
+        console.warn(`⚠️ No se pudo eliminar plano de S3: ${err.message}`);
       }
     }
 
@@ -961,8 +1075,7 @@ export const publicarAnuncios = async (req, res) => {
     } = raw;
 
     const es_de_organizacion =
-      raw.es_de_organizacion === "true" ||
-      raw.es_de_organizacion === true;
+      raw.es_de_organizacion === "true" || raw.es_de_organizacion === true;
 
     let organizacion_id = raw.organizacion_id;
     if (
@@ -1358,7 +1471,10 @@ export const getPropertiesBySlugs = async (req, res) => {
 
     let typeCondition;
     if (type.includes(",")) {
-      const types = type.split(",").map((t) => t.trim().toLowerCase()).filter(Boolean);
+      const types = type
+        .split(",")
+        .map((t) => t.trim().toLowerCase())
+        .filter(Boolean);
       types.forEach((t) => params.push(t));
       const placeholders = types.map((_, i) => `$${i + 2}`);
       typeCondition = `AND LOWER(p.tipo) IN (${placeholders.join(", ")})`;
@@ -1434,7 +1550,10 @@ export const getPropertiesBySlugs = async (req, res) => {
 
       if (cityRows.length > 0) {
         return res.json({
-          success: true, message: null, data: cityRows, error: null,
+          success: true,
+          message: null,
+          data: cityRows,
+          error: null,
         });
       }
 
@@ -1548,7 +1667,10 @@ export const getInmueblesEnBbox = async (req, res) => {
     }
 
     if (tipoInmueble) {
-      const tipos = tipoInmueble.split(",").map((t) => t.trim().toLowerCase()).filter(Boolean);
+      const tipos = tipoInmueble
+        .split(",")
+        .map((t) => t.trim().toLowerCase())
+        .filter(Boolean);
       if (tipos.length === 1) {
         params.push(tipos[0]);
         filters.push(`LOWER(p.tipo) = LOWER($${params.length})`);
@@ -1609,7 +1731,12 @@ export const getPropiedadResumen = async (req, res) => {
   const { id } = req.params;
 
   if (!id) {
-    return res.status(400).json({ success: false, message: "id es requerido", data: null, error: null });
+    return res.status(400).json({
+      success: false,
+      message: "id es requerido",
+      data: null,
+      error: null,
+    });
   }
 
   try {
@@ -1624,12 +1751,22 @@ export const getPropiedadResumen = async (req, res) => {
     );
 
     if (!rows.length) {
-      return res.status(404).json({ success: false, message: "Propiedad no encontrada", data: null, error: null });
+      return res.status(404).json({
+        success: false,
+        message: "Propiedad no encontrada",
+        data: null,
+        error: null,
+      });
     }
 
     res.json({ success: true, message: null, data: rows[0], error: null });
   } catch (error) {
     console.error("Error en getPropiedadResumen:", error);
-    res.status(500).json({ success: false, message: "Error al obtener resumen", data: null, error: error.message });
+    res.status(500).json({
+      success: false,
+      message: "Error al obtener resumen",
+      data: null,
+      error: error.message,
+    });
   }
 };
