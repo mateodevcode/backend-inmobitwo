@@ -12,12 +12,50 @@ pub async fn health_check() -> impl Responder {
     HttpResponse::Ok().json(serde_json::json!({ "status": "ok", "service": "rust-media" }))
 }
 
+async fn procesar_una_imagen(
+    state: web::Data<AppState>,
+    buffer: Vec<u8>,
+    timestamp: i64,
+    idx: usize,
+) -> Result<serde_json::Value, String> {
+    match image_processor::process_image(&buffer).await {
+        Ok(versions) => {
+            let base_key = format!("propiedades/imagenes/{}_{}", timestamp, idx);
+
+            let key_thumbnail = format!("{}_thumbnail.webp", base_key);
+            let key_small = format!("{}_small.webp", base_key);
+            let key_medium = format!("{}_medium.webp", base_key);
+            let key_large = format!("{}_large.webp", base_key);
+            let key_xlarge = format!("{}_xlarge.webp", base_key);
+
+            let (thumbnail_url, small_url, medium_url, large_url, xlarge_url) = tokio::join!(
+                s3_client::upload_to_s3(&state.s3_client, &versions.thumbnail, &key_thumbnail, "image/webp", &state.bucket),
+                s3_client::upload_to_s3(&state.s3_client, &versions.small, &key_small, "image/webp", &state.bucket),
+                s3_client::upload_to_s3(&state.s3_client, &versions.medium, &key_medium, "image/webp", &state.bucket),
+                s3_client::upload_to_s3(&state.s3_client, &versions.large, &key_large, "image/webp", &state.bucket),
+                s3_client::upload_to_s3(&state.s3_client, &versions.xlarge, &key_xlarge, "image/webp", &state.bucket),
+            );
+
+            Ok(serde_json::json!({
+                "thumbnail": thumbnail_url,
+                "small": small_url,
+                "medium": medium_url,
+                "large": large_url,
+                "xlarge": xlarge_url
+            }))
+        }
+        Err(e) => Err(format!("Error procesando imagen: {}", e)),
+    }
+}
+
 pub async fn upload_imagen(
     state: web::Data<AppState>,
     mut payload: Multipart,
 ) -> impl Responder {
-    let mut urls = Vec::new();
+    let mut buffers: Vec<Vec<u8>> = Vec::new();
 
+    // Leer el multipart es inherentemente secuencial (es un solo stream HTTP),
+    // pero esto es rápido: solo copia bytes, no procesa ni sube nada todavía.
     while let Some(item) = payload.next().await {
         let mut field = match item {
             Ok(f) => f,
@@ -35,67 +73,36 @@ pub async fn upload_imagen(
                 }
             }
         }
+        buffers.push(buffer);
+    }
 
-        match image_processor::process_image(&buffer).await {
-            Ok(versions) => {
-                let timestamp = chrono::Utc::now().timestamp();
-                let base_key = format!("propiedades/imagenes/{}", timestamp);
+    let timestamp = chrono::Utc::now().timestamp_millis();
 
-                let key_original = format!("{}_original.webp", base_key);
-                let key_large = format!("{}_large.webp", base_key);
-                let key_medium = format!("{}_medium.webp", base_key);
-                let key_small = format!("{}_small.webp", base_key);
-                let key_thumbnail = format!("{}_thumbnail.webp", base_key);
+    // Cada imagen se procesa en su propia tarea (tokio::spawn), repartidas entre
+    // los núcleos disponibles — antes se procesaban una detrás de otra.
+    let handles: Vec<_> = buffers
+        .into_iter()
+        .enumerate()
+        .map(|(idx, buffer)| {
+            let state = state.clone();
+            tokio::spawn(procesar_una_imagen(state, buffer, timestamp, idx))
+        })
+        .collect();
 
-                let (original_url, large_url, medium_url, small_url, thumbnail_url) = tokio::join!(
-                    s3_client::upload_to_s3(
-                        &state.s3_client,
-                        &versions.original,
-                        &key_original,
-                        "image/webp",
-                        &state.bucket,
-                    ),
-                    s3_client::upload_to_s3(
-                        &state.s3_client,
-                        &versions.large,
-                        &key_large,
-                        "image/webp",
-                        &state.bucket,
-                    ),
-                    s3_client::upload_to_s3(
-                        &state.s3_client,
-                        &versions.medium,
-                        &key_medium,
-                        "image/webp",
-                        &state.bucket,
-                    ),
-                    s3_client::upload_to_s3(
-                        &state.s3_client,
-                        &versions.small,
-                        &key_small,
-                        "image/webp",
-                        &state.bucket,
-                    ),
-                    s3_client::upload_to_s3(
-                        &state.s3_client,
-                        &versions.thumbnail,
-                        &key_thumbnail,
-                        "image/webp",
-                        &state.bucket,
-                    ),
-                );
+    let resultados = futures::future::join_all(handles).await;
 
-                urls.push(serde_json::json!({
-                    "original": original_url,
-                    "large": large_url,
-                    "medium": medium_url,
-                    "small": small_url,
-                    "thumbnail": thumbnail_url
-                }));
+    let mut urls = Vec::new();
+    for resultado in resultados {
+        match resultado {
+            Ok(Ok(json)) => urls.push(json),
+            Ok(Err(e)) => {
+                return HttpResponse::InternalServerError().json(
+                    serde_json::json!({ "success": false, "error": e }),
+                )
             }
             Err(e) => {
                 return HttpResponse::InternalServerError().json(
-                    serde_json::json!({ "success": false, "error": format!("Error procesando imagen: {}", e) }),
+                    serde_json::json!({ "success": false, "error": format!("Tarea de procesamiento falló: {}", e) }),
                 )
             }
         }
@@ -153,6 +160,7 @@ pub async fn upload_video(
 
             let key_master = format!("{}/master.m3u8", base_key);
             let key_thumbnail_video = format!("{}/thumbnail.jpg", base_key);
+
             let (master_url, thumbnail_url) = tokio::join!(
                 s3_client::upload_file_to_s3(
                     &state.s3_client,
