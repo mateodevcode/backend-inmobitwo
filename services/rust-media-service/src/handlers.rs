@@ -41,46 +41,49 @@ pub async fn upload_imagen(
                 let timestamp = chrono::Utc::now().timestamp();
                 let base_key = format!("propiedades/imagenes/{}", timestamp);
 
-                let original_url = s3_client::upload_to_s3(
-                    &state.s3_client,
-                    &versions.original,
-                    &format!("{}_original.webp", base_key),
-                    "image/webp",
-                    &state.bucket,
-                )
-                .await;
-                let large_url = s3_client::upload_to_s3(
-                    &state.s3_client,
-                    &versions.large,
-                    &format!("{}_large.webp", base_key),
-                    "image/webp",
-                    &state.bucket,
-                )
-                .await;
-                let medium_url = s3_client::upload_to_s3(
-                    &state.s3_client,
-                    &versions.medium,
-                    &format!("{}_medium.webp", base_key),
-                    "image/webp",
-                    &state.bucket,
-                )
-                .await;
-                let small_url = s3_client::upload_to_s3(
-                    &state.s3_client,
-                    &versions.small,
-                    &format!("{}_small.webp", base_key),
-                    "image/webp",
-                    &state.bucket,
-                )
-                .await;
-                let thumbnail_url = s3_client::upload_to_s3(
-                    &state.s3_client,
-                    &versions.thumbnail,
-                    &format!("{}_thumbnail.webp", base_key),
-                    "image/webp",
-                    &state.bucket,
-                )
-                .await;
+                let key_original = format!("{}_original.webp", base_key);
+                let key_large = format!("{}_large.webp", base_key);
+                let key_medium = format!("{}_medium.webp", base_key);
+                let key_small = format!("{}_small.webp", base_key);
+                let key_thumbnail = format!("{}_thumbnail.webp", base_key);
+
+                let (original_url, large_url, medium_url, small_url, thumbnail_url) = tokio::join!(
+                    s3_client::upload_to_s3(
+                        &state.s3_client,
+                        &versions.original,
+                        &key_original,
+                        "image/webp",
+                        &state.bucket,
+                    ),
+                    s3_client::upload_to_s3(
+                        &state.s3_client,
+                        &versions.large,
+                        &key_large,
+                        "image/webp",
+                        &state.bucket,
+                    ),
+                    s3_client::upload_to_s3(
+                        &state.s3_client,
+                        &versions.medium,
+                        &key_medium,
+                        "image/webp",
+                        &state.bucket,
+                    ),
+                    s3_client::upload_to_s3(
+                        &state.s3_client,
+                        &versions.small,
+                        &key_small,
+                        "image/webp",
+                        &state.bucket,
+                    ),
+                    s3_client::upload_to_s3(
+                        &state.s3_client,
+                        &versions.thumbnail,
+                        &key_thumbnail,
+                        "image/webp",
+                        &state.bucket,
+                    ),
+                );
 
                 urls.push(serde_json::json!({
                     "original": original_url,
@@ -148,22 +151,24 @@ pub async fn upload_video(
             let timestamp = chrono::Utc::now().timestamp();
             let base_key = format!("propiedades/videos/{}", timestamp);
 
-            let master_url = s3_client::upload_file_to_s3(
-                &state.s3_client,
-                &versions.hls_master,
-                &format!("{}/master.m3u8", base_key),
-                "application/vnd.apple.mpegurl",
-                &state.bucket,
-            )
-            .await;
-            let thumbnail_url = s3_client::upload_file_to_s3(
-                &state.s3_client,
-                &versions.thumbnail,
-                &format!("{}/thumbnail.jpg", base_key),
-                "image/jpeg",
-                &state.bucket,
-            )
-            .await;
+            let key_master = format!("{}/master.m3u8", base_key);
+            let key_thumbnail_video = format!("{}/thumbnail.jpg", base_key);
+            let (master_url, thumbnail_url) = tokio::join!(
+                s3_client::upload_file_to_s3(
+                    &state.s3_client,
+                    &versions.hls_master,
+                    &key_master,
+                    "application/vnd.apple.mpegurl",
+                    &state.bucket,
+                ),
+                s3_client::upload_file_to_s3(
+                    &state.s3_client,
+                    &versions.thumbnail,
+                    &key_thumbnail_video,
+                    "image/jpeg",
+                    &state.bucket,
+                ),
+            );
 
             HttpResponse::Ok().json(serde_json::json!({
                 "success": true,
