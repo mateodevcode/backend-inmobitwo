@@ -715,7 +715,13 @@ export const getInmueblesEnPoligono = async (req, res) => {
       `SELECT
          p.id, p.titulo, p.precio, p.operacion, p.tipo,
          p.latitude, p.longitude,
-         p.imagen_principal_url, p.estado
+         COALESCE(
+           (SELECT pg.url FROM propiedades_galeria pg 
+            WHERE pg.propiedad_id = p.id AND pg.es_portada = true AND pg.tamaño = 'medium'
+            LIMIT 1),
+           NULL
+         ) AS imagen_principal_url,
+         p.estado
        FROM propiedades p
        WHERE ${filterSQL}
          AND p.geom IS NOT NULL

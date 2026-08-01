@@ -10,30 +10,84 @@ import {
 
 const RUST_MEDIA_URL = process.env.RUST_MEDIA_URL || "http://localhost:3003";
 
+const TAMANOS = ["thumbnail", "small", "medium", "large", "xlarge"];
+
+function portadaSubquery(alias = "propiedades") {
+  return `COALESCE(
+    (SELECT pg.url FROM propiedades_galeria pg 
+     WHERE pg.propiedad_id = ${alias}.id AND pg.es_portada = true AND pg.tamaño = 'medium'
+     LIMIT 1),
+    NULL
+  ) as imagen_principal_url`;
+}
+
+function portadaPublicIdSubquery(alias = "propiedades") {
+  return `COALESCE(
+    (SELECT pg.public_id FROM propiedades_galeria pg 
+     WHERE pg.propiedad_id = ${alias}.id AND pg.es_portada = true AND pg.tamaño = 'medium'
+     LIMIT 1),
+    NULL
+  ) as imagen_principal_public_id`;
+}
+
+// Extrae el key real de S3 a partir de la URL completa que devuelve Rust.
+// Esto es lo que se guarda como public_id de cada fila, para que el borrado
+// en S3 funcione con el archivo real (no con un id inventado).
+function extractS3Key(url) {
+  if (!url) return null;
+  try {
+    const u = new URL(url);
+    return decodeURIComponent(u.pathname.replace(/^\//, ""));
+  } catch {
+    return null;
+  }
+}
+
+// Convierte la respuesta de Rust (array de objetos {thumbnail, small, medium,
+// large, xlarge}) en filas planas listas para insertar en
+// propiedades_galeria / propiedades_planos. Cada foto genera hasta 5 filas
+// (una por tamaño que Rust haya devuelto). Todas comparten el mismo `orden`
+// (identifica que son la MISMA foto), pero cada una tiene su propio
+// public_id real, extraído de su URL.
+function buildVersionRows(imagenesRust, startOrden = 0) {
+  const rows = [];
+  imagenesRust.forEach((img, i) => {
+    const orden = startOrden + i;
+    TAMANOS.forEach((tamano) => {
+      const url = img[tamano];
+      if (!url) return;
+      rows.push({ url, public_id: extractS3Key(url), orden, tamaño: tamano });
+    });
+  });
+  return rows;
+}
+
 // ok
 export const getPropiedades = async (req, res) => {
   try {
     const { rows: propiedades } = await pool.query(
-      "SELECT * FROM propiedades ORDER BY created_at DESC",
+      `SELECT p.*, ${portadaSubquery("p")}, ${portadaPublicIdSubquery("p")}
+       FROM propiedades p
+       ORDER BY p.created_at DESC`,
     );
 
     const propiedadesConDatos = await Promise.all(
       propiedades.map(async (propiedad) => {
-        // Galería
+        // Galería (incluye portada: es_portada=true, orden=-1)
         const { rows: galeria } = await pool.query(
-          `SELECT id, url, public_id, orden 
+          `SELECT id, url, public_id, orden, tamaño, es_portada
            FROM propiedades_galeria 
            WHERE propiedad_id = $1 
-           ORDER BY orden ASC`,
+           ORDER BY orden ASC, tamaño ASC`,
           [propiedad.id],
         );
 
         // Planos
         const { rows: planos } = await pool.query(
-          `SELECT id, url, public_id, orden 
+          `SELECT id, url, public_id, orden, tamaño
            FROM propiedades_planos 
            WHERE propiedad_id = $1 
-           ORDER BY orden ASC`,
+           ORDER BY orden ASC, tamaño ASC`,
           [propiedad.id],
         );
 
@@ -144,7 +198,6 @@ export const createPropiedades = async (req, res) => {
     // ========================================
     // RUTA RÁPIDA: Delegar procesamiento de imágenes a Rust
     // ========================================
-    let uploadResponse = null;
     let imagenesGaleria = [];
     let imagenesPlanos = [];
 
@@ -193,35 +246,34 @@ export const createPropiedades = async (req, res) => {
           mediaResponse.data?.data?.length > 0
         ) {
           const images = mediaResponse.data.data;
-          uploadResponse = {
-            fileId: `rust_${Date.now()}`,
-            url: images[0].original || images[0].thumbnail,
-          };
 
-          images.slice(1).forEach((img, i) => {
-            imagenesGaleria.push({
-              url: img.thumbnail || img.medium,
-              public_id: `rust_galeria_${Date.now()}_${i}`,
-              orden: i,
-            });
-          });
+          // Portada: primera imagen del array. orden fijo = -1 para que
+          // nunca choque con el orden de las fotos de galería (empiezan en 0).
+          const portadaRows = buildVersionRows([images[0]], -1).map((r) => ({
+            ...r,
+            es_portada: true,
+          }));
+          imagenesGaleria.push(...portadaRows);
 
-          // Fotos de planos se procesan igual que galería por ahora
-          if (
-            req.files?.planos &&
-            images.length > 1 + (req.files.galeria?.length || 0)
-          ) {
+          // Galería adicional (orden empieza en 0)
+          const galeriaImgs = images.slice(
+            1,
+            1 + (req.files.galeria?.length || 0),
+          );
+          const galeriaRows = buildVersionRows(galeriaImgs, 0).map((r) => ({
+            ...r,
+            es_portada: false,
+          }));
+          imagenesGaleria.push(...galeriaRows);
+
+          // Planos (sin concepto de portada)
+          if (req.files?.planos) {
             const planosStartIdx = 1 + (req.files.galeria?.length || 0);
-            images.slice(planosStartIdx).forEach((img, i) => {
-              imagenesPlanos.push({
-                url: img.thumbnail || img.medium,
-                public_id: `rust_planos_${Date.now()}_${i}`,
-                orden: i,
-              });
-            });
+            const planosImgs = images.slice(planosStartIdx);
+            imagenesPlanos.push(...buildVersionRows(planosImgs, 0));
           }
 
-          console.log("Imagenes procesadas via Rust media service");
+          console.log("Imagenes procesadas via Rust media service (multi-tamaño)");
         } else {
           throw new Error("Respuesta invalida del servicio Rust de media");
         }
@@ -230,7 +282,9 @@ export const createPropiedades = async (req, res) => {
           "Rust media no disponible, usando subida directa:",
           rustError.message,
         );
-        usarRustMedia = false; // caer al fallback
+        usarRustMedia = false;
+        imagenesGaleria = [];
+        imagenesPlanos = [];
       }
     }
 
@@ -238,8 +292,10 @@ export const createPropiedades = async (req, res) => {
     // FALLBACK: Subida directa a S3 desde Express
     // ========================================
     if (!usarRustMedia) {
+      const carpeta = AWS_BUCKET_SUBFOLDER || "inmobitwo";
+
       // ========================================
-      // PROCESAR IMAGEN PRINCIPAL
+      // PROCESAR IMAGEN PRINCIPAL (fallback: 1 sola versión, tamaño 'medium')
       // ========================================
       if (!file.mimetype.startsWith("image/")) {
         return res.status(400).json({
@@ -254,13 +310,22 @@ export const createPropiedades = async (req, res) => {
         });
       }
 
-      const carpeta = AWS_BUCKET_SUBFOLDER || "inmobitwo";
-      const fileName = `${carpeta}/propiedades/imagenes_principal/propiedad_${titulo
+      const fileNamePrincipal = `${carpeta}/propiedades/imagenes_principal/propiedad_${titulo
         .toLowerCase()
         .replace(/\s+/g, "-")}_${Date.now()}.jpg`;
 
-      const url = await uploadToS3(file.buffer, fileName, file.mimetype);
-      uploadResponse = { fileId: fileName, url };
+      const urlPrincipal = await uploadToS3(
+        file.buffer,
+        fileNamePrincipal,
+        file.mimetype,
+      );
+      imagenesGaleria.push({
+        url: urlPrincipal,
+        public_id: fileNamePrincipal,
+        orden: -1,
+        tamaño: "medium",
+        es_portada: true,
+      });
 
       // ========================================
       // PROCESAR GALERÍA
@@ -291,7 +356,13 @@ export const createPropiedades = async (req, res) => {
             fileName,
             imageFile.mimetype,
           );
-          imagenesGaleria.push({ url, public_id: fileName, orden: i });
+          imagenesGaleria.push({
+            url,
+            public_id: fileName,
+            orden: i,
+            tamaño: "medium",
+            es_portada: false,
+          });
         }
       }
 
@@ -325,7 +396,12 @@ export const createPropiedades = async (req, res) => {
             fileName,
             imageFile.mimetype,
           );
-          imagenesPlanos.push({ url, public_id: fileName, orden: i });
+          imagenesPlanos.push({
+            url,
+            public_id: fileName,
+            orden: i,
+            tamaño: "medium",
+          });
         }
       }
     } // fin fallback S3 directo
@@ -335,17 +411,14 @@ export const createPropiedades = async (req, res) => {
     // ========================================
     const query = `
       INSERT INTO propiedades (
-        titulo, imagen_principal_url, imagen_principal_public_id,
-        estado, es_de_organizacion, organizacion_id, publicado_por_id,
+        titulo, estado, es_de_organizacion, organizacion_id, publicado_por_id,
         created_at, updated_at
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+      ) VALUES ($1, $2, $3, $4, $5, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
       RETURNING *;
     `;
 
     const values = [
       titulo,
-      uploadResponse.url,
-      uploadResponse.fileId,
       estado || "disponible",
       es_de_organizacion || false,
       organizacion_id,
@@ -359,9 +432,16 @@ export const createPropiedades = async (req, res) => {
       await Promise.all(
         imagenesGaleria.map((imagen) =>
           pool.query(
-            `INSERT INTO propiedades_galeria (propiedad_id, url, public_id, orden, created_at)
-         VALUES ($1, $2, $3, $4, CURRENT_TIMESTAMP)`,
-            [nuevaPropiedad.id, imagen.url, imagen.public_id, imagen.orden],
+            `INSERT INTO propiedades_galeria (propiedad_id, orden, tamaño, es_portada, url, public_id, created_at)
+         VALUES ($1, $2, $3, $4, $5, $6, CURRENT_TIMESTAMP)`,
+            [
+              nuevaPropiedad.id,
+              imagen.orden,
+              imagen.tamaño,
+              imagen.es_portada,
+              imagen.url,
+              imagen.public_id,
+            ],
           ),
         ),
       );
@@ -371,19 +451,31 @@ export const createPropiedades = async (req, res) => {
       await Promise.all(
         imagenesPlanos.map((imagen) =>
           pool.query(
-            `INSERT INTO propiedades_planos (propiedad_id, url, public_id, orden, created_at)
-           VALUES ($1, $2, $3, $4, CURRENT_TIMESTAMP)`,
-            [nuevaPropiedad.id, imagen.url, imagen.public_id, imagen.orden],
+            `INSERT INTO propiedades_planos (propiedad_id, orden, tamaño, url, public_id, created_at)
+           VALUES ($1, $2, $3, $4, $5, CURRENT_TIMESTAMP)`,
+            [
+              nuevaPropiedad.id,
+              imagen.orden,
+              imagen.tamaño,
+              imagen.url,
+              imagen.public_id,
+            ],
           ),
         ),
       );
     }
+
+    const portadaFila = imagenesGaleria.find(
+      (r) => r.es_portada && r.tamaño === "medium",
+    );
 
     return res.status(201).json({
       success: true,
       message: "Propiedad creada.",
       data: {
         ...nuevaPropiedad,
+        imagen_principal_url: portadaFila?.url || null,
+        imagen_principal_public_id: portadaFila?.public_id || null,
         galeria: imagenesGaleria,
         planos: imagenesPlanos,
       },
@@ -406,6 +498,8 @@ export const getPropiedadesById = async (req, res) => {
     const { rows } = await pool.query(
       `SELECT 
         p.*,
+        ${portadaSubquery("p")},
+        ${portadaPublicIdSubquery("p")},
         u.name AS usuario_nombre,
         u.email AS usuario_email
       FROM propiedades p
@@ -425,18 +519,18 @@ export const getPropiedadesById = async (req, res) => {
     }
 
     const { rows: galeria } = await pool.query(
-      `SELECT id, url, public_id, orden 
+      `SELECT id, url, public_id, orden, tamaño, es_portada
        FROM propiedades_galeria 
        WHERE propiedad_id = $1 
-       ORDER BY orden ASC`,
+       ORDER BY orden ASC, tamaño ASC`,
       [id],
     );
 
     const { rows: planos } = await pool.query(
-      `SELECT id, url, public_id, orden 
+      `SELECT id, url, public_id, orden, tamaño
        FROM propiedades_planos 
        WHERE propiedad_id = $1 
-       ORDER BY orden ASC`,
+       ORDER BY orden ASC, tamaño ASC`,
       [id],
     );
 
@@ -550,13 +644,13 @@ export const updatePropiedades = async (req, res) => {
     }
 
     let uploadResponse = null;
-    let oldPublicId = null;
     let imagenesGaleria = [];
     let imagenesPlanos = [];
 
     // ========================================
     // VALIDACIONES BÁSICAS (antes de intentar Rust o el fallback)
     // ========================================
+    let oldPortadaRows = [];
     if (file && file.size > 0) {
       if (!file.mimetype.startsWith("image/")) {
         return res.status(400).json({
@@ -571,18 +665,22 @@ export const updatePropiedades = async (req, res) => {
         });
       }
 
-      const result = await pool.query(
-        "SELECT imagen_principal_public_id FROM propiedades WHERE id = $1",
+      const propiedadExiste = await pool.query(
+        "SELECT id FROM propiedades WHERE id = $1",
         [id],
       );
 
-      if (result.rows.length === 0) {
+      if (propiedadExiste.rows.length === 0) {
         return res
           .status(404)
           .json({ success: false, error: "Propiedad no encontrada." });
       }
 
-      oldPublicId = result.rows[0].imagen_principal_public_id;
+      const { rows } = await pool.query(
+        "SELECT id, public_id FROM propiedades_galeria WHERE propiedad_id = $1 AND es_portada = true",
+        [id],
+      );
+      oldPortadaRows = rows;
     }
 
     let usarRustMedia =
@@ -638,30 +736,45 @@ export const updatePropiedades = async (req, res) => {
           // El orden de las imágenes en la respuesta sigue el mismo orden
           // en que se agregaron al FormData: principal -> galería -> planos
           if (file && file.size > 0) {
-            const img = images[idx++];
-            uploadResponse = {
-              fileId: `rust_${Date.now()}`,
-              url: img.original || img.thumbnail,
-            };
+            const portadaRows = buildVersionRows([images[idx++]], -1).map(
+              (r) => ({ ...r, es_portada: true }),
+            );
+            imagenesGaleria.push(...portadaRows);
           }
 
-          files.forEach((_, i) => {
-            const img = images[idx++];
-            imagenesGaleria.push({
-              url: img.thumbnail || img.medium,
-              public_id: `rust_galeria_${Date.now()}_${i}`,
-              orden: i,
-            });
-          });
+          if (files.length > 0) {
+            const { rows } = await pool.query(
+              `SELECT COALESCE(MAX(orden), -1) + 1 AS siguiente_orden
+               FROM propiedades_galeria
+               WHERE propiedad_id = $1 AND es_portada = false`,
+              [id],
+            );
+            const siguienteOrdenGaleria = rows[0].siguiente_orden;
+            const nuevasGaleriaImgs = images.slice(idx, idx + files.length);
+            idx += files.length;
+            const galeriaRows = buildVersionRows(
+              nuevasGaleriaImgs,
+              siguienteOrdenGaleria,
+            ).map((r) => ({ ...r, es_portada: false }));
+            imagenesGaleria.push(...galeriaRows);
+          }
 
-          planosFiles.forEach((_, i) => {
-            const img = images[idx++];
-            imagenesPlanos.push({
-              url: img.thumbnail || img.medium,
-              public_id: `rust_planos_${Date.now()}_${i}`,
-              orden: i,
-            });
-          });
+          if (planosFiles.length > 0) {
+            const { rows } = await pool.query(
+              `SELECT COALESCE(MAX(orden), -1) + 1 AS siguiente_orden
+               FROM propiedades_planos
+               WHERE propiedad_id = $1`,
+              [id],
+            );
+            const siguienteOrdenPlanos = rows[0].siguiente_orden;
+            const nuevosPlanosImgs = images.slice(
+              idx,
+              idx + planosFiles.length,
+            );
+            imagenesPlanos.push(
+              ...buildVersionRows(nuevosPlanosImgs, siguienteOrdenPlanos),
+            );
+          }
 
           console.log("Imagenes procesadas via Rust media service (update)");
         } else {
@@ -683,22 +796,40 @@ export const updatePropiedades = async (req, res) => {
     // FALLBACK: Subida directa a S3 desde Express
     // ========================================
     if (!usarRustMedia) {
-      // PROCESAR IMAGEN PRINCIPAL
+      const carpeta = AWS_BUCKET_SUBFOLDER || "inmobitwo";
+
+      // PROCESAR IMAGEN PRINCIPAL (fallback: 1 sola versión, tamaño 'medium')
       if (file && file.size > 0) {
-        const carpeta = AWS_BUCKET_SUBFOLDER || "inmobitwo";
-        const fileName = `${carpeta}/propiedades/imagenes_principal/propiedad_${(
+        const fileNamePrincipal = `${carpeta}/propiedades/imagenes_principal/propiedad_${(
           titulo || "imagen"
         )
           .toLowerCase()
           .replace(/\s+/g, "-")}_${Date.now()}.jpg`;
 
-        const url = await uploadToS3(file.buffer, fileName, file.mimetype);
-        uploadResponse = { fileId: fileName, url };
+        const urlPrincipal = await uploadToS3(
+          file.buffer,
+          fileNamePrincipal,
+          file.mimetype,
+        );
+        imagenesGaleria.push({
+          url: urlPrincipal,
+          public_id: fileNamePrincipal,
+          orden: -1,
+          tamaño: "medium",
+          es_portada: true,
+        });
       }
 
       // PROCESAR GALERÍA NUEVAS
       if (files.length > 0) {
-        const carpeta = AWS_BUCKET_SUBFOLDER || "inmobitwo";
+        const { rows } = await pool.query(
+          `SELECT COALESCE(MAX(orden), -1) + 1 AS siguiente_orden
+           FROM propiedades_galeria
+           WHERE propiedad_id = $1 AND es_portada = false`,
+          [id],
+        );
+        let siguienteOrden = rows[0].siguiente_orden;
+
         for (let i = 0; i < files.length; i++) {
           const imageFile = files[i];
 
@@ -716,13 +847,26 @@ export const updatePropiedades = async (req, res) => {
             fileName,
             imageFile.mimetype,
           );
-          imagenesGaleria.push({ url, public_id: fileName, orden: i });
+          imagenesGaleria.push({
+            url,
+            public_id: fileName,
+            orden: siguienteOrden++,
+            tamaño: "medium",
+            es_portada: false,
+          });
         }
       }
 
       // PROCESAR PLANOS NUEVOS
       if (planosFiles.length > 0) {
-        const carpeta = AWS_BUCKET_SUBFOLDER || "inmobitwo";
+        const { rows } = await pool.query(
+          `SELECT COALESCE(MAX(orden), -1) + 1 AS siguiente_orden
+           FROM propiedades_planos
+           WHERE propiedad_id = $1`,
+          [id],
+        );
+        let siguienteOrdenPlanos = rows[0].siguiente_orden;
+
         for (let i = 0; i < planosFiles.length; i++) {
           const imageFile = planosFiles[i];
 
@@ -740,52 +884,68 @@ export const updatePropiedades = async (req, res) => {
             fileName,
             imageFile.mimetype,
           );
-          imagenesPlanos.push({ url, public_id: fileName, orden: i });
+          imagenesPlanos.push({
+            url,
+            public_id: fileName,
+            orden: siguienteOrdenPlanos++,
+            tamaño: "medium",
+          });
         }
       }
     }
 
     // ========================================
-    // ELIMINAR IMÁGENES DE GALERÍA MARCADAS
+    // ELIMINAR FOTOS DE GALERÍA MARCADAS
     // ========================================
+    // IMPORTANTE: imagesToDelete ahora contiene valores de `orden` (identifica
+    // la FOTO), no ids de fila individual — cada foto ocupa hasta 5 filas
+    // (una por tamaño). Se borran las 5 filas + sus 5 objetos en S3.
+    // Se excluye es_portada=true a propósito: la portada solo se reemplaza
+    // subiendo una nueva imagen principal, no se borra por esta vía.
     if (imagesToDelete.length > 0) {
-      for (const imagenId of imagesToDelete) {
-        const img = await pool.query(
-          "SELECT public_id FROM propiedades_galeria WHERE id = $1",
-          [imagenId],
+      for (const orden of imagesToDelete) {
+        const { rows: filas } = await pool.query(
+          `SELECT id, public_id FROM propiedades_galeria
+           WHERE propiedad_id = $1 AND orden = $2 AND es_portada = false`,
+          [id, orden],
         );
-        if (img.rows.length > 0) {
+        for (const fila of filas) {
           try {
-            await deleteFromS3(img.rows[0].public_id);
+            await deleteFromS3(fila.public_id);
           } catch (err) {
             console.warn(`⚠️ No se pudo eliminar de S3: ${err.message}`);
           }
         }
-        await pool.query("DELETE FROM propiedades_galeria WHERE id = $1", [
-          imagenId,
-        ]);
+        await pool.query(
+          `DELETE FROM propiedades_galeria
+           WHERE propiedad_id = $1 AND orden = $2 AND es_portada = false`,
+          [id, orden],
+        );
       }
     }
 
     // ========================================
     // ELIMINAR PLANOS MARCADOS
     // ========================================
+    // Mismo cambio: planosToDelete contiene valores de `orden`.
     if (planosToDelete.length > 0) {
-      for (const planoId of planosToDelete) {
-        const img = await pool.query(
-          "SELECT public_id FROM propiedades_planos WHERE id = $1",
-          [planoId],
+      for (const orden of planosToDelete) {
+        const { rows: filas } = await pool.query(
+          `SELECT id, public_id FROM propiedades_planos
+           WHERE propiedad_id = $1 AND orden = $2`,
+          [id, orden],
         );
-        if (img.rows.length > 0) {
+        for (const fila of filas) {
           try {
-            await deleteFromS3(img.rows[0].public_id);
+            await deleteFromS3(fila.public_id);
           } catch (err) {
             console.warn(`⚠️ No se pudo eliminar plano de S3: ${err.message}`);
           }
         }
-        await pool.query("DELETE FROM propiedades_planos WHERE id = $1", [
-          planoId,
-        ]);
+        await pool.query(
+          `DELETE FROM propiedades_planos WHERE propiedad_id = $1 AND orden = $2`,
+          [id, orden],
+        );
       }
     }
 
@@ -819,14 +979,6 @@ export const updatePropiedades = async (req, res) => {
       values.push(precioParsed);
       paramCount++;
     }
-    if (uploadResponse) {
-      updates.push(`imagen_principal_url = $${paramCount}`);
-      values.push(uploadResponse.url);
-      paramCount++;
-      updates.push(`imagen_principal_public_id = $${paramCount}`);
-      values.push(uploadResponse.fileId);
-      paramCount++;
-    }
 
     if (
       updates.length === 0 &&
@@ -857,17 +1009,29 @@ export const updatePropiedades = async (req, res) => {
           .status(404)
           .json({ success: false, error: "Propiedad no encontrada." });
       }
+    }
 
-      if (uploadResponse && oldPublicId) {
+    // ========================================
+    // SI HAY PORTADA NUEVA: borrar la portada anterior (todas sus filas/
+    // tamaños) antes de insertar la nueva, para no violar el índice único
+    // (propiedad_id, tamaño) WHERE es_portada = true.
+    // ========================================
+    const hayPortadaNueva = imagenesGaleria.some((img) => img.es_portada);
+    if (hayPortadaNueva && oldPortadaRows.length > 0) {
+      for (const fila of oldPortadaRows) {
         try {
-          await deleteFromS3(oldPublicId);
+          await deleteFromS3(fila.public_id);
         } catch (err) {
           console.warn(
-            "⚠️ No se pudo eliminar imagen principal antigua:",
+            "⚠️ No se pudo eliminar imagen principal antigua de S3:",
             err.message,
           );
         }
       }
+      await pool.query(
+        "DELETE FROM propiedades_galeria WHERE propiedad_id = $1 AND es_portada = true",
+        [id],
+      );
     }
 
     // ========================================
@@ -877,9 +1041,16 @@ export const updatePropiedades = async (req, res) => {
       await Promise.all(
         imagenesGaleria.map((imagen) =>
           pool.query(
-            `INSERT INTO propiedades_galeria (propiedad_id, url, public_id, orden, created_at)
-         VALUES ($1, $2, $3, $4, CURRENT_TIMESTAMP)`,
-            [id, imagen.url, imagen.public_id, imagen.orden],
+            `INSERT INTO propiedades_galeria (propiedad_id, orden, tamaño, es_portada, url, public_id, created_at)
+         VALUES ($1, $2, $3, $4, $5, $6, CURRENT_TIMESTAMP)`,
+            [
+              id,
+              imagen.orden,
+              imagen.tamaño,
+              imagen.es_portada,
+              imagen.url,
+              imagen.public_id,
+            ],
           ),
         ),
       );
@@ -892,9 +1063,9 @@ export const updatePropiedades = async (req, res) => {
       await Promise.all(
         imagenesPlanos.map((imagen) =>
           pool.query(
-            `INSERT INTO propiedades_planos (propiedad_id, url, public_id, orden, created_at)
-           VALUES ($1, $2, $3, $4, CURRENT_TIMESTAMP)`,
-            [id, imagen.url, imagen.public_id, imagen.orden],
+            `INSERT INTO propiedades_planos (propiedad_id, orden, tamaño, url, public_id, created_at)
+           VALUES ($1, $2, $3, $4, $5, CURRENT_TIMESTAMP)`,
+            [id, imagen.orden, imagen.tamaño, imagen.url, imagen.public_id],
           ),
         ),
       );
@@ -904,17 +1075,18 @@ export const updatePropiedades = async (req, res) => {
     // RETORNAR PROPIEDAD ACTUALIZADA
     // ========================================
     const propiedadActualizada = await pool.query(
-      "SELECT * FROM propiedades WHERE id = $1",
+      `SELECT p.*, ${portadaSubquery("p")}, ${portadaPublicIdSubquery("p")}
+       FROM propiedades p WHERE p.id = $1`,
       [id],
     );
     const galeriaActualizada = await pool.query(
-      `SELECT id, url, public_id, orden FROM propiedades_galeria
-       WHERE propiedad_id = $1 ORDER BY orden ASC`,
+      `SELECT id, url, public_id, orden, tamaño, es_portada FROM propiedades_galeria
+       WHERE propiedad_id = $1 ORDER BY orden ASC, tamaño ASC`,
       [id],
     );
     const planosActualizados = await pool.query(
-      `SELECT id, url, public_id, orden FROM propiedades_planos
-       WHERE propiedad_id = $1 ORDER BY orden ASC`,
+      `SELECT id, url, public_id, orden, tamaño FROM propiedades_planos
+       WHERE propiedad_id = $1 ORDER BY orden ASC, tamaño ASC`,
       [id],
     );
 
@@ -950,7 +1122,7 @@ export const deletePropiedades = async (req, res) => {
     }
 
     const propiedadResult = await pool.query(
-      "SELECT id, imagen_principal_public_id, publicado_por_id FROM propiedades WHERE id = $1",
+      "SELECT id, publicado_por_id FROM propiedades WHERE id = $1",
       [id],
     );
 
@@ -970,24 +1142,12 @@ export const deletePropiedades = async (req, res) => {
       });
     }
 
-    const imagenPrincipalPublicId = propiedad.imagen_principal_public_id;
-
     const galeriaResult = await pool.query(
       "SELECT id, public_id FROM propiedades_galeria WHERE propiedad_id = $1",
       [id],
     );
 
     const galeriaImgs = galeriaResult.rows;
-
-    if (imagenPrincipalPublicId) {
-      try {
-        await deleteFromS3(imagenPrincipalPublicId);
-      } catch (err) {
-        console.warn(
-          `⚠️ No se pudo eliminar imagen principal de S3: ${err.message}`,
-        );
-      }
-    }
 
     let imagenesEliminadasS3 = 0;
     for (const img of galeriaImgs) {
@@ -1044,7 +1204,6 @@ export const deletePropiedades = async (req, res) => {
       message: "Propiedad eliminada",
       data: {
         propiedadId: id,
-        imagenPrincipalEliminada: !!imagenPrincipalPublicId,
         imagenesGaleriaEliminadas: imagenesEliminadasS3,
         totalImagenesGaleria: galeriaImgs.length,
         planosEliminados: planosEliminadosS3,
@@ -1193,14 +1352,15 @@ export const getPropiedadesHome = async (req, res) => {
     let whereClause = "";
 
     if (cursor) {
-      whereClause = "WHERE created_at < $2";
+      whereClause = "WHERE p.created_at < $2";
       params.push(cursor);
     }
 
     const { rows: propiedades } = await pool.query(
-      `SELECT * FROM propiedades 
+      `SELECT p.*, ${portadaSubquery("p")}, ${portadaPublicIdSubquery("p")}
+       FROM propiedades p
        ${whereClause}
-       ORDER BY created_at DESC 
+       ORDER BY p.created_at DESC 
        LIMIT $1`,
       params,
     );
@@ -1208,18 +1368,18 @@ export const getPropiedadesHome = async (req, res) => {
     const propiedadesConDatos = await Promise.all(
       propiedades.map(async (propiedad) => {
         const { rows: galeria } = await pool.query(
-          `SELECT id, url, public_id, orden 
+          `SELECT id, url, public_id, orden, tamaño, es_portada
            FROM propiedades_galeria 
            WHERE propiedad_id = $1 
-           ORDER BY orden ASC`,
+           ORDER BY orden ASC, tamaño ASC`,
           [propiedad.id],
         );
 
         const { rows: planos } = await pool.query(
-          `SELECT id, url, public_id, orden 
+          `SELECT id, url, public_id, orden, tamaño
            FROM propiedades_planos 
            WHERE propiedad_id = $1 
-           ORDER BY orden ASC`,
+           ORDER BY orden ASC, tamaño ASC`,
           [propiedad.id],
         );
 
@@ -1279,30 +1439,30 @@ export const getPropiedadesMisAnuncios = async (req, res) => {
     const id = req.usuario.id;
 
     const { rows: propiedades } = await pool.query(
-      `SELECT *
-       FROM propiedades
-       WHERE publicado_por_id = $1
-       ORDER BY created_at DESC`,
+      `SELECT p.*, ${portadaSubquery("p")}, ${portadaPublicIdSubquery("p")}
+       FROM propiedades p
+       WHERE p.publicado_por_id = $1
+       ORDER BY p.created_at DESC`,
       [id],
     );
 
     const propiedadesConDatos = await Promise.all(
       propiedades.map(async (propiedad) => {
-        // Galería
+        // Galería (incluye portada: es_portada=true, orden=-1)
         const { rows: galeria } = await pool.query(
-          `SELECT id, url, public_id, orden
+          `SELECT id, url, public_id, orden, tamaño, es_portada
            FROM propiedades_galeria
            WHERE propiedad_id = $1
-           ORDER BY orden ASC`,
+           ORDER BY orden ASC, tamaño ASC`,
           [propiedad.id],
         );
 
         // Planos
         const { rows: planos } = await pool.query(
-          `SELECT id, url, public_id, orden
+          `SELECT id, url, public_id, orden, tamaño
            FROM propiedades_planos
            WHERE propiedad_id = $1
-           ORDER BY orden ASC`,
+           ORDER BY orden ASC, tamaño ASC`,
           [propiedad.id],
         );
 
@@ -1349,9 +1509,9 @@ export const getPropiedadesMisAnuncios = async (req, res) => {
       }),
     );
 
-    return res.status(200).json({
+    res.status(200).json({
       success: true,
-      message: "Propiedades obtenidas.",
+      message: "propiedades obtenidas.",
       data: propiedadesConDatos,
     });
   } catch (error) {
@@ -1396,17 +1556,18 @@ export const getPropiedadesByOrganizacion = async (req, res) => {
     // 2. Traer sus propiedades con paginación por cursor
     const params = [organizacion.id, limit];
     let whereClause =
-      "WHERE organizacion_id = $1 AND es_de_organizacion = true";
+      "WHERE p.organizacion_id = $1 AND p.es_de_organizacion = true";
 
     if (cursor) {
-      whereClause += " AND created_at < $3";
+      whereClause += " AND p.created_at < $3";
       params.push(cursor);
     }
 
     const { rows: propiedades } = await pool.query(
-      `SELECT * FROM propiedades 
+      `SELECT p.*, ${portadaSubquery("p")}, ${portadaPublicIdSubquery("p")}
+       FROM propiedades p
        ${whereClause}
-       ORDER BY created_at DESC 
+       ORDER BY p.created_at DESC 
        LIMIT $2`,
       params,
     );
@@ -1414,18 +1575,18 @@ export const getPropiedadesByOrganizacion = async (req, res) => {
     const propiedadesConDatos = await Promise.all(
       propiedades.map(async (propiedad) => {
         const { rows: galeria } = await pool.query(
-          `SELECT id, url, public_id, orden 
+          `SELECT id, url, public_id, orden, tamaño, es_portada
            FROM propiedades_galeria 
            WHERE propiedad_id = $1 
-           ORDER BY orden ASC`,
+           ORDER BY orden ASC, tamaño ASC`,
           [propiedad.id],
         );
 
         const { rows: planos } = await pool.query(
-          `SELECT id, url, public_id, orden 
+          `SELECT id, url, public_id, orden, tamaño
            FROM propiedades_planos 
            WHERE propiedad_id = $1 
-           ORDER BY orden ASC`,
+           ORDER BY orden ASC, tamaño ASC`,
           [propiedad.id],
         );
 
@@ -1496,8 +1657,10 @@ export const getPropertiesBySlugs = async (req, res) => {
         (SELECT json_agg(json_build_object(
           'id', pg.id,
           'url', pg.url,
-          'orden', pg.orden
-        ) ORDER BY pg.orden)
+          'orden', pg.orden,
+          'tamaño', pg.tamaño,
+          'es_portada', pg.es_portada
+        ) ORDER BY pg.orden, pg.tamaño)
         FROM propiedades_galeria pg
         WHERE pg.propiedad_id = p.id),
         '[]'::json
@@ -1509,8 +1672,9 @@ export const getPropertiesBySlugs = async (req, res) => {
         (SELECT json_agg(json_build_object(
           'id', pp.id,
           'url', pp.url,
-          'orden', pp.orden
-        ) ORDER BY pp.orden)
+          'orden', pp.orden,
+          'tamaño', pp.tamaño
+        ) ORDER BY pp.orden, pp.tamaño)
         FROM propiedades_planos pp
         WHERE pp.propiedad_id = p.id),
         '[]'::json
@@ -1519,7 +1683,8 @@ export const getPropertiesBySlugs = async (req, res) => {
 
     const selectFields = `
       p.id, p.tipo, p.operacion, p.titulo, p.direccion, p.precio,
-      p.imagen_principal_url,
+      ${portadaSubquery("p")},
+      ${portadaPublicIdSubquery("p")},
       p.es_de_organizacion,
       ${galeriaSubquery},
       ${planosSubquery},
@@ -1695,7 +1860,7 @@ export const getInmueblesEnBbox = async (req, res) => {
 
     const query = `
       SELECT p.id, p.titulo, p.precio, p.operacion, p.tipo,
-             p.imagen_principal_url,
+             ${portadaSubquery("p")},
              ST_Y(p.geom) AS lat, ST_X(p.geom) AS lng
       FROM propiedades p
       WHERE ST_Intersects(
@@ -1751,8 +1916,8 @@ export const getPropiedadResumen = async (req, res) => {
     const { rows } = await pool.query(
       `SELECT
          p.latitude, p.longitude,
-         (SELECT COUNT(*) FROM propiedades_galeria pg WHERE pg.propiedad_id = p.id)::int AS galeria_count,
-         (SELECT COUNT(*) FROM propiedades_planos pp WHERE pp.propiedad_id = p.id)::int AS planos_count
+         (SELECT COUNT(DISTINCT pg.orden) FROM propiedades_galeria pg WHERE pg.propiedad_id = p.id AND pg.es_portada = false)::int AS galeria_count,
+         (SELECT COUNT(DISTINCT pp.orden) FROM propiedades_planos pp WHERE pp.propiedad_id = p.id)::int AS planos_count
        FROM propiedades p
        WHERE p.id = $1`,
       [id],
