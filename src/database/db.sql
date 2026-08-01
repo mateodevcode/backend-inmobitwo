@@ -1,6 +1,6 @@
 -- ============================================================================
 -- SCHEMA COMPLETO — PLATAFORMA INMOBILIARIA
--- Versión: 3.6 — Geometría PostGIS + DANE codes + Barrios completos
+-- Versión: 4.0 — Imágenes multi-tamaño + Portada unificada
 -- ============================================================================
 -- ORDEN DE CREACIÓN:
 -- 0. extensiones (PostGIS, pg_trgm, unaccent)
@@ -233,9 +233,6 @@ CREATE TABLE IF NOT EXISTS propiedades (
     -- 👈 NUEVO v3.3: Punto geográfico nativo indexado para mapas eficientes
     titulo VARCHAR(255),
     precio INTEGER,
-    -- Imagenes
-    imagen_principal_url VARCHAR(500),
-    imagen_principal_public_id VARCHAR(255),
     -- Estado de la propiedad
     estado VARCHAR(50) NOT NULL DEFAULT 'publicado',
     -- Publicador
@@ -265,27 +262,53 @@ CREATE INDEX IF NOT EXISTS idx_propiedades_geom ON propiedades USING GIST(geom);
 -- ============================================================================
 -- 6. PROPIEDADES_GALERIA
 -- ============================================================================
+-- Cada foto de la galería (incluida la portada) genera 5 filas en esta tabla,
+-- una por cada tamaño que produce el servicio de Rust (thumbnail/small/medium/
+-- large/xlarge). El campo `orden` identifica qué FOTO es (foto 0, foto 1...);
+-- el campo `tamaño` identifica qué VERSIÓN de esa foto es esta fila.
+-- `es_portada = true` en las 5 filas de una foto indica que esa es la
+-- imagen principal de la propiedad.
 CREATE TABLE IF NOT EXISTS propiedades_galeria (
     id SERIAL PRIMARY KEY,
     propiedad_id INTEGER NOT NULL,
+    orden INTEGER DEFAULT 0,
+    tamaño VARCHAR(20) NOT NULL,
+    es_portada BOOLEAN DEFAULT false NOT NULL,
     url VARCHAR(500) NOT NULL,
     public_id VARCHAR(255),
-    orden INTEGER DEFAULT 0,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (propiedad_id) REFERENCES propiedades(id) ON DELETE CASCADE
+    FOREIGN KEY (propiedad_id) REFERENCES propiedades(id) ON DELETE CASCADE,
+    CONSTRAINT tamano_galeria_valido CHECK (
+        tamaño IN ('thumbnail', 'small', 'medium', 'large', 'xlarge')
+    )
 );
+
+-- Solo una portada por tamaño, por propiedad
+CREATE UNIQUE INDEX IF NOT EXISTS idx_una_portada_por_tamano
+ON propiedades_galeria (propiedad_id, tamaño)
+WHERE es_portada = true;
+
+CREATE INDEX IF NOT EXISTS idx_galeria_propiedad_tamano ON propiedades_galeria(propiedad_id, tamaño);
+CREATE INDEX IF NOT EXISTS idx_galeria_es_portada ON propiedades_galeria(es_portada) WHERE es_portada = true;
 -- ============================================================================
 -- 6b. PROPIEDADES_PLANOS
 -- ============================================================================
+-- Mismo patrón que propiedades_galeria pero sin concepto de portada.
 CREATE TABLE IF NOT EXISTS propiedades_planos (
     id SERIAL PRIMARY KEY,
     propiedad_id INTEGER NOT NULL,
+    orden INTEGER DEFAULT 0,
+    tamaño VARCHAR(20) NOT NULL,
     url VARCHAR(500) NOT NULL,
     public_id VARCHAR(255),
-    orden INTEGER DEFAULT 0,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (propiedad_id) REFERENCES propiedades(id) ON DELETE CASCADE
+    FOREIGN KEY (propiedad_id) REFERENCES propiedades(id) ON DELETE CASCADE,
+    CONSTRAINT tamano_planos_valido CHECK (
+        tamaño IN ('thumbnail', 'small', 'medium', 'large', 'xlarge')
+    )
 );
+
+CREATE INDEX IF NOT EXISTS idx_planos_propiedad_tamano ON propiedades_planos(propiedad_id, tamaño);
 -- ============================================================================
 -- 7. USUARIO_FAVORITOS
 -- ============================================================================
@@ -401,5 +424,5 @@ CREATE INDEX IF NOT EXISTS idx_barrios_slug ON barrios(slug);
 CREATE INDEX IF NOT EXISTS idx_barrios_dane_code ON barrios(dane_code);
 CREATE INDEX IF NOT EXISTS idx_barrios_geom ON barrios USING GIST(geom);
 -- ============================================================================
--- ✅ SCHEMA CREADO CORRECTAMENTE (Versión 3.6 - Geometría + DANE + Barrios completos)
+-- ✅ SCHEMA CREADO CORRECTAMENTE (Versión 4.0 - Imágenes multi-tamaño + Portada unificada)
 -- ============================================================================
