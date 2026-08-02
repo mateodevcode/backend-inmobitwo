@@ -1,5 +1,6 @@
 import { AWS_BUCKET_SUBFOLDER } from "../config.js";
 import { pool } from "../db.js";
+import { cacheGet, cacheInvalidate } from "../lib/redis.js";
 import { deleteFromS3, uploadToS3 } from "../lib/s3AWS.js";
 import { tiempoRelativo } from "../utils/tiempoRelativo.js";
 import { getCityById, getStateById } from "../lib/locations.js";
@@ -65,39 +66,43 @@ function buildVersionRows(imagenesRust, startOrden = 0) {
 // ok
 export const getPropiedades = async (req, res) => {
   try {
-    const { rows: propiedades } = await pool.query(
-      `SELECT p.*, ${portadaSubquery("p")}, ${portadaPublicIdSubquery("p")}
-       FROM propiedades p
-       ORDER BY p.created_at DESC`,
-    );
+    const propiedadesConDatos = await cacheGet(
+      "propiedades:all",
+      30,
+      async () => {
+        const { rows: propiedades } = await pool.query(
+          `SELECT p.*, ${portadaSubquery("p")}, ${portadaPublicIdSubquery("p")}
+         FROM propiedades p
+         ORDER BY p.created_at DESC`,
+        );
 
-    const propiedadesConDatos = await Promise.all(
-      propiedades.map(async (propiedad) => {
-        // Galería (incluye portada: es_portada=true, orden=-1)
-        const { rows: galeria } = await pool.query(
-          `SELECT id, url, public_id, orden, tamaño, es_portada
+        return Promise.all(
+          propiedades.map(async (propiedad) => {
+            // Galería (incluye portada: es_portada=true, orden=-1)
+            const { rows: galeria } = await pool.query(
+              `SELECT id, url, public_id, orden, tamaño, es_portada
            FROM propiedades_galeria 
            WHERE propiedad_id = $1 
            ORDER BY orden ASC, tamaño ASC`,
-          [propiedad.id],
-        );
+              [propiedad.id],
+            );
 
-        // Planos
-        const { rows: planos } = await pool.query(
-          `SELECT id, url, public_id, orden, tamaño
+            // Planos
+            const { rows: planos } = await pool.query(
+              `SELECT id, url, public_id, orden, tamaño
            FROM propiedades_planos 
            WHERE propiedad_id = $1 
            ORDER BY orden ASC, tamaño ASC`,
-          [propiedad.id],
-        );
+              [propiedad.id],
+            );
 
-        // Publicador
-        let publicador = null;
+            // Publicador
+            let publicador = null;
 
-        if (propiedad.es_de_organizacion) {
-          // 👉 Trae la organización + el usuario que la creó
-          const { rows } = await pool.query(
-            `SELECT 
+            if (propiedad.es_de_organizacion) {
+              // 👉 Trae la organización + el usuario que la creó
+              const { rows } = await pool.query(
+                `SELECT 
               o.id,
               o.nombre,
               o.logo_url,
@@ -106,32 +111,36 @@ export const getPropiedades = async (req, res) => {
               o.provincia
             FROM organizaciones o
             WHERE o.id = $1`,
-            [propiedad.organizacion_id],
-          );
-          publicador = rows[0] ? { tipo: "organizacion", ...rows[0] } : null;
-        } else {
-          // 👉 Trae el usuario directamente
-          const { rows } = await pool.query(
-            `SELECT 
+                [propiedad.organizacion_id],
+              );
+              publicador = rows[0]
+                ? { tipo: "organizacion", ...rows[0] }
+                : null;
+            } else {
+              // 👉 Trae el usuario directamente
+              const { rows } = await pool.query(
+                `SELECT 
               id,
               name,
               image_url,
               telefono
             FROM usuarios
             WHERE id = $1`,
-            [propiedad.publicado_por_id],
-          );
-          publicador = rows[0] ? { tipo: "usuario", ...rows[0] } : null;
-        }
+                [propiedad.publicado_por_id],
+              );
+              publicador = rows[0] ? { tipo: "usuario", ...rows[0] } : null;
+            }
 
-        return {
-          ...propiedad,
-          galeria: galeria || [],
-          planos: planos || [],
-          publicador,
-          tiempo_relativo: tiempoRelativo(propiedad.created_at),
-        };
-      }),
+            return {
+              ...propiedad,
+              galeria: galeria || [],
+              planos: planos || [],
+              publicador,
+              tiempo_relativo: tiempoRelativo(propiedad.created_at),
+            };
+          }),
+        );
+      },
     );
 
     res.status(200).json({
@@ -273,7 +282,9 @@ export const createPropiedades = async (req, res) => {
             imagenesPlanos.push(...buildVersionRows(planosImgs, 0));
           }
 
-          console.log("Imagenes procesadas via Rust media service (multi-tamaño)");
+          console.log(
+            "Imagenes procesadas via Rust media service (multi-tamaño)",
+          );
         } else {
           throw new Error("Respuesta invalida del servicio Rust de media");
         }
@@ -468,7 +479,7 @@ export const createPropiedades = async (req, res) => {
     const portadaFila = imagenesGaleria.find(
       (r) => r.es_portada && r.tamaño === "medium",
     );
-
+    await cacheInvalidate("propiedades:*");
     return res.status(201).json({
       success: true,
       message: "Propiedad creada.",
@@ -1089,7 +1100,7 @@ export const updatePropiedades = async (req, res) => {
        WHERE propiedad_id = $1 ORDER BY orden ASC, tamaño ASC`,
       [id],
     );
-
+    await cacheInvalidate("propiedades:*");
     return res.status(200).json({
       success: true,
       message: "Propiedad actualizada.",
@@ -1198,7 +1209,7 @@ export const deletePropiedades = async (req, res) => {
         error: "No se pudo eliminar la propiedad",
       });
     }
-
+    await cacheInvalidate("propiedades:*");
     res.status(200).json({
       success: true,
       message: "Propiedad eliminada",
@@ -1322,7 +1333,7 @@ export const publicarAnuncios = async (req, res) => {
 
     const result = await pool.query(query, values);
     const nuevaPropiedad = result.rows[0];
-
+    await cacheInvalidate("propiedades:*");
     return res.status(201).json({
       success: true,
       message: "Propiedad creada.",
