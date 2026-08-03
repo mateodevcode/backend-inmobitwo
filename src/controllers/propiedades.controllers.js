@@ -506,53 +506,58 @@ export const getPropiedadesById = async (req, res) => {
   try {
     const { id } = req.params;
 
-    const { rows } = await pool.query(
-      `SELECT 
-        p.*,
-        ${portadaSubquery("p")},
-        ${portadaPublicIdSubquery("p")},
-        u.name AS usuario_nombre,
-        u.email AS usuario_email
-      FROM propiedades p
-      JOIN usuarios u 
-        ON p.publicado_por_id = u.id
-      WHERE p.id = $1`,
-      [id],
-    );
+    const data = await cacheGet(`propiedad:${id}`, 30, async () => {
+      const { rows } = await pool.query(
+        `SELECT 
+          p.*,
+          ${portadaSubquery("p")},
+          ${portadaPublicIdSubquery("p")},
+          u.name AS usuario_nombre,
+          u.email AS usuario_email
+        FROM propiedades p
+        JOIN usuarios u 
+          ON p.publicado_por_id = u.id
+        WHERE p.id = $1`,
+        [id],
+      );
+      const propiedad = rows[0];
+      if (!propiedad) {
+        return null;
+      }
 
-    const propiedad = rows[0];
+      const { rows: galeria } = await pool.query(
+        `SELECT id, url, public_id, orden, tamaño, es_portada
+         FROM propiedades_galeria 
+         WHERE propiedad_id = $1 
+         ORDER BY orden ASC, tamaño ASC`,
+        [id],
+      );
+      const { rows: planos } = await pool.query(
+        `SELECT id, url, public_id, orden, tamaño
+         FROM propiedades_planos 
+         WHERE propiedad_id = $1 
+         ORDER BY orden ASC, tamaño ASC`,
+        [id],
+      );
 
-    if (!propiedad) {
+      return {
+        ...propiedad,
+        galeria: galeria || [],
+        planos: planos || [],
+      };
+    });
+
+    if (!data) {
       return res.status(404).json({
         success: false,
         error: "Propiedad no encontrada",
       });
     }
 
-    const { rows: galeria } = await pool.query(
-      `SELECT id, url, public_id, orden, tamaño, es_portada
-       FROM propiedades_galeria 
-       WHERE propiedad_id = $1 
-       ORDER BY orden ASC, tamaño ASC`,
-      [id],
-    );
-
-    const { rows: planos } = await pool.query(
-      `SELECT id, url, public_id, orden, tamaño
-       FROM propiedades_planos 
-       WHERE propiedad_id = $1 
-       ORDER BY orden ASC, tamaño ASC`,
-      [id],
-    );
-
     res.status(200).json({
       success: true,
       message: "Propiedad obtenida.",
-      data: {
-        ...propiedad,
-        galeria: galeria || [],
-        planos: planos || [],
-      },
+      data,
     });
   } catch (error) {
     res.status(500).json({
@@ -561,7 +566,6 @@ export const getPropiedadesById = async (req, res) => {
     });
   }
 };
-
 // ok
 export const updatePropiedades = async (req, res) => {
   try {
