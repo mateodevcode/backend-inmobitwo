@@ -6,6 +6,7 @@ import {
   refresh,
   logout,
   me,
+  checkEmail,
 } from "../controllers/auth.controllers.js";
 import { verificarToken } from "../middleware/auth.middleware.js";
 import {
@@ -24,6 +25,7 @@ const sLimiterLogin = createRateLimitMiddleware(loginLimiter);
 // router.post("/auth/login", login);
 
 router.post("/auth/registro", sLimiterRegistro, registro);
+router.post("/auth/check-email", checkEmail); // ← Agregar esto
 router.post("/auth/login", sLimiterLogin, login);
 
 router.post("/auth/refresh", refresh); // usa cookie httpOnly

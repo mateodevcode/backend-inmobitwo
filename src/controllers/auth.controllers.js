@@ -97,6 +97,59 @@ export const registro = async (req, res) => {
 };
 
 // ─────────────────────────────────────────────
+// POST /auth/check-email
+// ─────────────────────────────────────────────
+export const checkEmail = async (req, res) => {
+  try {
+    const { email } = req.body;
+
+    if (!email) {
+      return res.status(400).json({
+        success: false,
+        error: "Email es requerido.",
+      });
+    }
+
+    // Buscar si el usuario existe
+    const { rows } = await pool.query(
+      "SELECT id, email, bloqueado FROM usuarios WHERE email = $1",
+      [email],
+    );
+
+    const usuario = rows[0];
+
+    if (!usuario) {
+      return res.status(404).json({
+        success: false,
+        error: "No encontramos una cuenta con este email.",
+      });
+    }
+
+    // Verificar si está bloqueado
+    if (usuario.bloqueado) {
+      return res.status(403).json({
+        success: false,
+        error: "Cuenta bloqueada. Contacta con soporte.",
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: "Email válido. Continúa con tu contraseña.",
+      data: {
+        email: usuario.email,
+      },
+    });
+  } catch (error) {
+    console.error("❌ Error en POST /auth/check-email:", error);
+    res.status(500).json({
+      success: false,
+      error: "Error interno del servidor.",
+    });
+  }
+};
+
+// ─────────────────────────────────────────────
 // POST /auth/login
 // ─────────────────────────────────────────────
 export const login = async (req, res) => {
@@ -279,7 +332,9 @@ export const refresh = async (req, res) => {
     });
   } catch (error) {
     console.error("❌ Error en POST /auth/refresh:", error);
-    res.status(500).json({ success: false, error: "Error interno del servidor." });
+    res
+      .status(500)
+      .json({ success: false, error: "Error interno del servidor." });
   }
 };
 
