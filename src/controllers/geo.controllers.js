@@ -713,16 +713,48 @@ export const getInmueblesEnPoligono = async (req, res) => {
 
     const { rows } = await pool.query(
       `SELECT
-         p.id, p.titulo, p.precio, p.operacion, p.tipo,
-         p.latitude, p.longitude,
+         p.id, p.tipo, p.operacion, p.titulo, p.direccion, p.precio,
+         p.longitude::float as longitude,
+         p.latitude::float as latitude,
+         p.es_de_organizacion,
          COALESCE(
            (SELECT pg.url FROM propiedades_galeria pg 
             WHERE pg.propiedad_id = p.id AND pg.es_portada = true AND pg.tamaño = 'medium'
             LIMIT 1),
            NULL
          ) AS imagen_principal_url,
+         COALESCE(
+           (SELECT json_agg(json_build_object(
+             'id', pg.id,
+             'url', pg.url,
+             'orden', pg.orden,
+             'tamaño', pg.tamaño,
+             'es_portada', pg.es_portada
+           ) ORDER BY pg.orden, pg.tamaño)
+           FROM propiedades_galeria pg
+           WHERE pg.propiedad_id = p.id),
+           '[]'::json
+         ) as galeria,
+         COALESCE(
+           (SELECT json_agg(json_build_object(
+             'id', pp.id,
+             'url', pp.url,
+             'orden', pp.orden,
+             'tamaño', pp.tamaño
+           ) ORDER BY pp.orden, pp.tamaño)
+           FROM propiedades_planos pp
+           WHERE pp.propiedad_id = p.id),
+           '[]'::json
+         ) as planos,
+         c.name as city_name,
+         s.name as state_name,
+         o.nombre as organizacion_nombre,
+         o.logo_url as organizacion_logo_url,
          p.estado
        FROM propiedades p
+       LEFT JOIN cities c ON p.city_id = c.id
+       LEFT JOIN states s ON c.state_id = s.id
+       LEFT JOIN organizaciones o ON p.organizacion_id = o.id
        WHERE ${filterSQL}
          AND p.geom IS NOT NULL
          AND ST_Contains(
