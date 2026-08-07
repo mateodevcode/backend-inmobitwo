@@ -16,6 +16,7 @@ import geoRoutes from "./routes/geo.routes.js";
 import geocodeRoutes from "./routes/geocode.routes.js";
 import trackingRoutes from "./routes/tracking.routes.js";
 import leadsRoutes from "./routes/leads.routes.js";
+import catalogosRoutes from "./routes/catalogos.routes.js";
 import { corsOptions } from "./cors.config.js";
 import { errorHandler } from "./middleware/error.middleware.js";
 
@@ -41,6 +42,7 @@ app.use(trackingRoutes);
 app.use(leadsRoutes);
 app.use("/api", geoRoutes);
 app.use("/api", geocodeRoutes);
+app.use("/catalogos", catalogosRoutes);
 
 // Middleware de errores (debe ir después de todas las rutas)
 app.use(errorHandler);

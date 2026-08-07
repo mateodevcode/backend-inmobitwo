@@ -24,3 +24,8 @@ export const JWT_REFRESH_SECRET = process.env.JWT_REFRESH_SECRET;
 export const BREVO_SMTP_EMAIL = process.env.BREVO_SMTP_EMAIL;
 export const BREVO_SMTP_PASS = process.env.BREVO_SMTP_PASS;
 export const BREVO_EMAIL_NO_REPLY = process.env.BREVO_EMAIL_NO_REPLY;
+
+// rust
+export const RUST_TRACKING_URL = process.env.RUST_TRACKING_URL;
+export const RUST_MEDIA_URL = process.env.RUST_MEDIA_URL;
+export const RUST_WEBSOCKET_URL = process.env.RUST_WEBSOCKET_URL;

@@ -7,9 +7,11 @@ import {
 } from "../lib/scoring.js";
 import { createTransporter } from "../utils/createTransporter.js";
 import { nuevoLead as plantillaNuevoLead } from "../utils/emails/nuevoLead.js";
-import { BREVO_EMAIL_NO_REPLY, FRONTEND_URL } from "../config.js";
-
-const RUST_TRACKING_URL = process.env.RUST_TRACKING_URL || "http://localhost:3002";
+import {
+  BREVO_EMAIL_NO_REPLY,
+  FRONTEND_URL,
+  RUST_TRACKING_URL,
+} from "../config.js";
 
 const fetchOrNull = async (...args) => {
   try {
@@ -96,7 +98,7 @@ const notificarLead = async (lead) => {
 // Crea o recupera una sesión de tracking — delegado a Rust
 export const registrarSesion = async (req, res) => {
   try {
-    if (process.env.RUST_TRACKING_URL) {
+    if (RUST_TRACKING_URL) {
       const axios = (await import("axios")).default;
       const response = await axios.post(
         `${RUST_TRACKING_URL}/tracking/sesion`,
@@ -183,7 +185,7 @@ export const registrarSesion = async (req, res) => {
 // Registra un evento y evalúa si dispara un lead — delegado a Rust
 export const registrarEvento = async (req, res) => {
   try {
-    if (process.env.RUST_TRACKING_URL) {
+    if (RUST_TRACKING_URL) {
       const axios = (await import("axios")).default;
       const response = await axios.post(
         `${RUST_TRACKING_URL}/tracking/evento`,

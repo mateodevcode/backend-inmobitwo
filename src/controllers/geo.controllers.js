@@ -115,7 +115,7 @@ export const getLocationInfo = async (req, res) => {
     if (operation) {
       params.push(operation);
       filterConditions.push(
-        `AND LOWER(p.operacion) = LOWER($${params.length})`,
+        `AND p.operation_type_id IN (SELECT id FROM operation_types WHERE LOWER(code) = LOWER($${params.length}))`,
       );
     }
 
@@ -124,14 +124,17 @@ export const getLocationInfo = async (req, res) => {
       if (types.length === 1) {
         params.push(types[0]);
         filterConditions.push(
-          `AND LOWER(p.tipo) = LOWER($${params.length})`,
+          `AND p.property_type_id IN (SELECT id FROM property_types WHERE LOWER(code) = LOWER($${params.length}))`,
         );
       } else if (types.length > 1) {
         const startIdx = params.length + 1;
         types.forEach((t) => params.push(t));
-        const placeholders = types.map((_, i) => `LOWER($${startIdx + i})`);
+        const placeholders = types.map(
+          (_, i) =>
+            `(SELECT id FROM property_types WHERE LOWER(code) = LOWER($${startIdx + i}))`,
+        );
         filterConditions.push(
-          `AND LOWER(p.tipo) IN (${placeholders.join(", ")})`,
+          `AND p.property_type_id IN (${placeholders.join(", ")})`,
         );
       }
     }
@@ -479,19 +482,25 @@ export const getGeoCount = async (req, res) => {
 
     if (operation) {
       params.push(operation);
-      filters.push(`LOWER(p.operacion) = LOWER($${params.length})`);
+      filters.push(
+        `p.operation_type_id IN (SELECT id FROM operation_types WHERE LOWER(code) = LOWER($${params.length}))`,
+      );
     }
 
     if (inmueble) {
       const tipos = inmueble.split(",").map((t) => t.trim().toLowerCase()).filter(Boolean);
       if (tipos.length === 1) {
         params.push(tipos[0]);
-        filters.push(`LOWER(p.tipo) = LOWER($${params.length})`);
+        filters.push(
+          `p.property_type_id IN (SELECT id FROM property_types WHERE LOWER(code) = LOWER($${params.length}))`,
+        );
       } else if (tipos.length > 1) {
         const start = params.length + 1;
         tipos.forEach((t) => params.push(t));
-        const ph = tipos.map((_, i) => `LOWER($${start + i})`);
-        filters.push(`LOWER(p.tipo) IN (${ph.join(", ")})`);
+        const ph = tipos.map(
+          (_, i) => `(SELECT id FROM property_types WHERE LOWER(code) = LOWER($${start + i}))`,
+        );
+        filters.push(`p.property_type_id IN (${ph.join(", ")})`);
       }
     }
 
@@ -693,19 +702,25 @@ export const getInmueblesEnPoligono = async (req, res) => {
 
     if (operation) {
       params.push(operation);
-      filters.push(`LOWER(p.operacion) = LOWER($${params.length})`);
+      filters.push(
+        `p.operation_type_id IN (SELECT id FROM operation_types WHERE LOWER(code) = LOWER($${params.length}))`,
+      );
     }
 
     if (tipoInmueble) {
       const tipos = tipoInmueble.split(",").map((t) => t.trim().toLowerCase()).filter(Boolean);
       if (tipos.length === 1) {
         params.push(tipos[0]);
-        filters.push(`LOWER(p.tipo) = LOWER($${params.length})`);
+        filters.push(
+          `p.property_type_id IN (SELECT id FROM property_types WHERE LOWER(code) = LOWER($${params.length}))`,
+        );
       } else if (tipos.length > 1) {
         const start = params.length + 1;
         tipos.forEach((t) => params.push(t));
-        const ph = tipos.map((_, i) => `LOWER($${start + i})`);
-        filters.push(`LOWER(p.tipo) IN (${ph.join(", ")})`);
+        const ph = tipos.map(
+          (_, i) => `(SELECT id FROM property_types WHERE LOWER(code) = LOWER($${start + i}))`,
+        );
+        filters.push(`p.property_type_id IN (${ph.join(", ")})`);
       }
     }
 
@@ -713,7 +728,11 @@ export const getInmueblesEnPoligono = async (req, res) => {
 
     const { rows } = await pool.query(
       `SELECT
-         p.id, p.tipo, p.operacion, p.titulo, p.direccion, p.precio,
+         p.id, p.titulo, p.direccion, p.precio, p.estrato,
+         p.price_per_sqm, p.private_area, p.constructed_area,
+         p.bedroom_count, p.bathroom_count,
+         ot.label_es as operacion, ot.code as operacion_slug,
+         pt.label_es as tipo_inmueble, pt.code as tipo_slug,
          p.longitude::float as longitude,
          p.latitude::float as latitude,
          p.es_de_organizacion,
@@ -752,6 +771,8 @@ export const getInmueblesEnPoligono = async (req, res) => {
          o.logo_url as organizacion_logo_url,
          p.estado
        FROM propiedades p
+       LEFT JOIN operation_types ot ON p.operation_type_id = ot.id
+       LEFT JOIN property_types pt ON p.property_type_id = pt.id
        LEFT JOIN cities c ON p.city_id = c.id
        LEFT JOIN states s ON c.state_id = s.id
        LEFT JOIN organizaciones o ON p.organizacion_id = o.id
@@ -797,7 +818,7 @@ export const suggestCities = async (req, res) => {
     let operacionFilter = "";
     if (operation) {
       params.push(operation);
-      operacionFilter = `AND LOWER(p.operacion) = LOWER($${params.length})`;
+      operacionFilter = `AND p.operation_type_id IN (SELECT id FROM operation_types WHERE LOWER(code) = LOWER($${params.length}))`;
     }
 
     let typeFilter = "";
@@ -805,12 +826,14 @@ export const suggestCities = async (req, res) => {
       const types = type.split(",").map((t) => t.trim().toLowerCase()).filter(Boolean);
       if (types.length === 1) {
         params.push(types[0]);
-        typeFilter = `AND LOWER(p.tipo) = LOWER($${params.length})`;
+        typeFilter = `AND p.property_type_id IN (SELECT id FROM property_types WHERE LOWER(code) = LOWER($${params.length}))`;
       } else if (types.length > 1) {
         const startIdx = params.length + 1;
         types.forEach((t) => params.push(t));
-        const placeholders = types.map((_, i) => `LOWER($${startIdx + i})`);
-        typeFilter = `AND LOWER(p.tipo) IN (${placeholders.join(", ")})`;
+        const placeholders = types.map(
+          (_, i) => `(SELECT id FROM property_types WHERE LOWER(code) = LOWER($${startIdx + i}))`,
+        );
+        typeFilter = `AND p.property_type_id IN (${placeholders.join(", ")})`;
       }
     }
 

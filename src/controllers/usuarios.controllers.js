@@ -10,6 +10,7 @@ const CAMPOS_USUARIO_PERMITIDOS = [
   "name",
   "email",
   "telefono",
+  "telefonos",
   "image_url",
   "public_id",
   "provider",
@@ -195,6 +196,18 @@ export const updateUsuario = async (req, res) => {
       }
     }
 
+    const telefonos = formDataObj.telefonos;
+    if (telefonos !== undefined) {
+      const lista = Array.isArray(telefonos) ? telefonos : [telefonos];
+      const valido = lista.every((t) => /^[0-9+\-\s()]{6,20}$/.test(String(t)));
+      if (!valido) {
+        return res.status(400).json({
+          success: false,
+          error: "Uno de los teléfonos no tiene un formato válido.",
+        });
+      }
+    }
+
     const eliminarImagen =
       formDataObj.eliminarImagenPrincipal === true ||
       formDataObj.eliminarImagenPrincipal === "true";
@@ -254,6 +267,7 @@ export const updateUsuario = async (req, res) => {
       "name",
       "email",
       "telefono",
+      "telefonos",
       "provider",
       "role",
       "bloqueado",
@@ -271,6 +285,17 @@ export const updateUsuario = async (req, res) => {
         valores.push(formDataObj[campo]);
         contador++;
       }
+    }
+
+    // Sincronizar el teléfono primario con el primero del array
+    if (formDataObj.telefonos !== undefined) {
+      const lista = Array.isArray(formDataObj.telefonos)
+        ? formDataObj.telefonos
+        : [formDataObj.telefonos];
+      const primario = lista.find((t) => t) ?? null;
+      campos.push(`telefono = $${contador}`);
+      valores.push(primario);
+      contador++;
     }
 
     if (uploadResponse) {
