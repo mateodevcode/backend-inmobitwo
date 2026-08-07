@@ -1,3 +1,15 @@
--- 1. db.sql
--- 2. seed-geo.js
--- 3. schema.tracking.sql
+-- ORDEN DE EJECUCIÓN DE SCRIPTS (src/database/)
+-- ============================================================================
+-- RESET TOTAL (base limpia):
+-- 1. drop_all.sql          -> borra vistas, triggers, funciones, tablas y extensiones
+-- 2. db.sql                -> crea schema completo + catálogos + vistas (archivo madre)
+-- 3. seed-geo.js           -> npm run seed:geo  (países, regiones, deptos, ciudades, barrios)
+-- 4. schema.tracking.sql   -> sistema de tracking y leads
+--
+-- SOLO TRACKING (conserva datos de negocio):
+-- 1. drop_tracking.sql
+-- 2. schema.tracking.sql
+--
+-- NOTA: db.sql es la fuente de verdad única. Actualizarlo siempre al agregar
+--       catálogos, columnas o features nuevos.
+-- ============================================================================

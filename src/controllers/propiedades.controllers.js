@@ -1,17 +1,91 @@
-import { AWS_BUCKET_SUBFOLDER } from "../config.js";
+import { AWS_BUCKET_SUBFOLDER, RUST_MEDIA_URL } from "../config.js";
 import { pool } from "../db.js";
 import { cacheGet, cacheInvalidate } from "../lib/redis.js";
 import { deleteFromS3, uploadToS3 } from "../lib/s3AWS.js";
 import { tiempoRelativo } from "../utils/tiempoRelativo.js";
-import { getCityById, getStateById } from "../lib/locations.js";
+import { getCityById, getStateById, getPropertyTypeLabel } from "../lib/locations.js";
 import {
   propiedad_validate,
   publicar_anuncio_validate,
 } from "../validations/propiedad_validate.js";
 
-const RUST_MEDIA_URL = process.env.RUST_MEDIA_URL || "http://localhost:3003";
-
 const TAMANOS = ["thumbnail", "small", "medium", "large", "xlarge"];
+
+// Normaliza los campos del schema v5.0 (Colombia) que llegan desde el frontend.
+// En multipart/form-data todo llega como string; en JSON llegan como tipos reales.
+function toBool(valor) {
+  return valor === "true" || valor === true;
+}
+
+function toInt(valor) {
+  if (valor === undefined || valor === null || valor === "") return null;
+  const n = parseInt(valor);
+  return isNaN(n) ? null : n;
+}
+
+// Extrae y normaliza los campos nuevos de propiedad a partir del body.
+function parseCamposPropiedad(raw) {
+  return {
+    operation_type_id: toInt(raw.operation_type_id),
+    property_type_id: toInt(raw.property_type_id),
+    condition_type_id: toInt(raw.condition_type_id),
+    heating_type_id: toInt(raw.heating_type_id),
+    rental_type_id: toInt(raw.rental_type_id),
+    country_id: toInt(raw.country_id),
+    state_id: toInt(raw.state_id),
+    city_id: toInt(raw.city_id),
+    barrio_id: toInt(raw.barrio_id),
+    direccion: raw.direccion || null,
+    numero_direccion: raw.numero_direccion || null,
+    floor: raw.floor || null,
+    interior_apartment_number: raw.interior_apartment_number || null,
+    postal_code: raw.postal_code || null,
+    latitude: raw.latitude,
+    longitude: raw.longitude,
+    estrato: toInt(raw.estrato),
+    cedula_catastral: raw.cedula_catastral || null,
+    matricula_inmobiliaria: raw.matricula_inmobiliaria || null,
+    description: raw.description || null,
+    precio: toInt(raw.precio),
+    administracion: toInt(raw.administracion),
+    constructed_area: toInt(raw.constructed_area),
+    private_area: toInt(raw.private_area),
+    plot_area: toInt(raw.plot_area),
+    room_count: toInt(raw.room_count),
+    bedroom_count: toInt(raw.bedroom_count),
+    bathroom_count: toInt(raw.bathroom_count),
+    social_bathroom_count: toInt(raw.social_bathroom_count),
+    construction_year: toInt(raw.construction_year),
+    antiguedad_anios: toInt(raw.antiguedad_anios),
+    is_new_construction: toBool(raw.is_new_construction),
+    parqueadero_tipo: raw.parqueadero_tipo || null,
+    parqueadero_modo: raw.parqueadero_modo || null,
+    parking_space_count: toInt(raw.parking_space_count),
+    parking_space_included: toBool(raw.parking_space_included),
+    parking_space_price: toInt(raw.parking_space_price),
+    tiene_agua: toBool(raw.tiene_agua),
+    tiene_luz: toBool(raw.tiene_luz),
+    tiene_gas: toBool(raw.tiene_gas),
+    tiene_alcantarillado: toBool(raw.tiene_alcantarillado),
+    has_elevator: toBool(raw.has_elevator),
+    has_swimming_pool: toBool(raw.has_swimming_pool),
+    has_gym: toBool(raw.has_gym),
+    has_security_24h: toBool(raw.has_security_24h),
+    has_air_conditioning: toBool(raw.has_air_conditioning),
+    is_furnished: toBool(raw.is_furnished),
+    zona: raw.zona || null,
+    how_to_contact: raw.how_to_contact || null,
+    telefono_contacto: raw.telefono_contacto || null,
+  };
+}
+
+// Calcula el precio por m² según el precio y el área construida.
+function calcularPricePerSqm(precio, constructedArea) {
+  if (precio > 0 && constructedArea > 0) {
+    return Math.round(precio / constructedArea);
+  }
+  return null;
+}
 
 function portadaSubquery(alias = "propiedades") {
   return `COALESCE(
@@ -29,6 +103,36 @@ function portadaPublicIdSubquery(alias = "propiedades") {
      LIMIT 1),
     NULL
   ) as imagen_principal_public_id`;
+}
+
+// Campos de los catálogos (schema v5.0) que se agregan a los SELECT de
+// propiedades para que el frontend reciba labels en vez de solo IDs.
+function camposCatalogoSelect(alias = "p") {
+  return `
+    ot.label_es AS operacion,
+    ot.code AS operacion_slug,
+    rt.label_es AS tipo_alquiler,
+    pt.label_es AS tipo_inmueble,
+    pt.code AS tipo_slug,
+    ct.label_es AS estado_conservacion,
+    ht.label_es AS tipo_calefaccion,
+    c.name AS ciudad,
+    s.name AS departamento,
+    b.name AS barrio
+  `;
+}
+
+function joinsCatalogo(alias = "p") {
+  return `
+    LEFT JOIN operation_types ot ON ${alias}.operation_type_id = ot.id
+    LEFT JOIN rental_types rt ON ${alias}.rental_type_id = rt.id
+    LEFT JOIN property_types pt ON ${alias}.property_type_id = pt.id
+    LEFT JOIN condition_types ct ON ${alias}.condition_type_id = ct.id
+    LEFT JOIN heating_types ht ON ${alias}.heating_type_id = ht.id
+    LEFT JOIN cities c ON ${alias}.city_id = c.id
+    LEFT JOIN states s ON ${alias}.state_id = s.id
+    LEFT JOIN barrios b ON ${alias}.barrio_id = b.id
+  `;
 }
 
 // Extrae el key real de S3 a partir de la URL completa que devuelve Rust.
@@ -71,8 +175,10 @@ export const getPropiedades = async (req, res) => {
       30,
       async () => {
         const { rows: propiedades } = await pool.query(
-          `SELECT p.*, ${portadaSubquery("p")}, ${portadaPublicIdSubquery("p")}
+          `SELECT p.*, ${portadaSubquery("p")}, ${portadaPublicIdSubquery("p")},
+                  ${camposCatalogoSelect("p")}
          FROM propiedades p
+         ${joinsCatalogo("p")}
          ORDER BY p.created_at DESC`,
         );
 
@@ -210,7 +316,7 @@ export const createPropiedades = async (req, res) => {
     let imagenesGaleria = [];
     let imagenesPlanos = [];
 
-    let usarRustMedia = !!process.env.RUST_MEDIA_URL && file && file.buffer;
+    let usarRustMedia = !!RUST_MEDIA_URL && file && file.buffer;
 
     if (usarRustMedia) {
       try {
@@ -420,24 +526,123 @@ export const createPropiedades = async (req, res) => {
     // ========================================
     // INSERTAR EN BD
     // ========================================
+    const campos = parseCamposPropiedad(req.body);
+    const price_per_sqm = calcularPricePerSqm(campos.precio, campos.constructed_area);
+
     const query = `
       INSERT INTO propiedades (
-        titulo, estado, es_de_organizacion, organizacion_id, publicado_por_id,
+        operation_type_id, property_type_id, condition_type_id, heating_type_id,
+        country_id, state_id, city_id, barrio_id,
+        direccion, numero_direccion, floor, interior_apartment_number, postal_code,
+        latitude, longitude,
+        estrato, cedula_catastral, matricula_inmobiliaria,
+        titulo, description, precio, price_per_sqm, administracion,
+        constructed_area, private_area, plot_area,
+        room_count, bedroom_count, bathroom_count, social_bathroom_count,
+        construction_year, antiguedad_anios, is_new_construction,
+        parqueadero_tipo, parqueadero_modo, parking_space_count,
+        parking_space_included, parking_space_price,
+        tiene_agua, tiene_luz, tiene_gas, tiene_alcantarillado,
+        has_elevator, has_swimming_pool, has_gym, has_security_24h,
+        has_air_conditioning, is_furnished, zona,
+        estado, listing_status,
+        es_de_organizacion, organizacion_id, publicado_por_id, rental_type_id,
+        how_to_contact, telefono_contacto,
         created_at, updated_at
-      ) VALUES ($1, $2, $3, $4, $5, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+      ) VALUES (
+        $1, $2, $3, $4,
+        $5, $6, $7, $8,
+        $9, $10, $11, $12, $13,
+        $14, $15,
+        $16, $17, $18,
+        $19, $20, $21, $22, $23,
+        $24, $25, $26,
+        $27, $28, $29, $30,
+        $31, $32, $33,
+        $34, $35, $36,
+        $37, $38,
+        $39, $40, $41, $42,
+        $43, $44, $45, $46,
+        $47, $48, $49,
+        $50, $51,
+        $52, $53, $54, $55,
+        $56, $57,
+        CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+      )
       RETURNING *;
     `;
 
     const values = [
+      campos.operation_type_id,
+      campos.property_type_id,
+      campos.condition_type_id,
+      campos.heating_type_id,
+      campos.country_id,
+      campos.state_id,
+      campos.city_id,
+      campos.barrio_id,
+      campos.direccion,
+      campos.numero_direccion,
+      campos.floor,
+      campos.interior_apartment_number,
+      campos.postal_code,
+      campos.latitude,
+      campos.longitude,
+      campos.estrato,
+      campos.cedula_catastral,
+      campos.matricula_inmobiliaria,
       titulo,
-      estado || "disponible",
+      campos.description,
+      campos.precio,
+      price_per_sqm,
+      campos.administracion,
+      campos.constructed_area,
+      campos.private_area,
+      campos.plot_area,
+      campos.room_count,
+      campos.bedroom_count,
+      campos.bathroom_count,
+      campos.social_bathroom_count,
+      campos.construction_year,
+      campos.antiguedad_anios,
+      campos.is_new_construction,
+      campos.parqueadero_tipo,
+      campos.parqueadero_modo,
+      campos.parking_space_count,
+      campos.parking_space_included,
+      campos.parking_space_price,
+      campos.tiene_agua,
+      campos.tiene_luz,
+      campos.tiene_gas,
+      campos.tiene_alcantarillado,
+      campos.has_elevator,
+      campos.has_swimming_pool,
+      campos.has_gym,
+      campos.has_security_24h,
+      campos.has_air_conditioning,
+      campos.is_furnished,
+      campos.zona,
+      estado || "publicado",
+      campos.precio !== null ? "active" : "inactive",
       es_de_organizacion || false,
       organizacion_id,
       req.usuario.id,
+      campos.rental_type_id,
+      campos.how_to_contact,
+      campos.telefono_contacto,
     ];
 
     const result = await pool.query(query, values);
     const nuevaPropiedad = result.rows[0];
+
+    // Historial de precios inicial (si hay precio)
+    if (campos.precio !== null) {
+      await pool.query(
+        `INSERT INTO price_history (propiedad_id, old_price, new_price, change_type, source)
+         VALUES ($1, NULL, $2, 'initial', 'user_update')`,
+        [nuevaPropiedad.id, campos.precio],
+      );
+    }
 
     if (imagenesGaleria.length > 0) {
       await Promise.all(
@@ -512,9 +717,11 @@ export const getPropiedadesById = async (req, res) => {
           p.*,
           ${portadaSubquery("p")},
           ${portadaPublicIdSubquery("p")},
+          ${camposCatalogoSelect("p")},
           u.name AS usuario_nombre,
           u.email AS usuario_email
         FROM propiedades p
+        ${joinsCatalogo("p")}
         JOIN usuarios u 
           ON p.publicado_por_id = u.id
         WHERE p.id = $1`,
@@ -540,10 +747,32 @@ export const getPropiedadesById = async (req, res) => {
         [id],
       );
 
+      // Características N:M activas (agrupadas por categoría)
+      const { rows: features } = await pool.query(
+        `SELECT fc.id, fc.code, fc.label_es, fc.category, fc.data_type,
+                pf.bool_value, pf.numeric_value, pf.text_value
+         FROM property_features pf
+         JOIN feature_catalog fc ON pf.feature_id = fc.id
+         WHERE pf.propiedad_id = $1 AND pf.bool_value = TRUE
+         ORDER BY fc.category ASC, fc.id ASC`,
+        [id],
+      );
+      const caracteristicas = features.reduce((acc, fila) => {
+        if (!acc[fila.category]) acc[fila.category] = [];
+        acc[fila.category].push({
+          id: fila.id,
+          code: fila.code,
+          label_es: fila.label_es,
+          data_type: fila.data_type,
+        });
+        return acc;
+      }, {});
+
       return {
         ...propiedad,
         galeria: galeria || [],
         planos: planos || [],
+        caracteristicas,
       };
     });
 
@@ -699,7 +928,7 @@ export const updatePropiedades = async (req, res) => {
     }
 
     let usarRustMedia =
-      !!process.env.RUST_MEDIA_URL &&
+      !!RUST_MEDIA_URL &&
       ((file && file.size > 0) || files.length > 0 || planosFiles.length > 0);
 
     // ========================================
@@ -981,6 +1210,9 @@ export const updatePropiedades = async (req, res) => {
       values.push(estado);
       paramCount++;
     }
+
+    // --- PRECIO: detectar cambio ANTES del UPDATE para registrar price_history
+    let nuevoPrecio = null;
     const rawPrecio = formDataObj.precio;
     if (rawPrecio !== undefined && rawPrecio !== null && rawPrecio !== "") {
       const precioParsed = parseInt(rawPrecio);
@@ -990,8 +1222,103 @@ export const updatePropiedades = async (req, res) => {
           error: "El precio debe ser un número válido.",
         });
       }
+      nuevoPrecio = precioParsed;
       updates.push(`precio = $${paramCount}`);
       values.push(precioParsed);
+      paramCount++;
+    }
+
+    // --- CAMPOS NUEVOS (schema v5.0 Colombia)
+    const campos = parseCamposPropiedad(formDataObj);
+    const camposActualizables = [
+      "operation_type_id",
+      "property_type_id",
+      "condition_type_id",
+      "heating_type_id",
+      "rental_type_id",
+      "country_id",
+      "state_id",
+      "city_id",
+      "barrio_id",
+      "direccion",
+      "numero_direccion",
+      "floor",
+      "interior_apartment_number",
+      "postal_code",
+      "latitude",
+      "longitude",
+      "estrato",
+      "cedula_catastral",
+      "matricula_inmobiliaria",
+      "description",
+      "administracion",
+      "constructed_area",
+      "private_area",
+      "plot_area",
+      "room_count",
+      "bedroom_count",
+      "bathroom_count",
+      "social_bathroom_count",
+      "construction_year",
+      "antiguedad_anios",
+      "is_new_construction",
+      "parqueadero_tipo",
+      "parqueadero_modo",
+      "parking_space_count",
+      "parking_space_included",
+      "parking_space_price",
+      "tiene_agua",
+      "tiene_luz",
+      "tiene_gas",
+      "tiene_alcantarillado",
+      "has_elevator",
+      "has_swimming_pool",
+      "has_gym",
+      "has_security_24h",
+      "has_air_conditioning",
+      "is_furnished",
+      "zona",
+      "how_to_contact",
+      "telefono_contacto",
+    ];
+    for (const campo of camposActualizables) {
+      if (
+        formDataObj[campo] !== undefined &&
+        formDataObj[campo] !== null &&
+        formDataObj[campo] !== ""
+      ) {
+        updates.push(`${campo} = $${paramCount}`);
+        values.push(campos[campo]);
+        paramCount++;
+      }
+    }
+
+    // --- LISTING_STATUS: solo se actualiza si llega explícitamente
+    if (formDataObj.listing_status !== undefined) {
+      updates.push(`listing_status = $${paramCount}`);
+      values.push(formDataObj.listing_status);
+      paramCount++;
+    }
+
+    // --- PRICE_PER_SQM: recalcular si cambió precio o área construida
+    const recalcPrecio =
+      rawPrecio !== undefined && rawPrecio !== null && rawPrecio !== "";
+    const recalcArea =
+      formDataObj.constructed_area !== undefined &&
+      formDataObj.constructed_area !== null &&
+      formDataObj.constructed_area !== "";
+    if (recalcPrecio || recalcArea) {
+      const { rows: current } = await pool.query(
+        "SELECT precio, constructed_area FROM propiedades WHERE id = $1",
+        [id],
+      );
+      const precioBase = recalcPrecio ? nuevoPrecio : current[0]?.precio;
+      const areaBase = recalcArea
+        ? campos.constructed_area
+        : current[0]?.constructed_area;
+      const pricePerSqm = calcularPricePerSqm(precioBase, areaBase);
+      updates.push(`price_per_sqm = $${paramCount}`);
+      values.push(pricePerSqm);
       paramCount++;
     }
 
@@ -1006,6 +1333,28 @@ export const updatePropiedades = async (req, res) => {
         success: false,
         error: "No hay campos o imágenes para actualizar.",
       });
+    }
+
+    // --- Registrar cambio de precio en price_history (ANTES del UPDATE)
+    if (nuevoPrecio !== null) {
+      const { rows: current } = await pool.query(
+        "SELECT precio FROM propiedades WHERE id = $1",
+        [id],
+      );
+      const oldPrice = current[0]?.precio ?? null;
+      if (oldPrice !== nuevoPrecio) {
+        const changeType =
+          oldPrice === null
+            ? "initial"
+            : nuevoPrecio > oldPrice
+              ? "increase"
+              : "decrease";
+        await pool.query(
+          `INSERT INTO price_history (propiedad_id, old_price, new_price, change_type, source)
+           VALUES ($1, $2, $3, $4, 'user_update')`,
+          [id, oldPrice, nuevoPrecio, changeType],
+        );
+      }
     }
 
     if (updates.length > 0) {
@@ -1241,20 +1590,53 @@ export const publicarAnuncios = async (req, res) => {
   try {
     const raw = req.body;
 
-    const operacion = raw.operacion || "venta";
-
+    const campos = parseCamposPropiedad(raw);
     const {
-      tipo,
+      operation_type_id,
+      property_type_id,
+      condition_type_id,
+      heating_type_id,
+      rental_type_id,
       country_id,
       state_id,
       city_id,
+      barrio_id,
       direccion,
       numero_direccion,
       latitude,
       longitude,
-      estado,
+      estrato,
       precio,
-    } = raw;
+      administracion,
+      constructed_area,
+      private_area,
+      plot_area,
+      room_count,
+      bedroom_count,
+      bathroom_count,
+      social_bathroom_count,
+      construction_year,
+      antiguedad_anios,
+      is_new_construction,
+      parqueadero_tipo,
+      parqueadero_modo,
+      parking_space_count,
+      parking_space_included,
+      parking_space_price,
+      tiene_agua,
+      tiene_luz,
+      tiene_gas,
+      tiene_alcantarillado,
+      has_elevator,
+      has_swimming_pool,
+      has_gym,
+      has_security_24h,
+      has_air_conditioning,
+      is_furnished,
+      zona,
+      how_to_contact,
+      telefono_contacto,
+    } = campos;
 
     const es_de_organizacion =
       raw.es_de_organizacion === "true" || raw.es_de_organizacion === true;
@@ -1274,12 +1656,14 @@ export const publicarAnuncios = async (req, res) => {
     // VALIDACIONES
     // ========================================
     const data = {
-      tipo,
-      operacion,
+      operation_type_id,
+      property_type_id,
       direccion,
       country_id,
       city_id,
       state_id,
+      estrato,
+      precio,
       publicado_por_id: req.usuario.id,
     };
     const errores = publicar_anuncio_validate(data);
@@ -1303,40 +1687,132 @@ export const publicarAnuncios = async (req, res) => {
       });
     }
 
-    const titulo = `${tipo || "Propiedad"} en ${direccion}, ${city.name}, ${state.name}`;
+    const tipoLabel = await getPropertyTypeLabel(property_type_id);
+    const titulo = `${tipoLabel || "Propiedad"} en ${direccion}, ${city.name}, ${state.name}`;
     const tituloFinal = titulo.charAt(0).toUpperCase() + titulo.slice(1);
+
+    const price_per_sqm = calcularPricePerSqm(precio, constructed_area);
+
+    const estadoFinal = raw.estado || "publicado";
+    const listingStatusFinal = raw.listing_status || "active";
 
     // ========================================
     // INSERTAR EN BD
     // ========================================
     const query = `
       INSERT INTO propiedades (
-        tipo, operacion, country_id, state_id, city_id, direccion, numero_direccion, latitude, longitude,
-        titulo, precio, estado, es_de_organizacion, organizacion_id, publicado_por_id,
+        operation_type_id, property_type_id, condition_type_id, heating_type_id,
+        country_id, state_id, city_id, barrio_id,
+        direccion, numero_direccion, floor, interior_apartment_number, postal_code,
+        latitude, longitude,
+        estrato, cedula_catastral, matricula_inmobiliaria,
+        titulo, description, precio, price_per_sqm, administracion,
+        constructed_area, private_area, plot_area,
+        room_count, bedroom_count, bathroom_count, social_bathroom_count,
+        construction_year, antiguedad_anios, is_new_construction,
+        parqueadero_tipo, parqueadero_modo, parking_space_count,
+        parking_space_included, parking_space_price,
+        tiene_agua, tiene_luz, tiene_gas, tiene_alcantarillado,
+        has_elevator, has_swimming_pool, has_gym, has_security_24h,
+        has_air_conditioning, is_furnished, zona,
+        estado, listing_status, published_at,
+        es_de_organizacion, organizacion_id, publicado_por_id, rental_type_id,
+        how_to_contact, telefono_contacto,
         created_at, updated_at
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+      ) VALUES (
+        $1, $2, $3, $4,
+        $5, $6, $7, $8,
+        $9, $10, $11, $12, $13,
+        $14, $15,
+        $16, $17, $18,
+        $19, $20, $21, $22, $23,
+        $24, $25, $26,
+        $27, $28, $29, $30,
+        $31, $32, $33,
+        $34, $35, $36,
+        $37, $38,
+        $39, $40, $41, $42,
+        $43, $44, $45, $46,
+        $47, $48, $49,
+        $50, $51, CURRENT_TIMESTAMP,
+        $52, $53, $54, $55,
+        $56, $57,
+        CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+      )
       RETURNING *;
     `;
     const values = [
-      tipo,
-      operacion,
+      operation_type_id,
+      property_type_id,
+      condition_type_id,
+      heating_type_id,
       country_id,
       state_id,
       city_id,
+      barrio_id,
       direccion,
       numero_direccion,
+      campos.floor,
+      campos.interior_apartment_number,
+      campos.postal_code,
       latitude,
       longitude,
+      estrato,
+      campos.cedula_catastral,
+      campos.matricula_inmobiliaria,
       tituloFinal,
-      precio ? parseInt(precio) : null,
-      estado || "disponible",
+      campos.description,
+      precio,
+      price_per_sqm,
+      administracion,
+      constructed_area,
+      private_area,
+      plot_area,
+      room_count,
+      bedroom_count,
+      bathroom_count,
+      social_bathroom_count,
+      construction_year,
+      antiguedad_anios,
+      is_new_construction,
+      parqueadero_tipo,
+      parqueadero_modo,
+      parking_space_count,
+      parking_space_included,
+      parking_space_price,
+      tiene_agua,
+      tiene_luz,
+      tiene_gas,
+      tiene_alcantarillado,
+      has_elevator,
+      has_swimming_pool,
+      has_gym,
+      has_security_24h,
+      has_air_conditioning,
+      is_furnished,
+      zona,
+      estadoFinal,
+      listingStatusFinal,
       es_de_organizacion || false,
       organizacion_id,
       req.usuario.id,
+      rental_type_id,
+      how_to_contact,
+      telefono_contacto,
     ];
 
     const result = await pool.query(query, values);
     const nuevaPropiedad = result.rows[0];
+
+    // Historial de precios inicial (si hay precio)
+    if (precio !== null) {
+      await pool.query(
+        `INSERT INTO price_history (propiedad_id, old_price, new_price, change_type, source)
+         VALUES ($1, NULL, $2, 'initial', 'user_update')`,
+        [nuevaPropiedad.id, precio],
+      );
+    }
+
     await cacheInvalidate("propiedades:*");
     return res.status(201).json({
       success: true,
@@ -1372,8 +1848,10 @@ export const getPropiedadesHome = async (req, res) => {
     }
 
     const { rows: propiedades } = await pool.query(
-      `SELECT p.*, ${portadaSubquery("p")}, ${portadaPublicIdSubquery("p")}
+      `SELECT p.*, ${portadaSubquery("p")}, ${portadaPublicIdSubquery("p")},
+              ${camposCatalogoSelect("p")}
        FROM propiedades p
+       ${joinsCatalogo("p")}
        ${whereClause}
        ORDER BY p.created_at DESC 
        LIMIT $1`,
@@ -1454,8 +1932,10 @@ export const getPropiedadesMisAnuncios = async (req, res) => {
     const id = req.usuario.id;
 
     const { rows: propiedades } = await pool.query(
-      `SELECT p.*, ${portadaSubquery("p")}, ${portadaPublicIdSubquery("p")}
+      `SELECT p.*, ${portadaSubquery("p")}, ${portadaPublicIdSubquery("p")},
+              ${camposCatalogoSelect("p")}
        FROM propiedades p
+       ${joinsCatalogo("p")}
        WHERE p.publicado_por_id = $1
        ORDER BY p.created_at DESC`,
       [id],
@@ -1579,8 +2059,10 @@ export const getPropiedadesByOrganizacion = async (req, res) => {
     }
 
     const { rows: propiedades } = await pool.query(
-      `SELECT p.*, ${portadaSubquery("p")}, ${portadaPublicIdSubquery("p")}
+      `SELECT p.*, ${portadaSubquery("p")}, ${portadaPublicIdSubquery("p")},
+              ${camposCatalogoSelect("p")}
        FROM propiedades p
+       ${joinsCatalogo("p")}
        ${whereClause}
        ORDER BY p.created_at DESC 
        LIMIT $2`,
@@ -1661,10 +2143,10 @@ export const getPropertiesBySlugs = async (req, res) => {
         .filter(Boolean);
       types.forEach((t) => params.push(t));
       const placeholders = types.map((_, i) => `$${i + 2}`);
-      typeCondition = `AND LOWER(p.tipo) IN (${placeholders.join(", ")})`;
+      typeCondition = `AND LOWER(pt.code) IN (${placeholders.join(", ")})`;
     } else {
       params.push(type.toLowerCase());
-      typeCondition = `AND LOWER(p.tipo) = $2`;
+      typeCondition = `AND LOWER(pt.code) = $2`;
     }
 
     const galeriaSubquery = `
@@ -1697,7 +2179,13 @@ export const getPropertiesBySlugs = async (req, res) => {
     `;
 
     const selectFields = `
-      p.id, p.tipo, p.operacion, p.titulo, p.direccion, p.precio,
+      p.id, p.titulo, p.direccion, p.precio, p.price_per_sqm, p.estrato,
+      p.private_area, p.constructed_area, p.bedroom_count, p.bathroom_count,
+      ot.code as operacion_slug,
+      pt.code as tipo_slug,
+      ot.label_es as operacion,
+      pt.label_es as tipo_inmueble,
+      ct.label_es as estado_conservacion,
       ${portadaSubquery("p")},
       ${portadaPublicIdSubquery("p")},
       p.es_de_organizacion,
@@ -1712,6 +2200,11 @@ export const getPropertiesBySlugs = async (req, res) => {
     `;
 
     const orgJoin = `LEFT JOIN organizaciones o ON p.organizacion_id = o.id`;
+    const catalogosJoin = `
+      INNER JOIN operation_types ot ON p.operation_type_id = ot.id
+      INNER JOIN property_types pt ON p.property_type_id = pt.id
+      LEFT JOIN condition_types ct ON p.condition_type_id = ct.id
+    `;
 
     let query;
     if (city) {
@@ -1722,10 +2215,11 @@ export const getPropertiesBySlugs = async (req, res) => {
       query = `
         SELECT ${selectFields}
         FROM propiedades p
+        ${catalogosJoin}
         INNER JOIN cities c ON p.city_id = c.id
         INNER JOIN states s ON c.state_id = s.id 
         ${orgJoin}
-        WHERE LOWER(p.operacion) = $1
+        WHERE LOWER(ot.code) = $1
           ${typeCondition}
           AND c.slug = $${cityIdx}
           AND s.slug = $${deptIdx}
@@ -1754,10 +2248,11 @@ export const getPropertiesBySlugs = async (req, res) => {
       query = `
         SELECT ${selectFields}
         FROM propiedades p
+        ${catalogosJoin}
         INNER JOIN cities c ON p.city_id = c.id
         INNER JOIN states s ON c.state_id = s.id 
         ${orgJoin}
-        WHERE LOWER(p.operacion) = $1
+        WHERE LOWER(ot.code) = $1
           ${typeCondition}
           AND s.slug = $${fallbackIdx}
           AND p.estado = 'publicado'
@@ -1771,10 +2266,11 @@ export const getPropertiesBySlugs = async (req, res) => {
       query = `
         SELECT ${selectFields}
         FROM propiedades p
+        ${catalogosJoin}
         INNER JOIN cities c ON p.city_id = c.id
         INNER JOIN states s ON c.state_id = s.id 
         ${orgJoin}
-        WHERE LOWER(p.operacion) = $1
+        WHERE LOWER(ot.code) = $1
           ${typeCondition}
           AND s.slug = $${geoIdx}
           AND p.estado = 'publicado'
@@ -1797,11 +2293,12 @@ export const getPropertiesBySlugs = async (req, res) => {
       query = `
         SELECT ${selectFields}
         FROM propiedades p
+        ${catalogosJoin}
         INNER JOIN cities c ON p.city_id = c.id
         INNER JOIN states s ON c.state_id = s.id
         INNER JOIN regions r ON s.region_id = r.id
         ${orgJoin}
-        WHERE LOWER(p.operacion) = $1
+        WHERE LOWER(ot.code) = $1
           ${typeCondition}
           AND r.slug = $${geoIdx}
           AND p.estado = 'publicado'
@@ -1851,7 +2348,7 @@ export const getInmueblesEnBbox = async (req, res) => {
 
     if (operation) {
       params.push(operation.toLowerCase());
-      filters.push(`LOWER(p.operacion) = LOWER($${params.length})`);
+      filters.push(`LOWER(ot.code) = LOWER($${params.length})`);
     }
 
     if (tipoInmueble) {
@@ -1861,12 +2358,12 @@ export const getInmueblesEnBbox = async (req, res) => {
         .filter(Boolean);
       if (tipos.length === 1) {
         params.push(tipos[0]);
-        filters.push(`LOWER(p.tipo) = LOWER($${params.length})`);
+        filters.push(`LOWER(pt.code) = LOWER($${params.length})`);
       } else if (tipos.length > 1) {
         const startIdx = params.length + 1;
         tipos.forEach((t) => params.push(t));
         const placeholders = tipos.map((_, i) => `$${startIdx + i}`);
-        filters.push(`LOWER(p.tipo) IN (${placeholders.join(", ")})`);
+        filters.push(`LOWER(pt.code) IN (${placeholders.join(", ")})`);
       }
     }
 
@@ -1874,10 +2371,14 @@ export const getInmueblesEnBbox = async (req, res) => {
     const bboxParamIdx = params.length - 3;
 
     const query = `
-      SELECT p.id, p.titulo, p.precio, p.operacion, p.tipo,
+      SELECT p.id, p.titulo, p.precio, p.estrato,
+             ot.label_es as operacion, ot.code as operacion_slug,
+             pt.label_es as tipo_inmueble, pt.code as tipo_slug,
              ${portadaSubquery("p")},
              ST_Y(p.geom) AS lat, ST_X(p.geom) AS lng
       FROM propiedades p
+      LEFT JOIN operation_types ot ON p.operation_type_id = ot.id
+      LEFT JOIN property_types pt ON p.property_type_id = pt.id
       WHERE ST_Intersects(
         p.geom,
         ST_MakeEnvelope(
@@ -1953,6 +2454,179 @@ export const getPropiedadResumen = async (req, res) => {
     res.status(500).json({
       success: false,
       message: "Error al obtener resumen",
+      data: null,
+      error: error.message,
+    });
+  }
+};
+
+// GET /propiedades/:id/historial-precios
+export const getHistorialPrecios = async (req, res) => {
+  const { id } = req.params;
+
+  if (!id) {
+    return res.status(400).json({
+      success: false,
+      message: "id es requerido",
+      data: null,
+      error: null,
+    });
+  }
+
+  try {
+    const { rows } = await pool.query(
+      `SELECT id, old_price, new_price, price_change, change_percent,
+              change_type, detected_at, source
+       FROM price_history
+       WHERE propiedad_id = $1
+       ORDER BY detected_at DESC`,
+      [id],
+    );
+
+    res.json({ success: true, message: null, data: rows, error: null });
+  } catch (error) {
+    console.error("Error en getHistorialPrecios:", error);
+    res.status(500).json({
+      success: false,
+      message: "Error al obtener historial de precios",
+      data: null,
+      error: error.message,
+    });
+  }
+};
+
+// GET /propiedades/:id/caracteristicas
+// Devuelve las características activas de la propiedad agrupadas por categoría.
+export const getPropiedadCaracteristicas = async (req, res) => {
+  const { id } = req.params;
+
+  if (!id) {
+    return res.status(400).json({
+      success: false,
+      message: "id es requerido",
+      data: null,
+      error: null,
+    });
+  }
+
+  try {
+    const { rows } = await pool.query(
+      `SELECT fc.id, fc.code, fc.label_es, fc.category, fc.data_type,
+              pf.bool_value, pf.numeric_value, pf.text_value
+       FROM property_features pf
+       JOIN feature_catalog fc ON pf.feature_id = fc.id
+       WHERE pf.propiedad_id = $1 AND pf.bool_value = TRUE
+       ORDER BY fc.category ASC, fc.id ASC`,
+      [id],
+    );
+
+    const agrupado = rows.reduce((acc, fila) => {
+      if (!acc[fila.category]) acc[fila.category] = [];
+      acc[fila.category].push({
+        id: fila.id,
+        code: fila.code,
+        label_es: fila.label_es,
+        data_type: fila.data_type,
+        bool_value: fila.bool_value,
+        numeric_value: fila.numeric_value,
+        text_value: fila.text_value,
+      });
+      return acc;
+    }, {});
+
+    res.json({ success: true, message: null, data: agrupado, error: null });
+  } catch (error) {
+    console.error("Error en getPropiedadCaracteristicas:", error);
+    res.status(500).json({
+      success: false,
+      message: "Error al obtener características",
+      data: null,
+      error: error.message,
+    });
+  }
+};
+
+// POST /propiedades/:id/caracteristicas
+// Body: { features: [{ feature_id, bool_value?, numeric_value?, text_value? }] }
+// Borra las existentes y reinserta las enviadas.
+export const guardarPropiedadCaracteristicas = async (req, res) => {
+  const { id } = req.params;
+  const { features } = req.body;
+
+  if (!id) {
+    return res.status(400).json({
+      success: false,
+      message: "id es requerido",
+      data: null,
+      error: null,
+    });
+  }
+
+  if (!Array.isArray(features)) {
+    return res.status(400).json({
+      success: false,
+      message: "El campo features debe ser un array.",
+      data: null,
+      error: null,
+    });
+  }
+
+  try {
+    const propiedadResult = await pool.query(
+      "SELECT id, publicado_por_id FROM propiedades WHERE id = $1",
+      [id],
+    );
+    if (propiedadResult.rows.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: "Propiedad no encontrada",
+        data: null,
+        error: null,
+      });
+    }
+    if (propiedadResult.rows[0].publicado_por_id !== req.usuario.id) {
+      return res.status(403).json({
+        success: false,
+        message: "No autorizado para modificar esta propiedad.",
+        data: null,
+        error: null,
+      });
+    }
+
+    // 1. Borrar características existentes de esa propiedad
+    await pool.query("DELETE FROM property_features WHERE propiedad_id = $1", [
+      id,
+    ]);
+
+    // 2. Insertar las nuevas
+    for (const f of features) {
+      if (!f.feature_id) continue;
+      await pool.query(
+        `INSERT INTO property_features
+           (propiedad_id, feature_id, bool_value, numeric_value, text_value)
+         VALUES ($1, $2, $3, $4, $5)`,
+        [
+          id,
+          f.feature_id,
+          f.bool_value === undefined ? true : f.bool_value,
+          f.numeric_value ?? null,
+          f.text_value ?? null,
+        ],
+      );
+    }
+
+    await cacheInvalidate("propiedades:*");
+    res.json({
+      success: true,
+      message: "Características guardadas.",
+      data: { propiedad_id: id, features_guardados: features.length },
+      error: null,
+    });
+  } catch (error) {
+    console.error("Error en guardarPropiedadCaracteristicas:", error);
+    res.status(500).json({
+      success: false,
+      message: "Error al guardar características",
       data: null,
       error: error.message,
     });

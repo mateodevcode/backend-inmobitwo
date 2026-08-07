@@ -38,24 +38,34 @@ export function propiedad_validate(datos, { requerirPublicador = true } = {}) {
 export function publicar_anuncio_validate(datos) {
   const errores = [];
 
-  if (!datos.tipo) {
-    errores.push("El tipo de propiedad es requerido.");
+  if (!datos.operation_type_id) {
+    errores.push("operation_type_id es requerido.");
   }
 
-  if (!datos.operacion) {
-    errores.push("La operación es requerida.");
+  if (!datos.property_type_id) {
+    errores.push("property_type_id es requerido.");
   }
 
   if (!datos.direccion) {
     errores.push("La dirección es requerida.");
   }
 
-  if (!datos.country_id) {
-    errores.push("country_id es requerido.");
-  }
-
   if (!datos.city_id || !datos.state_id) {
     errores.push("city_id y state_id son requeridos.");
+  }
+
+  if (datos.estrato !== undefined && datos.estrato !== null && datos.estrato !== "") {
+    const estrato = Number(datos.estrato);
+    if (!Number.isInteger(estrato) || estrato < 1 || estrato > 6) {
+      errores.push("El estrato debe ser un número entre 1 y 6.");
+    }
+  }
+
+  if (datos.precio !== undefined && datos.precio !== null && datos.precio !== "") {
+    const precio = Number(datos.precio);
+    if (isNaN(precio) || precio <= 0) {
+      errores.push("El precio debe ser un número positivo.");
+    }
   }
 
   if (!datos.publicado_por_id) {

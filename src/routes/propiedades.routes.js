@@ -12,6 +12,9 @@ import {
   getPropertiesBySlugs,
   getInmueblesEnBbox,
   getPropiedadResumen,
+  getHistorialPrecios,
+  getPropiedadCaracteristicas,
+  guardarPropiedadCaracteristicas,
 } from "../controllers/propiedades.controllers.js";
 import { createRateLimitMiddleware, defaultLimiter } from "../lib/rateLimit.js";
 import { APIKEY } from "../config.js";
@@ -48,6 +51,26 @@ router.get(`${ruta}/inmuebles-en-bbox`, rateLimit, getInmueblesEnBbox);
 
 // Resumen ligero de propiedad para PropertyCard
 router.get(`${ruta}/:id/resumen`, rateLimit, getPropiedadResumen);
+
+// Historial de precios (price_history)
+router.get(
+  `${ruta}/:id/historial-precios`,
+  rateLimit,
+  getHistorialPrecios,
+);
+
+// Características N:M de una propiedad (feature_catalog)
+router.get(
+  `${ruta}/:id/caracteristicas`,
+  rateLimit,
+  getPropiedadCaracteristicas,
+);
+router.post(
+  `${ruta}/:id/caracteristicas`,
+  verificarToken,
+  rateLimit,
+  guardarPropiedadCaracteristicas,
+);
 
 // 3. VISTA DE ORGANIZACIÓN (TENANT) - Va antes de los parámetros dinámicos generales
 router.get(
