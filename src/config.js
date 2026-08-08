@@ -29,3 +29,8 @@ export const BREVO_EMAIL_NO_REPLY = process.env.BREVO_EMAIL_NO_REPLY;
 export const RUST_TRACKING_URL = process.env.RUST_TRACKING_URL;
 export const RUST_MEDIA_URL = process.env.RUST_MEDIA_URL;
 export const RUST_WEBSOCKET_URL = process.env.RUST_WEBSOCKET_URL;
+
+// ia (DeepSeek)
+export const DEEPSEEK_API_KEY = process.env.DEEPSEEK_API_KEY;
+export const DEEPSEEK_BASE_URL =
+  process.env.DEEPSEEK_BASE_URL || "https://api.deepseek.com";

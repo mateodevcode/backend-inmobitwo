@@ -12,6 +12,7 @@ import {
   getGeoCount,
   getLocationGeoJSON,
   getInmueblesEnPoligono,
+  getTituloSugerido,
 } from "../controllers/geo.controllers.js";
 import { createRateLimitMiddleware, defaultLimiter } from "../lib/rateLimit.js";
 
@@ -22,6 +23,7 @@ const rateLimit = createRateLimitMiddleware(defaultLimiter);
 router.get("/countries", rateLimit, getCountries);
 router.get("/states", rateLimit, getStates);
 router.get("/cities", rateLimit, getCities);
+router.get("/titulo-sugerido", rateLimit, getTituloSugerido);
 
 // Autocompletado tipo Idealista
 router.get("/suggest-cities", rateLimit, suggestCities);

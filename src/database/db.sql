@@ -232,6 +232,7 @@ CREATE TABLE IF NOT EXISTS propiedades (
     city_id INTEGER REFERENCES cities(id),
     barrio_id INTEGER REFERENCES barrios(id) ON DELETE
     SET NULL,
+        barrio_nombre VARCHAR(255),
         -- Ubicación: texto libre
         direccion VARCHAR(255),
         numero_direccion VARCHAR(50),
