@@ -12,6 +12,7 @@ import {
   calcularPrecioSugerido,
   validarPrecioUsuario,
 } from "../lib/precios_referencia_colombia.js";
+import { buildTipoFilter, esTipoVacacional } from "../lib/propertyFilters.js";
 
 const TAMANOS = ["thumbnail", "small", "medium", "large", "xlarge"];
 
@@ -2140,7 +2141,8 @@ export const getPropiedadesByOrganizacion = async (req, res) => {
 };
 
 export const getPropertiesBySlugs = async (req, res) => {
-  const { operation, type, city, dept } = req.query;
+  const { type, city, dept } = req.query;
+  let { operation } = req.query;
 
   if (!operation || !type || !dept) {
     return res.status(400).json({
@@ -2154,18 +2156,16 @@ export const getPropertiesBySlugs = async (req, res) => {
   try {
     const params = [operation.toLowerCase()];
 
-    let typeCondition;
-    if (type.includes(",")) {
-      const types = type
-        .split(",")
-        .map((t) => t.trim().toLowerCase())
-        .filter(Boolean);
-      types.forEach((t) => params.push(t));
-      const placeholders = types.map((_, i) => `$${i + 2}`);
-      typeCondition = `AND LOWER(pt.code) IN (${placeholders.join(", ")})`;
-    } else {
-      params.push(type.toLowerCase());
-      typeCondition = `AND LOWER(pt.code) = $2`;
+    const { sql: tipoFilterSql, params: tipoFilterParams } = buildTipoFilter(
+      type,
+      { alias: "p", startIdx: params.length + 1 },
+    );
+    tipoFilterParams.forEach((t) => params.push(t));
+    const typeCondition = tipoFilterSql ? `AND ${tipoFilterSql}` : "";
+
+    // Vacacional solo aplica a arriendo (por temporada).
+    if (esTipoVacacional(type)) {
+      params[0] = "arriendo";
     }
 
     const galeriaSubquery = `
@@ -2350,7 +2350,8 @@ export const getPropertiesBySlugs = async (req, res) => {
 
 // NUEVO v3.6: Inmuebles dentro de un bounding box (para MapaInmuebles)
 export const getInmueblesEnBbox = async (req, res) => {
-  const { minLat, minLng, maxLat, maxLng, operation, tipoInmueble } = req.query;
+  const { minLat, minLng, maxLat, maxLng, tipoInmueble } = req.query;
+  let { operation } = req.query;
 
   if (!minLat || !minLng || !maxLat || !maxLng) {
     return res.status(400).json({
@@ -2365,25 +2366,22 @@ export const getInmueblesEnBbox = async (req, res) => {
     const params = [];
     const filters = ["p.estado = 'publicado'", "p.geom IS NOT NULL"];
 
+    if (esTipoVacacional(tipoInmueble)) {
+      operation = "arriendo";
+    }
+
     if (operation) {
       params.push(operation.toLowerCase());
       filters.push(`LOWER(ot.code) = LOWER($${params.length})`);
     }
 
     if (tipoInmueble) {
-      const tipos = tipoInmueble
-        .split(",")
-        .map((t) => t.trim().toLowerCase())
-        .filter(Boolean);
-      if (tipos.length === 1) {
-        params.push(tipos[0]);
-        filters.push(`LOWER(pt.code) = LOWER($${params.length})`);
-      } else if (tipos.length > 1) {
-        const startIdx = params.length + 1;
-        tipos.forEach((t) => params.push(t));
-        const placeholders = tipos.map((_, i) => `$${startIdx + i}`);
-        filters.push(`LOWER(pt.code) IN (${placeholders.join(", ")})`);
-      }
+      const { sql, params: tipoParams } = buildTipoFilter(tipoInmueble, {
+        alias: "p",
+        startIdx: params.length + 1,
+      });
+      tipoParams.forEach((t) => params.push(t));
+      if (sql) filters.push(sql);
     }
 
     params.push(minLng, minLat, maxLng, maxLat);
