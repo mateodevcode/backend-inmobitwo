@@ -1,4 +1,5 @@
 import { pool } from "../db.js";
+import { buildTipoFilter, esTipoVacacional } from "../lib/propertyFilters.js";
 
 // GET /geo/titulo-sugerido?propertyTypeId=&cityId=&stateId=&direccion=&operacion=
 // Genera el título con el mismo formato que publicarAnuncios.
@@ -118,7 +119,8 @@ export const getCities = async (req, res) => {
 };
 
 export const getLocationInfo = async (req, res) => {
-  const { city, dept, region, operation, type } = req.query;
+  const { city, dept, region, type } = req.query;
+  let { operation } = req.query;
 
   if (!city && !dept && !region) {
     return res.status(400).json({
@@ -146,6 +148,10 @@ export const getLocationInfo = async (req, res) => {
 
     const filterConditions = [];
 
+    if (esTipoVacacional(type)) {
+      operation = "arriendo";
+    }
+
     if (operation) {
       params.push(operation);
       filterConditions.push(
@@ -154,23 +160,12 @@ export const getLocationInfo = async (req, res) => {
     }
 
     if (type) {
-      const types = type.split(",").map((t) => t.trim()).filter(Boolean);
-      if (types.length === 1) {
-        params.push(types[0]);
-        filterConditions.push(
-          `AND p.property_type_id IN (SELECT id FROM property_types WHERE LOWER(code) = LOWER($${params.length}))`,
-        );
-      } else if (types.length > 1) {
-        const startIdx = params.length + 1;
-        types.forEach((t) => params.push(t));
-        const placeholders = types.map(
-          (_, i) =>
-            `(SELECT id FROM property_types WHERE LOWER(code) = LOWER($${startIdx + i}))`,
-        );
-        filterConditions.push(
-          `AND p.property_type_id IN (${placeholders.join(", ")})`,
-        );
-      }
+      const { sql, params: tipoParams } = buildTipoFilter(type, {
+        alias: "p",
+        startIdx: params.length + 1,
+      });
+      tipoParams.forEach((t) => params.push(t));
+      if (sql) filterConditions.push(`AND ${sql}`);
     }
 
     const filterClause = filterConditions.join(" ");
@@ -499,7 +494,8 @@ export const getBarrios = async (req, res) => {
 };
 
 export const getGeoCount = async (req, res) => {
-  const { type, daneCode, operation, inmueble } = req.query;
+  const { type, daneCode, inmueble } = req.query;
+  let { operation } = req.query;
 
   if (!type || !daneCode) {
     return res.status(400).json({
@@ -514,6 +510,10 @@ export const getGeoCount = async (req, res) => {
     const params = [];
     const filters = ["p.estado = 'publicado'"];
 
+    if (esTipoVacacional(inmueble)) {
+      operation = "arriendo";
+    }
+
     if (operation) {
       params.push(operation);
       filters.push(
@@ -522,20 +522,12 @@ export const getGeoCount = async (req, res) => {
     }
 
     if (inmueble) {
-      const tipos = inmueble.split(",").map((t) => t.trim().toLowerCase()).filter(Boolean);
-      if (tipos.length === 1) {
-        params.push(tipos[0]);
-        filters.push(
-          `p.property_type_id IN (SELECT id FROM property_types WHERE LOWER(code) = LOWER($${params.length}))`,
-        );
-      } else if (tipos.length > 1) {
-        const start = params.length + 1;
-        tipos.forEach((t) => params.push(t));
-        const ph = tipos.map(
-          (_, i) => `(SELECT id FROM property_types WHERE LOWER(code) = LOWER($${start + i}))`,
-        );
-        filters.push(`p.property_type_id IN (${ph.join(", ")})`);
-      }
+      const { sql, params: tipoParams } = buildTipoFilter(inmueble, {
+        alias: "p",
+        startIdx: params.length + 1,
+      });
+      tipoParams.forEach((t) => params.push(t));
+      if (sql) filters.push(sql);
     }
 
     const filterSQL = filters.join(" AND ");
@@ -679,7 +671,8 @@ export const getLocationGeoJSON = async (req, res) => {
 };
 
 export const getInmueblesEnPoligono = async (req, res) => {
-  const { polygon, operation, tipoInmueble } = req.body;
+  const { polygon, tipoInmueble } = req.body;
+  let { operation } = req.body;
 
   if (!polygon || !polygon.geometry) {
     return res.status(400).json({
@@ -734,6 +727,10 @@ export const getInmueblesEnPoligono = async (req, res) => {
     const params = [geoJSONStr];
     const filters = ["p.estado = 'publicado'"];
 
+    if (esTipoVacacional(tipoInmueble)) {
+      operation = "arriendo";
+    }
+
     if (operation) {
       params.push(operation);
       filters.push(
@@ -742,20 +739,12 @@ export const getInmueblesEnPoligono = async (req, res) => {
     }
 
     if (tipoInmueble) {
-      const tipos = tipoInmueble.split(",").map((t) => t.trim().toLowerCase()).filter(Boolean);
-      if (tipos.length === 1) {
-        params.push(tipos[0]);
-        filters.push(
-          `p.property_type_id IN (SELECT id FROM property_types WHERE LOWER(code) = LOWER($${params.length}))`,
-        );
-      } else if (tipos.length > 1) {
-        const start = params.length + 1;
-        tipos.forEach((t) => params.push(t));
-        const ph = tipos.map(
-          (_, i) => `(SELECT id FROM property_types WHERE LOWER(code) = LOWER($${start + i}))`,
-        );
-        filters.push(`p.property_type_id IN (${ph.join(", ")})`);
-      }
+      const { sql, params: tipoParams } = buildTipoFilter(tipoInmueble, {
+        alias: "p",
+        startIdx: params.length + 1,
+      });
+      tipoParams.forEach((t) => params.push(t));
+      if (sql) filters.push(sql);
     }
 
     const filterSQL = filters.join(" AND ");
@@ -839,7 +828,8 @@ export const getInmueblesEnPoligono = async (req, res) => {
 };
 
 export const suggestCities = async (req, res) => {
-  const { q, operation, type } = req.query;
+  const { q, type } = req.query;
+  let { operation } = req.query;
 
   if (!q || q.trim().length < 2) {
     return res.json({ success: true, message: null, data: [], error: null });
@@ -849,6 +839,10 @@ export const suggestCities = async (req, res) => {
     const countryId = 2;
     const params = [countryId, `%${q}%`, `${q}%`];
 
+    if (esTipoVacacional(type)) {
+      operation = "arriendo";
+    }
+
     let operacionFilter = "";
     if (operation) {
       params.push(operation);
@@ -857,18 +851,12 @@ export const suggestCities = async (req, res) => {
 
     let typeFilter = "";
     if (type) {
-      const types = type.split(",").map((t) => t.trim().toLowerCase()).filter(Boolean);
-      if (types.length === 1) {
-        params.push(types[0]);
-        typeFilter = `AND p.property_type_id IN (SELECT id FROM property_types WHERE LOWER(code) = LOWER($${params.length}))`;
-      } else if (types.length > 1) {
-        const startIdx = params.length + 1;
-        types.forEach((t) => params.push(t));
-        const placeholders = types.map(
-          (_, i) => `(SELECT id FROM property_types WHERE LOWER(code) = LOWER($${startIdx + i}))`,
-        );
-        typeFilter = `AND p.property_type_id IN (${placeholders.join(", ")})`;
-      }
+      const { sql, params: tipoParams } = buildTipoFilter(type, {
+        alias: "p",
+        startIdx: params.length + 1,
+      });
+      tipoParams.forEach((t) => params.push(t));
+      typeFilter = sql ? `AND ${sql}` : "";
     }
 
     const query = `
