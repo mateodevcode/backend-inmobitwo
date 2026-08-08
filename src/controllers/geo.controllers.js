@@ -1,5 +1,39 @@
 import { pool } from "../db.js";
 
+// GET /geo/titulo-sugerido?propertyTypeId=&cityId=&stateId=&direccion=&operacion=
+// Genera el título con el mismo formato que publicarAnuncios.
+export const getTituloSugerido = async (req, res) => {
+  try {
+    const {
+      propertyTypeId,
+      cityId,
+      stateId,
+      direccion = "",
+      operacion = "venta",
+    } = req.query;
+
+    const [tipo, city, state] = await Promise.all([
+      pool.query("SELECT label_es FROM property_types WHERE id = $1", [
+        propertyTypeId,
+      ]),
+      pool.query("SELECT name FROM cities WHERE id = $1", [cityId]),
+      pool.query("SELECT name FROM states WHERE id = $1", [stateId]),
+    ]);
+
+    const operacionLabel =
+      String(operacion).toLowerCase() === "venta" ? "Venta" : "Alquiler";
+    const titulo = `${operacionLabel} de ${tipo.rows[0]?.label_es || "Propiedad"} en ${direccion}, ${
+      city.rows[0]?.name || ""
+    }, ${state.rows[0]?.name || ""}`;
+    const final = titulo.charAt(0).toUpperCase() + titulo.slice(1);
+
+    res.json({ success: true, message: null, data: { titulo: final }, error: null });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ success: false, error: error.message, data: null });
+  }
+};
+
 export const getCountries = async (req, res) => {
   try {
     const { rows } = await pool.query(
@@ -65,7 +99,7 @@ export const getCities = async (req, res) => {
 
   try {
     const { rows } = await pool.query(
-      `SELECT id, state_id, name, latitude::float, longitude::float
+      `SELECT id, state_id, name, dane_code, latitude::float, longitude::float
       FROM cities
       WHERE state_id = $1
       ORDER BY name ASC`,

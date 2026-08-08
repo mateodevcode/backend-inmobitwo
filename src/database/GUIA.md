@@ -426,6 +426,7 @@ VALUES (1, 'Chapinero', 'chapinero');
 
 **Ubicación textual:**
 - `direccion`, `numero_direccion`, `floor`, `interior_apartment_number`, `postal_code`
+- `barrio_nombre`: barrio en texto libre (referencia, no exactitud; opcional). `barrio_id` sigue siendo la FK exacta.
 
 **Precios:**
 - `precio`: Precio total en COP.

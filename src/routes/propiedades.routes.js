@@ -15,6 +15,8 @@ import {
   getHistorialPrecios,
   getPropiedadCaracteristicas,
   guardarPropiedadCaracteristicas,
+  calcularPrecioSugeridoPropiedad,
+  validarPrecioPropiedad,
 } from "../controllers/propiedades.controllers.js";
 import { createRateLimitMiddleware, defaultLimiter } from "../lib/rateLimit.js";
 import { APIKEY } from "../config.js";
@@ -77,6 +79,18 @@ router.get(
   `${ruta}/organizacion/:slug`,
   rateLimit,
   getPropiedadesByOrganizacion,
+);
+
+// Algoritmo de precio sugerido (servicio independiente, antes de rutas :id)
+router.post(
+  `${ruta}/calcular-precio-sugerido`,
+  rateLimit,
+  calcularPrecioSugeridoPropiedad,
+);
+router.post(
+  `${ruta}/validar-precio`,
+  rateLimit,
+  validarPrecioPropiedad,
 );
 
 // 4. PARÁMETROS DINÁMICOS GENERALES (Siempre abajo del todo para evitar colisiones de tipos)

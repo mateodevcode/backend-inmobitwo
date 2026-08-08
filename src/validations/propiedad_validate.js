@@ -54,6 +54,10 @@ export function publicar_anuncio_validate(datos) {
     errores.push("city_id y state_id son requeridos.");
   }
 
+  if (!datos.country_id) {
+    errores.push("country_id es requerido.");
+  }
+
   if (datos.estrato !== undefined && datos.estrato !== null && datos.estrato !== "") {
     const estrato = Number(datos.estrato);
     if (!Number.isInteger(estrato) || estrato < 1 || estrato > 6) {
