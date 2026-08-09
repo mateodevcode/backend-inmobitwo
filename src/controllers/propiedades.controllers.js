@@ -2163,6 +2163,156 @@ export const getPropertiesBySlugs = async (req, res) => {
     tipoFilterParams.forEach((t) => params.push(t));
     const typeCondition = tipoFilterSql ? `AND ${tipoFilterSql}` : "";
 
+    // Filtro por rango de precio (min/max, en millones COP → ×1.000.000). Saneado.
+    const minPrecio = parseFloat(req.query.min) * 1000000;
+    const maxPrecio = parseFloat(req.query.max) * 1000000;
+    const precioCondiciones = [
+      !isNaN(minPrecio) ? `p.precio >= ${minPrecio}` : null,
+      !isNaN(maxPrecio) ? `p.precio <= ${maxPrecio}` : null,
+    ].filter(Boolean);
+    const precioWhere = precioCondiciones.length
+      ? `AND ${precioCondiciones.join(" AND ")}`
+      : "";
+
+    // Filtro por tamaño (área privada, con fallback a construida). Saneado a enteros.
+    const minTam = parseInt(req.query.tamMin, 10);
+    const maxTam = parseInt(req.query.tamMax, 10);
+    const tamCondiciones = [
+      !isNaN(minTam)
+        ? `COALESCE(p.private_area, p.constructed_area) >= ${minTam}`
+        : null,
+      !isNaN(maxTam)
+        ? `COALESCE(p.private_area, p.constructed_area) <= ${maxTam}`
+        : null,
+    ].filter(Boolean);
+    const tamWhere = tamCondiciones.length
+      ? `AND ${tamCondiciones.join(" AND ")}`
+      : "";
+
+    // Filtro por tipo de alquiler (rental_type_id). Saneado a enteros.
+    const rentalList = (req.query.rental ?? "")
+      .split(",")
+      .map(Number)
+      .filter(Boolean);
+    const rentalWhere = rentalList.length
+      ? `AND p.rental_type_id IN (${rentalList.join(",")})`
+      : "";
+
+    // Filtro por fecha de publicación (created_at). Saneado a valores fijos.
+    const fechaIntervals = {
+      "24h": "24 HOURS",
+      semana: "7 DAYS",
+      mes: "30 DAYS",
+    };
+    const fechaWhere = fechaIntervals[req.query.fecha]
+      ? `AND p.created_at >= NOW() - INTERVAL '${fechaIntervals[req.query.fecha]}'`
+      : "";
+
+    // Filtro por tipo de anunciante (es_de_organizacion). Saneado a valores fijos.
+    const anunciantesValidos = new Set(["persona", "inmobiliaria"]);
+    const anuncianteList = (req.query.anunciante ?? "")
+      .split(",")
+      .map((a) => a.trim().toLowerCase())
+      .filter((a) => anunciantesValidos.has(a));
+    const anuncianteConds = [];
+    if (anuncianteList.includes("inmobiliaria"))
+      anuncianteConds.push("p.es_de_organizacion = true");
+    if (anuncianteList.includes("persona"))
+      anuncianteConds.push("p.es_de_organizacion = false");
+    const anuncianteWhere = anuncianteConds.length
+      ? `AND (${anuncianteConds.join(" OR ")})`
+      : "";
+
+    // Filtro por multimedia. Solo "plano" implementado (video_3d/video pendientes).
+    const multimediaValidos = new Set(["plano", "video_3d", "video"]);
+    const multimediaList = (req.query.multimedia ?? "")
+      .split(",")
+      .map((m) => m.trim().toLowerCase())
+      .filter((m) => multimediaValidos.has(m));
+    const multimediaConds = [];
+    if (multimediaList.includes("plano"))
+      multimediaConds.push(
+        "EXISTS (SELECT 1 FROM propiedades_planos pp WHERE pp.propiedad_id = p.id)",
+      );
+    // TODO: implementar filtros de video_3d y video cuando exista el campo en la DB.
+    const multimediaWhere = multimediaConds.length
+      ? `AND ${multimediaConds.join(" AND ")}`
+      : "";
+
+    // Filtro por alcobas (bedroom_count). Saneado a enteros.
+    const habList = (req.query.hab ?? "")
+      .split(",")
+      .map((s) => s.trim())
+      .filter((s) => s !== "")
+      .map(Number)
+      .filter((n) => Number.isInteger(n) && n >= 0);
+    const habConds = [];
+    if (habList.includes(4)) habConds.push("p.bedroom_count >= 4");
+    habList.filter((n) => n < 4).forEach((n) =>
+      habConds.push(`p.bedroom_count = ${n}`),
+    );
+    const habWhere = habConds.length ? `AND (${habConds.join(" OR ")})` : "";
+
+    // Filtro por baños (bathroom_count). Saneado a enteros.
+    const banosList = (req.query.banos ?? "")
+      .split(",")
+      .map(Number)
+      .filter((n) => Number.isInteger(n) && n >= 1);
+    const banosConds = [];
+    if (banosList.includes(3)) banosConds.push("p.bathroom_count >= 3");
+    banosList.filter((n) => n < 3).forEach((n) =>
+      banosConds.push(`p.bathroom_count = ${n}`),
+    );
+    const banosWhere = banosConds.length ? `AND (${banosConds.join(" OR ")})` : "";
+
+    // Filtro por estado (agrupado → códigos de condition_types).
+    const estadoGrupos = {
+      obra_nueva: ["nuevo", "para_estrenar", "en_construccion", "obra_negra", "obra_gris"],
+      usado: ["usado"],
+      remodelado: ["remodelado"],
+      para_remodelar: ["para_remodelar"],
+    };
+    const estadoList = (req.query.estado ?? "")
+      .split(",")
+      .map((e) => e.trim().toLowerCase())
+      .filter((e) => estadoGrupos[e]);
+    const estadoConds = [];
+    if (estadoList.length)
+      estadoConds.push(
+        `p.condition_type_id IN (SELECT id FROM condition_types WHERE code IN (${estadoList
+          .flatMap((e) => estadoGrupos[e])
+          .map((c) => `'${c}'`)
+          .join(", ")}))`,
+      );
+    const estadoWhere = estadoConds.length ? `AND (${estadoConds.join(" OR ")})` : "";
+
+    // Filtro por características (flags rápidos de la tabla propiedades).
+    const caractFlags = {
+      ascensor: "has_elevator",
+      piscina: "has_swimming_pool",
+      gimnasio: "has_gym",
+      seguridad_24h: "has_security_24h",
+      aire_acondicionado: "has_air_conditioning",
+      amoblado: "is_furnished",
+      parqueadero: "parking_space_count",
+    };
+    const caractList = (req.query.caract ?? "")
+      .split(",")
+      .map((c) => c.trim().toLowerCase())
+      .filter((c) => caractFlags[c]);
+    const caractConds = [];
+    caractList.forEach((c) => {
+      const col = caractFlags[c];
+      caractConds.push(
+        col === "parking_space_count"
+          ? `p.parking_space_count > 0`
+          : `p.${col} = true`,
+      );
+    });
+    const caractWhere = caractConds.length
+      ? `AND (${caractConds.join(" AND ")})`
+      : "";
+
     // Vacacional solo aplica a arriendo (por temporada).
     if (esTipoVacacional(type)) {
       params[0] = "arriendo";
@@ -2200,6 +2350,7 @@ export const getPropertiesBySlugs = async (req, res) => {
     const selectFields = `
       p.id, p.titulo, p.direccion, p.precio, p.price_per_sqm, p.estrato,
       p.private_area, p.constructed_area, p.bedroom_count, p.bathroom_count,
+      p.created_at,
       ot.code as operacion_slug,
       pt.code as tipo_slug,
       ot.label_es as operacion,
@@ -2243,6 +2394,16 @@ export const getPropertiesBySlugs = async (req, res) => {
           AND c.slug = $${cityIdx}
           AND s.slug = $${deptIdx}
           AND p.estado = 'publicado'
+          ${precioWhere}
+          ${tamWhere}
+          ${rentalWhere}
+          ${fechaWhere}
+          ${anuncianteWhere}
+          ${multimediaWhere}
+          ${habWhere}
+          ${banosWhere}
+          ${estadoWhere}
+          ${caractWhere}
         ORDER BY p.id DESC
         LIMIT 100;
       `;
@@ -2275,6 +2436,16 @@ export const getPropertiesBySlugs = async (req, res) => {
           ${typeCondition}
           AND s.slug = $${fallbackIdx}
           AND p.estado = 'publicado'
+          ${precioWhere}
+          ${tamWhere}
+          ${rentalWhere}
+          ${fechaWhere}
+          ${anuncianteWhere}
+          ${multimediaWhere}
+          ${habWhere}
+          ${banosWhere}
+          ${estadoWhere}
+          ${caractWhere}
         ORDER BY p.id DESC
         LIMIT 100;
       `;
@@ -2293,6 +2464,16 @@ export const getPropertiesBySlugs = async (req, res) => {
           ${typeCondition}
           AND s.slug = $${geoIdx}
           AND p.estado = 'publicado'
+          ${precioWhere}
+          ${tamWhere}
+          ${rentalWhere}
+          ${fechaWhere}
+          ${anuncianteWhere}
+          ${multimediaWhere}
+          ${habWhere}
+          ${banosWhere}
+          ${estadoWhere}
+          ${caractWhere}
         ORDER BY p.id DESC
         LIMIT 100;
       `;
@@ -2321,6 +2502,16 @@ export const getPropertiesBySlugs = async (req, res) => {
           ${typeCondition}
           AND r.slug = $${geoIdx}
           AND p.estado = 'publicado'
+          ${precioWhere}
+          ${tamWhere}
+          ${rentalWhere}
+          ${fechaWhere}
+          ${anuncianteWhere}
+          ${multimediaWhere}
+          ${habWhere}
+          ${banosWhere}
+          ${estadoWhere}
+          ${caractWhere}
         ORDER BY p.id DESC
         LIMIT 100;
       `;
@@ -2342,6 +2533,266 @@ export const getPropertiesBySlugs = async (req, res) => {
     return res.status(500).json({
       success: false,
       message: "Error interno al procesar la búsqueda geográfica",
+      data: null,
+      error: error.message,
+    });
+  }
+};
+
+// NUEVO: Búsqueda por múltiples tipos de vivienda (agrupados).
+// Endpoint separado para no modificar getPropertiesBySlugs.
+// GET /propiedades/search-vivienda?operation=&tipos=casa,casa_lote&city=&dept=&min=&max=&tamMin=&tamMax=
+export const searchVivienda = async (req, res) => {
+  const { operation, tipos, city, dept, min, max, tamMin, tamMax } = req.query;
+
+  if (!operation || !tipos || !dept) {
+    return res.status(400).json({
+      success: false,
+      message: "Faltan parámetros requeridos (operation, tipos, dept).",
+      data: null,
+      error: null,
+    });
+  }
+
+  try {
+    const tipoLista = tipos
+      .split(",")
+      .map((t) => t.trim().toLowerCase())
+      .filter(Boolean);
+    if (tipoLista.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: "tipos inválido.",
+        data: null,
+        error: null,
+      });
+    }
+
+    const minPrecio = parseFloat(min) * 1000000;
+    const maxPrecio = parseFloat(max) * 1000000;
+    const minTamNum = parseInt(tamMin, 10);
+    const maxTamNum = parseInt(tamMax, 10);
+
+    const params = [operation.toLowerCase(), tipoLista];
+    const conds = [
+      "LOWER(ot.code) = $1",
+      "LOWER(pt.code) = ANY($2::text[])",
+      "p.estado = 'publicado'",
+    ];
+    let idx = 3;
+
+    if (city) {
+      params.push(city.toLowerCase(), dept.toLowerCase());
+      conds.push(`c.slug = $${idx++}`, `s.slug = $${idx++}`);
+    } else {
+      params.push(dept.toLowerCase());
+      conds.push(`s.slug = $${idx++}`);
+    }
+
+    if (!isNaN(minPrecio)) {
+      params.push(minPrecio);
+      conds.push(`p.precio >= $${idx++}`);
+    }
+    if (!isNaN(maxPrecio)) {
+      params.push(maxPrecio);
+      conds.push(`p.precio <= $${idx++}`);
+    }
+    if (!isNaN(minTamNum)) {
+      params.push(minTamNum);
+      conds.push(`COALESCE(p.private_area, p.constructed_area) >= $${idx++}`);
+    }
+    if (!isNaN(maxTamNum)) {
+      params.push(maxTamNum);
+      conds.push(`COALESCE(p.private_area, p.constructed_area) <= $${idx++}`);
+    }
+
+    // Filtro por tipo de alquiler (rental_type_id)
+    const rentalList = (req.query.rental ?? "")
+      .split(",")
+      .map(Number)
+      .filter(Boolean);
+    if (rentalList.length) {
+      params.push(rentalList);
+      conds.push(`p.rental_type_id = ANY($${idx++}::int[])`);
+    }
+
+    // Filtro por fecha de publicación (created_at). Saneado a valores fijos.
+    const fechaIntervals = {
+      "24h": "24 HOURS",
+      semana: "7 DAYS",
+      mes: "30 DAYS",
+    };
+    if (fechaIntervals[req.query.fecha]) {
+      conds.push(
+        `p.created_at >= NOW() - INTERVAL '${fechaIntervals[req.query.fecha]}'`,
+      );
+    }
+
+    // Filtro por tipo de anunciante (es_de_organizacion). Saneado a valores fijos.
+    const anunciantesValidos = new Set(["persona", "inmobiliaria"]);
+    const anuncianteList = (req.query.anunciante ?? "")
+      .split(",")
+      .map((a) => a.trim().toLowerCase())
+      .filter((a) => anunciantesValidos.has(a));
+    const anuncianteConds = [];
+    if (anuncianteList.includes("inmobiliaria"))
+      anuncianteConds.push("p.es_de_organizacion = true");
+    if (anuncianteList.includes("persona"))
+      anuncianteConds.push("p.es_de_organizacion = false");
+    if (anuncianteConds.length)
+      conds.push(`(${anuncianteConds.join(" OR ")})`);
+
+    // Filtro por multimedia. Solo "plano" implementado (video_3d/video pendientes).
+    const multimediaValidos = new Set(["plano", "video_3d", "video"]);
+    const multimediaList = (req.query.multimedia ?? "")
+      .split(",")
+      .map((m) => m.trim().toLowerCase())
+      .filter((m) => multimediaValidos.has(m));
+    if (multimediaList.includes("plano"))
+      conds.push(
+        "EXISTS (SELECT 1 FROM propiedades_planos pp WHERE pp.propiedad_id = p.id)",
+      );
+    // TODO: implementar filtros de video_3d y video cuando exista el campo en la DB.
+
+    // Filtro por alcobas (bedroom_count). Saneado a enteros.
+    const habList = (req.query.hab ?? "")
+      .split(",")
+      .map((s) => s.trim())
+      .filter((s) => s !== "")
+      .map(Number)
+      .filter((n) => Number.isInteger(n) && n >= 0);
+    const habConds = [];
+    if (habList.includes(4)) habConds.push("p.bedroom_count >= 4");
+    habList.filter((n) => n < 4).forEach((n) =>
+      habConds.push(`p.bedroom_count = ${n}`),
+    );
+    if (habConds.length) conds.push(`(${habConds.join(" OR ")})`);
+
+    // Filtro por baños (bathroom_count). Saneado a enteros.
+    const banosList = (req.query.banos ?? "")
+      .split(",")
+      .map(Number)
+      .filter((n) => Number.isInteger(n) && n >= 1);
+    const banosConds = [];
+    if (banosList.includes(3)) banosConds.push("p.bathroom_count >= 3");
+    banosList.filter((n) => n < 3).forEach((n) =>
+      banosConds.push(`p.bathroom_count = ${n}`),
+    );
+    if (banosConds.length) conds.push(`(${banosConds.join(" OR ")})`);
+
+    // Filtro por estado (agrupado → códigos de condition_types).
+    const estadoGrupos = {
+      obra_nueva: ["nuevo", "para_estrenar", "en_construccion", "obra_negra", "obra_gris"],
+      usado: ["usado"],
+      remodelado: ["remodelado"],
+      para_remodelar: ["para_remodelar"],
+    };
+    const estadoList = (req.query.estado ?? "")
+      .split(",")
+      .map((e) => e.trim().toLowerCase())
+      .filter((e) => estadoGrupos[e]);
+    if (estadoList.length)
+      conds.push(
+        `p.condition_type_id IN (SELECT id FROM condition_types WHERE code IN (${estadoList
+          .flatMap((e) => estadoGrupos[e])
+          .map((c) => `'${c}'`)
+          .join(", ")}))`,
+      );
+
+    // Filtro por características (flags rápidos de la tabla propiedades).
+    const caractFlags = {
+      ascensor: "has_elevator",
+      piscina: "has_swimming_pool",
+      gimnasio: "has_gym",
+      seguridad_24h: "has_security_24h",
+      aire_acondicionado: "has_air_conditioning",
+      amoblado: "is_furnished",
+      parqueadero: "parking_space_count",
+    };
+    const caractList = (req.query.caract ?? "")
+      .split(",")
+      .map((c) => c.trim().toLowerCase())
+      .filter((c) => caractFlags[c]);
+    const caractConds = [];
+    caractList.forEach((c) => {
+      const col = caractFlags[c];
+      caractConds.push(
+        col === "parking_space_count"
+          ? `p.parking_space_count > 0`
+          : `p.${col} = true`,
+      );
+    });
+    if (caractConds.length) conds.push(`(${caractConds.join(" AND ")})`);
+
+    const galeriaSubquery = `
+      COALESCE(
+        (SELECT json_agg(json_build_object(
+          'id', pg.id, 'url', pg.url, 'orden', pg.orden, 'tamaño', pg.tamaño, 'es_portada', pg.es_portada
+        ) ORDER BY pg.orden, pg.tamaño)
+        FROM propiedades_galeria pg WHERE pg.propiedad_id = p.id),
+        '[]'::json
+      ) as galeria
+    `;
+    const planosSubquery = `
+      COALESCE(
+        (SELECT json_agg(json_build_object(
+          'id', pp.id, 'url', pp.url, 'orden', pp.orden, 'tamaño', pp.tamaño
+        ) ORDER BY pp.orden, pp.tamaño)
+        FROM propiedades_planos pp WHERE pp.propiedad_id = p.id),
+        '[]'::json
+      ) as planos
+    `;
+
+    const selectFields = `
+      p.id, p.titulo, p.direccion, p.precio, p.price_per_sqm, p.estrato,
+      p.private_area, p.constructed_area, p.bedroom_count, p.bathroom_count,
+      p.created_at,
+      ot.code as operacion_slug,
+      pt.code as tipo_slug,
+      ot.label_es as operacion,
+      pt.label_es as tipo_inmueble,
+      ct.label_es as estado_conservacion,
+      ${portadaSubquery("p")},
+      ${portadaPublicIdSubquery("p")},
+      p.es_de_organizacion,
+      ${galeriaSubquery},
+      ${planosSubquery},
+      c.name as city_name,
+      s.name as state_name,
+      o.nombre as organizacion_nombre,
+      o.logo_url as organizacion_logo_url,
+      p.longitude::float as longitude,
+      p.latitude::float as latitude
+    `;
+
+    const query = `
+      SELECT ${selectFields}
+      FROM propiedades p
+      INNER JOIN operation_types ot ON p.operation_type_id = ot.id
+      INNER JOIN property_types pt ON p.property_type_id = pt.id
+      LEFT JOIN condition_types ct ON p.condition_type_id = ct.id
+      LEFT JOIN cities c ON p.city_id = c.id
+      LEFT JOIN states s ON c.state_id = s.id
+      LEFT JOIN organizaciones o ON p.organizacion_id = o.id
+      WHERE ${conds.join(" AND ")}
+      ORDER BY p.id DESC
+      LIMIT 100;
+    `;
+
+    const { rows } = await pool.query(query, params);
+
+    return res.json({
+      success: true,
+      message:
+        rows.length === 0 ? "No se encontraron inmuebles en esta zona" : null,
+      data: rows,
+      error: null,
+    });
+  } catch (error) {
+    console.error("Error en searchVivienda:", error.message);
+    return res.status(500).json({
+      success: false,
+      message: "Error interno al buscar por tipo de vivienda",
       data: null,
       error: error.message,
     });
