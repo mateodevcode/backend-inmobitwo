@@ -17,6 +17,7 @@ import {
   guardarPropiedadCaracteristicas,
   calcularPrecioSugeridoPropiedad,
   validarPrecioPropiedad,
+  searchVivienda,
 } from "../controllers/propiedades.controllers.js";
 import { createRateLimitMiddleware, defaultLimiter } from "../lib/rateLimit.js";
 import { APIKEY } from "../config.js";
@@ -47,6 +48,9 @@ router.get(
 
 // 2. NUEVA RUTA POR SLUG ESTILO IDEALISTA (Corregida con el prefijo ${ruta} y bien posicionada)
 router.get(`${ruta}/search-slugs`, rateLimit, getPropertiesBySlugs);
+
+// Búsqueda por múltiples tipos de vivienda (agrupados)
+router.get(`${ruta}/search-vivienda`, rateLimit, searchVivienda);
 
 // Búsqueda por bounding box (MapaInmuebles)
 router.get(`${ruta}/inmuebles-en-bbox`, rateLimit, getInmueblesEnBbox);
