@@ -32,5 +32,4 @@ export const RUST_WEBSOCKET_URL = process.env.RUST_WEBSOCKET_URL;
 
 // ia (DeepSeek)
 export const DEEPSEEK_API_KEY = process.env.DEEPSEEK_API_KEY;
-export const DEEPSEEK_BASE_URL =
-  process.env.DEEPSEEK_BASE_URL || "https://api.deepseek.com";
+export const DEEPSEEK_BASE_URL = process.env.DEEPSEEK_BASE_URL;
