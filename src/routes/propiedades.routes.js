@@ -8,6 +8,7 @@ import {
   publicarAnuncios,
   getPropiedadesHome,
   getPropiedadesMisAnuncios,
+  countPropiedadesMisAnuncios,
   getPropiedadesByOrganizacion,
   getPropertiesBySlugs,
   getInmueblesEnBbox,
@@ -44,6 +45,12 @@ router.get(
   verificarToken,
   rateLimit,
   getPropiedadesMisAnuncios,
+);
+router.get(
+  `${ruta}/mis-anuncios/count`,
+  verificarToken,
+  rateLimit,
+  countPropiedadesMisAnuncios,
 );
 
 // 2. NUEVA RUTA POR SLUG ESTILO IDEALISTA (Corregida con el prefijo ${ruta} y bien posicionada)
