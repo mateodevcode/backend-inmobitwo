@@ -2038,6 +2038,35 @@ export const getPropiedadesMisAnuncios = async (req, res) => {
 };
 
 // ============================================================================
+// COUNT — Contador ligero de mis anuncios (para el modal de usuario)
+// GET /propiedades/mis-anuncios/count
+// Solo hace COUNT(*) en propiedades, sin joins de catálogo/galería/planos.
+// ============================================================================
+export const countPropiedadesMisAnuncios = async (req, res) => {
+  try {
+    const id = req.usuario.id;
+
+    const { rows } = await pool.query(
+      `SELECT COUNT(*)::int AS total
+       FROM propiedades
+       WHERE publicado_por_id = $1`,
+      [id],
+    );
+
+    res.status(200).json({
+      success: true,
+      message: "count obtenido.",
+      data: rows[0]?.total ?? 0,
+    });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      error: error.message,
+    });
+  }
+};
+
+// ============================================================================
 // NUEVO — Vista de organización (tenant)
 // Raiz ---> https://www.inmobiliariaoviedo.com  o  inmobitwo.com/inmobiliarias/:slug
 // ============================================================================
