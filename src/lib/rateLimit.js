@@ -15,10 +15,7 @@ export function createRateLimiter(maxRequests = 10, windowMs = 60000) {
 
     return {
       isLimited: current > maxRequests,
-      message:
-        current > maxRequests
-          ? "Demasiadas solicitudes"
-          : null,
+      message: current > maxRequests ? "Demasiadas solicitudes" : null,
       retryAfter: Math.ceil(ttl / 1000),
     };
   };
@@ -29,20 +26,17 @@ export function createRateLimitMiddleware(limiter) {
     const { isLimited, message, retryAfter } = await limiter(req);
 
     if (isLimited) {
-      return res
-        .status(429)
-        .set("Retry-After", retryAfter)
-        .json({
-          success: false,
-          error: message,
-        });
+      return res.status(429).set("Retry-After", retryAfter).json({
+        success: false,
+        error: message,
+      });
     }
 
     next();
   };
 }
 
-export const registerLimiter = createRateLimiter(10, 60000);
-export const loginLimiter = createRateLimiter(10, 60000);
+export const registerLimiter = createRateLimiter(20, 60000);
+export const loginLimiter = createRateLimiter(20, 60000);
 export const defaultLimiter = createRateLimiter(50, 60000);
 export const verificacionCodigoLimiter = createRateLimiter(5, 10 * 60000);
