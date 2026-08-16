@@ -218,10 +218,10 @@ export const login = async (req, res) => {
     const refreshToken = generarRefreshToken(usuario);
 
     // Revocar refresh tokens anteriores del usuario (opcional pero más seguro)
-    await pool.query(
-      "UPDATE refresh_tokens SET revocado = true WHERE usuario_id = $1",
-      [usuario.id],
-    );
+    // await pool.query(
+    //   "UPDATE refresh_tokens SET revocado = true WHERE usuario_id = $1",
+    //   [usuario.id],
+    // );
 
     // Guardar nuevo refresh token
     await pool.query(
