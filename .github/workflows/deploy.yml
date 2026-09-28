@@ -1,4 +1,4 @@
-# .github/workflows/deploy.yml — Backend → VPS /srv/infra/inmobitwo-backend
+# .github/workflows/deploy.yml — Backend → VPS /srv/infra/inmobitwo/backend-inmobitwo
 name: Deploy Backend Inmobitwo
 
 on:
@@ -22,13 +22,13 @@ jobs:
 
             echo "🚀 Despliegue Backend → api.inmobitwo.seventwo.tech"
 
-            # 0. Asegurar repo en /srv/infra/inmobitwo-backend
-            if [ ! -d /srv/infra/inmobitwo-backend/.git ]; then
+            # 0. Asegurar repo en /srv/infra/inmobitwo/backend-inmobitwo
+            if [ ! -d /srv/infra/inmobitwo/backend-inmobitwo/.git ]; then
               echo "→ Clonando repo por primera vez..."
-              mkdir -p /srv/infra
-              git clone ${{ github.server_url }}/${{ github.repository }}.git /srv/infra/inmobitwo-backend
+              mkdir -p /srv/infra/inmobitwo
+              git clone ${{ github.server_url }}/${{ github.repository }}.git /srv/infra/inmobitwo/backend-inmobitwo
             fi
-            cd /srv/infra/inmobitwo-backend
+            cd /srv/infra/inmobitwo/backend-inmobitwo
 
             echo "→ Preservando .env..."
             cp .env /tmp/inmobitwo-backend.env.bak 2>/dev/null || true
