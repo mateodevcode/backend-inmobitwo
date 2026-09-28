@@ -1,5 +1,9 @@
 import { Router } from "express";
-import { generarDescripcion } from "../controllers/ia.controllers.js";
+import {
+  generarDescripcion,
+  mejorarDescripcion,
+  refinarDescripcion,
+} from "../controllers/ia.controllers.js";
 import {
   createRateLimitMiddleware,
   createRateLimiter,
@@ -15,6 +19,20 @@ router.post(
   verificarToken,
   iaLimiter,
   generarDescripcion,
+);
+
+router.post(
+  "/refinar-descripcion",
+  verificarToken,
+  iaLimiter,
+  refinarDescripcion,
+);
+
+router.post(
+  "/mejorar-descripcion",
+  verificarToken,
+  iaLimiter,
+  mejorarDescripcion,
 );
 
 export default router;

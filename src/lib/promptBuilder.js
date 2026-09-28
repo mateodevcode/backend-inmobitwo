@@ -42,22 +42,27 @@ Zona: ${datos.zona}
 INSTRUCCIONES ---
 
 1. FORMATO 1 - "Moderno y Directo":
-   - Estilo: Corto, escaneable, bullets con guiones (-).
+   - Estilo: Corto, escaneable, bullets en HTML con <ul><li>.
    - Longitud: 150-200 palabras.
    - NO uses emojis. Tono directo y profesional.
-   - Incluye precio y administracion al final.
+   - Estructura HTML: <p> intro breve, luego <ul><li> para cada bullet.
+   - Resalta datos clave con <strong> (precio, areas, alcobas).
+   - Incluye precio y administracion al final con <strong>.
 
 2. FORMATO 2 - "Narrativo y Emocional":
    - Estilo: Historia, segunda persona, sensaciones.
    - Longitud: 200-250 palabras.
-   - NO uses bullets. Parrafos fluidos.
+   - NO uses bullets. Parrafos fluidos con <p>.
    - NO uses emojis.
+   - Estructura HTML: 3-4 <p> separados, con <strong> en las frases clave.
 
 3. FORMATO 3 - "Tecnico y Detallado":
    - Estilo: Especificaciones, medidas, lista tecnica, datos financieros.
    - Longitud: 250-300 palabras.
    - NO uses emojis.
-   - Incluye precio por m2 y formas de pago.
+   - Estructura HTML: <p> intro, <ul><li> con cada especificacion tecnica,
+     y <strong> para medidas, precios y formas de pago.
+   - Incluye precio por m2 y formas de pago con <strong>.
 
 ---
 REGLAS ABSOLUTAS ---
@@ -66,7 +71,9 @@ REGLAS ABSOLUTAS ---
 - NO uses frases genericas de marketing.
 - NO uses MAYUSCULAS en todo el texto.
 - NO uses emojis bajo ninguna circunstancia.
-- NO uses asteriscos (*) para negritas.
+- TODAS las descripciones deben devolverse en HTML valido: usa <p> para parrafos,
+  <ul><li> para listas y <strong> para resaltar datos clave.
+- NO uses asteriscos (*), guiones bajos (_) ni markdown fuera del HTML.
 - El precio en formato COP con puntos: $520.000.000
 - Tono: Profesional, ejecutivo, premium.
 

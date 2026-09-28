@@ -1,5 +1,7 @@
 import { pool } from "../db.js";
 import { organizacion_validate } from "../validations/organizacion_validate.js";
+import { selectFields } from "../lib/fieldSelection.helper.js";
+import { CAMPOS_ORGANIZACION } from "../constants/api/fields.js";
 
 // ────────────────────────────────────────────────────────────────
 // Helper: genera un slug a partir del nombre y garantiza que sea único
@@ -95,8 +97,20 @@ export const getMisOrganizaciones = async (req, res) => {
   try {
     const usuarioId = req.usuario.id;
 
+    const { columnas, error } = selectFields(
+      req.query.fields,
+      CAMPOS_ORGANIZACION.permitidos,
+      CAMPOS_ORGANIZACION.permitidos,
+    );
+
+    if (error) {
+      return res.status(400).json({ success: false, error });
+    }
+
+    const selectBase = columnas.map((c) => `o.${c}`).join(", ");
+
     const { rows } = await pool.query(
-      `SELECT o.*, om.rol_en_org
+      `SELECT ${selectBase}, om.rol_en_org
        FROM organizaciones o
        JOIN organizacion_miembros om ON om.organizacion_id = o.id
        WHERE om.usuario_id = $1 AND om.estado = 'activo'
@@ -347,7 +361,7 @@ export const aprobarOrganizacion = async (req, res) => {
     const { id } = req.params;
 
     const { rows } = await pool.query(
-      "UPDATE organizaciones SET estado = 'aprobada' WHERE id = $1 RETURNING *",
+      "SELECT * FROM organizaciones WHERE id = $1 AND estado = 'aprobada'",
       [id],
     );
 

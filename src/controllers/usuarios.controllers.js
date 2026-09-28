@@ -4,24 +4,11 @@ import { deleteFromS3, uploadToS3 } from "../lib/s3AWS.js";
 import { usuario_validate } from "../validations/usuario_validate.js";
 import bcrypt from "bcryptjs";
 import { password_validate } from "../validations/password_validate.js";
+import { selectFields } from "../lib/fieldSelection.helper.js";
+import { CAMPOS_USUARIO } from "../constants/api/fields.js";
 
-const CAMPOS_USUARIO_PERMITIDOS = [
-  "id",
-  "name",
-  "email",
-  "telefono",
-  "telefonos",
-  "image_url",
-  "public_id",
-  "provider",
-  "role",
-  "bloqueado",
-  "intentos_fallidos",
-  "email_verificado",
-  "created_at",
-  "updated_at",
-];
-const CAMPOS_USUARIO_DEFAULT = [...CAMPOS_USUARIO_PERMITIDOS];
+const CAMPOS_USUARIO_PERMITIDOS = CAMPOS_USUARIO.permitidos;
+const CAMPOS_USUARIO_DEFAULT = CAMPOS_USUARIO.default;
 
 export const getUsuarios = async (req, res) => {
   try {
@@ -54,7 +41,8 @@ export const createUsuario = async (req, res) => {
 
     const pass = await bcrypt.hash(data.password, 12);
     const { rows } = await pool.query(
-      "INSERT INTO usuarios (name, email, password) VALUES ($1, $2, $3) RETURNING *",
+      `INSERT INTO usuarios (name, email, password) VALUES ($1, $2, $3)
+       RETURNING id, name, email, rol, telefono, image_url, created_at`,
       [data.name, data.email, pass],
     );
 
@@ -80,27 +68,15 @@ export const createUsuario = async (req, res) => {
 export const getUsuarioById = async (req, res) => {
   try {
     const { id } = req.params;
-    const { fields } = req.query;
 
-    let columnas = CAMPOS_USUARIO_DEFAULT;
+    const { columnas, error } = selectFields(
+      req.query.fields,
+      CAMPOS_USUARIO_PERMITIDOS,
+      CAMPOS_USUARIO_DEFAULT,
+    );
 
-    if (fields) {
-      const solicitados = fields
-        .split(",")
-        .map((f) => f.trim())
-        .filter(Boolean);
-
-      // Solo se permiten campos que estén en la whitelist
-      columnas = solicitados.filter((campo) =>
-        CAMPOS_USUARIO_PERMITIDOS.includes(campo),
-      );
-
-      if (columnas.length === 0) {
-        return res.status(400).json({
-          success: false,
-          error: "Ninguno de los campos solicitados es válido.",
-        });
-      }
+    if (error) {
+      return res.status(400).json({ success: false, error });
     }
 
     const query = `SELECT ${columnas.join(", ")} FROM usuarios WHERE id = $1`;
@@ -269,7 +245,7 @@ export const updateUsuario = async (req, res) => {
       "telefono",
       "telefonos",
       "provider",
-      "role",
+      "rol",
       "bloqueado",
       "intentos_fallidos",
       "email_verificado",
@@ -324,7 +300,9 @@ export const updateUsuario = async (req, res) => {
     }
 
     valores.push(id);
-    const query = `UPDATE usuarios SET ${campos.join(", ")} WHERE id = $${contador} RETURNING *`;
+    const query = `UPDATE usuarios SET ${campos.join(", ")} WHERE id = $${contador}
+      RETURNING id, name, email, telefono, telefonos, image_url, public_id, rol,
+                provider, email_verificado, ultimo_login, created_at, updated_at`;
     const { rows } = await pool.query(query, valores);
     const usuarioActualizado = rows[0];
 
@@ -366,9 +344,10 @@ export const deleteUsuario = async (req, res) => {
   try {
     const { id } = req.params;
 
-    const { rows } = await pool.query("SELECT * FROM usuarios WHERE id = $1", [
-      id,
-    ]);
+    const { rows } = await pool.query(
+      "SELECT id, name, email FROM usuarios WHERE id = $1",
+      [id],
+    );
     const usuario = rows[0];
 
     if (!usuario) {

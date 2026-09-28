@@ -1,5 +1,5 @@
-// controllers/ia.controllers.js
-// Generador de descripciones con IA (DeepSeek). La API key nunca sale del servidor.
+// controllers/ia.controllers.js - MEJORADO
+// Generador de descripciones con IA (DeepSeek)
 
 import OpenAI from "openai";
 import { pool } from "../db.js";
@@ -10,6 +10,11 @@ const deepseek = new OpenAI({
   apiKey: DEEPSEEK_API_KEY,
   baseURL: DEEPSEEK_BASE_URL,
 });
+
+// ─────────────────────────────────────────────
+// POST /ia/generar-descripcion
+// Genera 3 formatos de descripción
+// ─────────────────────────────────────────────
 
 export const generarDescripcion = async (req, res) => {
   try {
@@ -132,6 +137,158 @@ export const generarDescripcion = async (req, res) => {
     res.status(500).json({
       success: false,
       error: "Error generando descripción con IA",
+    });
+  }
+};
+
+// ─────────────────────────────────────────────
+// POST /ia/refinar-descripcion
+// Refina una descripción existente con opciones
+// ─────────────────────────────────────────────
+
+export const refinarDescripcion = async (req, res) => {
+  try {
+    const { descripcion, tone, formato } = req.body;
+
+    if (!descripcion || !tone) {
+      return res.status(400).json({
+        success: false,
+        error: "Descripción y tono son requeridos.",
+      });
+    }
+
+    if (!DEEPSEEK_API_KEY) {
+      return res.status(500).json({
+        success: false,
+        error: "DEEPSEEK_API_KEY no configurada en el servidor.",
+      });
+    }
+
+    // Mapear tonos a instrucciones
+    const toneInstructions = {
+      "más corto":
+        "Acorta esta descripción a la mitad, mantén lo más importante",
+      "más formal": "Aumenta el nivel formal y profesional de esta descripción",
+      "más casual": "Hazla más casual y cercana, pero profesional",
+      "más técnico": "Agrega más detalles técnicos y especificaciones",
+    };
+
+    const instruction = toneInstructions[tone] || tone;
+
+    const prompt = `
+Tienes esta descripción de una propiedad:
+
+${descripcion}
+
+Por favor: ${instruction}
+
+Responde SOLO con la descripción refinada, sin explicaciones adicionales.
+Usa el mismo formato HTML que la original.
+Nunca uses emojis.
+    `;
+
+    const response = await deepseek.chat.completions.create({
+      model: "deepseek-chat",
+      messages: [
+        {
+          role: "system",
+          content:
+            "Eres un redactor inmobiliario experto. Edita descripciones de propiedades manteniendo calidad y profesionalismo. Nunca uses emojis.",
+        },
+        { role: "user", content: prompt },
+      ],
+      temperature: 0.6,
+      max_tokens: 1500,
+    });
+
+    const descripcionRefinada = response.choices[0].message.content.trim();
+
+    res.json({
+      success: true,
+      data: {
+        descripcionRefinada,
+        tone,
+        formato,
+      },
+    });
+  } catch (error) {
+    console.error("Error refinando descripción:", error);
+    res.status(500).json({
+      success: false,
+      error: "Error refinando descripción con IA",
+    });
+  }
+};
+
+// ─────────────────────────────────────────────
+// POST /ia/mejorar-descripcion
+// Mejora general de descripción (sin parámetro tone específico)
+// ─────────────────────────────────────────────
+
+export const mejorarDescripcion = async (req, res) => {
+  try {
+    const { descripcion, aspectos } = req.body;
+
+    if (!descripcion) {
+      return res.status(400).json({
+        success: false,
+        error: "Descripción es requerida.",
+      });
+    }
+
+    if (!DEEPSEEK_API_KEY) {
+      return res.status(500).json({
+        success: false,
+        error: "DEEPSEEK_API_KEY no configurada en el servidor.",
+      });
+    }
+
+    // aspectos puede ser: ["gramática", "claridad", "atractivo"]
+    const aspectosTexto = aspectos?.length
+      ? `Mejora especialmente en: ${aspectos.join(", ")}`
+      : "";
+
+    const prompt = `
+Mejora esta descripción de propiedad inmobiliaria:
+
+${descripcion}
+
+${aspectosTexto}
+
+Mantén la estructura HTML si existe.
+Hazla más atractiva, clara y profesional.
+Nunca uses emojis.
+Responde SOLO con la descripción mejorada.
+    `;
+
+    const response = await deepseek.chat.completions.create({
+      model: "deepseek-chat",
+      messages: [
+        {
+          role: "system",
+          content:
+            "Eres un redactor inmobiliario experto que mejora descripciones. Mantén el tono profesional. Nunca uses emojis.",
+        },
+        { role: "user", content: prompt },
+      ],
+      temperature: 0.6,
+      max_tokens: 1500,
+    });
+
+    const descripcionMejorada = response.choices[0].message.content.trim();
+
+    res.json({
+      success: true,
+      data: {
+        descripcionMejorada,
+        aspectos,
+      },
+    });
+  } catch (error) {
+    console.error("Error mejorando descripción:", error);
+    res.status(500).json({
+      success: false,
+      error: "Error mejorando descripción con IA",
     });
   }
 };

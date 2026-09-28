@@ -1,54 +1,82 @@
-name: Deploy Backend
+# .github/workflows/deploy.yml — Backend → VPS /srv/infra/inmobitwo-backend
+name: Deploy Backend Inmobitwo
 
 on:
-    push:
-        branches: [main]
+  push:
+    branches: [main]
 
 jobs:
-    deploy:
-        runs-on: ubuntu-latest
-        timeout-minutes: 100
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 100
+    steps:
+      - name: SSH Deploy to VPS
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          command_timeout: 90m
+          script: |
+            set -e
 
-        steps:
-            - name: SSH Deploy
-              uses: appleboy/ssh-action@v1
-              with:
-                  host: ${{ secrets.SERVER_IP }}
-                  username: root
-                  key: ${{ secrets.SSH_KEY }}
-                  command_timeout: 90m
-                  script: |
-                      set -e
+            echo "🚀 Despliegue Backend → api.inmobitwo.seventwo.tech"
 
-                      echo "🚀 Iniciando despliegue..."
+            # 0. Asegurar repo en /srv/infra/inmobitwo-backend
+            if [ ! -d /srv/infra/inmobitwo-backend/.git ]; then
+              echo "→ Clonando repo por primera vez..."
+              mkdir -p /srv/infra
+              git clone ${{ github.server_url }}/${{ github.repository }}.git /srv/infra/inmobitwo-backend
+            fi
+            cd /srv/infra/inmobitwo-backend
 
-                      cd /var/www/inmobitwo/backend-inmobitwo
+            echo "→ Preservando .env..."
+            cp .env /tmp/inmobitwo-backend.env.bak 2>/dev/null || true
 
-                      echo "→ Descartando cambios locales no versionados..."
-                      git reset --hard HEAD
-                      git clean -fd
+            echo "→ Actualizando código..."
+            git fetch origin main
+            git reset --hard origin/main
+            git clean -fd -e .env
 
-                      echo "→ Actualizando código..."
-                      git fetch origin main
-                      git reset --hard origin/main
+            cp /tmp/inmobitwo-backend.env.bak .env 2>/dev/null || true
+            rm -f /tmp/inmobitwo-backend.env.bak
 
-                      echo "→ Construyendo servicios uno por uno (evita saturar los 4 nucleos)..."
-                      docker compose build backend
-                      docker compose build rust-tracking
-                      docker compose build rust-media
-                      docker compose build rust-websocket
+            if [ ! -f .env ]; then
+              echo "❌ Falta .env — créalo desde .env.example en el VPS y vuelve a deployar"
+              exit 1
+            fi
 
-                      echo "→ Levantando todos los contenedores..."
-                      docker compose up -d
+            echo "→ Verificando DB inmobitwo (sin tocar datos, sin seed: ya poblada)..."
+            docker exec postgres_central psql -U adminst -d postgres -tc "SELECT 1 FROM pg_database WHERE datname='inmobitwo'" | grep -q 1 || \
+              docker exec postgres_central psql -U adminst -d postgres -c "CREATE DATABASE inmobitwo;"
 
-                      echo "→ Limpiando imágenes viejas sin uso..."
-                      docker image prune -f
+            echo "→ Build y levantada (uno por uno, evita saturar los 4 núcleos)..."
+            docker compose build backend
+            docker compose build rust-tracking
+            docker compose build rust-media
+            docker compose build rust-websocket
+            docker compose up -d --remove-orphans
 
-                      echo "→ Verificando que el contenedor esté corriendo..."
-                      sleep 5
-                      docker compose ps | grep "Up" || (echo "❌ El contenedor no está corriendo" && exit 1)
+            echo "→ SSL (certbot, certificado independiente)..."
+            if [ ! -f /etc/letsencrypt/live/api.inmobitwo.seventwo.tech/fullchain.pem ]; then
+              echo "→ Certificado no existe — generándolo con plugin nginx (cero downtime)..."
+              sudo certbot certonly --nginx -d api.inmobitwo.seventwo.tech --non-interactive --agree-tos -m admin@seventwo.tech
+            else
+              echo "→ Certificado ya existe — renovando si es necesario..."
+              sudo certbot renew --quiet
+            fi
 
-                      echo "→ Estado final:"
-                      docker compose ps
+            echo "→ Nginx (api.inmobitwo.seventwo.tech)..."
+            sudo cp nginx/inmobitwo-api.conf /etc/nginx/sites-available/inmobitwo-api
+            sudo ln -sf ../sites-available/inmobitwo-api /etc/nginx/sites-enabled/inmobitwo-api
+            sudo nginx -t && sudo systemctl reload nginx
 
-                      echo "✅ Despliegue completado!"
+            echo "→ Limpieza imágenes viejas..."
+            docker image prune -f
+
+            echo "→ Estado..."
+            sleep 5
+            docker compose ps
+            docker compose ps | grep -q "Up" || (echo "❌ Algún contenedor no está corriendo" && exit 1)
+            curl -sf https://api.inmobitwo.seventwo.tech/auth/check-email -X POST -H 'Content-Type: application/json' -d '{}' || echo "⚠️ la API no responde aún (revisa: docker logs inmobitwo-backend)"
+            echo "✅ Deploy Backend OK"

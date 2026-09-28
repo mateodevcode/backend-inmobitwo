@@ -463,13 +463,49 @@ export const crearLeadDirecto = async (req, res) => {
 export const actualizarContactoLead = async (req, res) => {
   try {
     const { id } = req.params;
-    const { nombre, email, telefono } = req.body;
+    const { nombre, email, telefono, session_id } = req.body;
 
     if (!nombre || (!email && !telefono)) {
       return res.status(400).json({
         success: false,
         error: "nombre y al menos email o telefono son requeridos.",
       });
+    }
+
+    if (!session_id) {
+      return res.status(400).json({
+        success: false,
+        error: "session_id es requerido para actualizar el contacto.",
+      });
+    }
+
+    // Ownership: solo la sesión de tracking que originó el lead puede
+    // actualizar su contacto. leads.sesion_id guarda el id interno de
+    // sesiones_tracking, así que resolvemos el session_id del navegador.
+    const { rows: leadRows } = await pool.query(
+      "SELECT id, sesion_id FROM leads WHERE id = $1",
+      [id],
+    );
+    const leadActual = leadRows[0];
+    if (!leadActual) {
+      return res.status(404).json({
+        success: false,
+        error: "Lead no encontrado.",
+      });
+    }
+
+    if (leadActual.sesion_id) {
+      const { rows: sesionRows } = await pool.query(
+        "SELECT id FROM sesiones_tracking WHERE session_id = $1",
+        [session_id],
+      );
+      const sesion = sesionRows[0];
+      if (!sesion || sesion.id !== leadActual.sesion_id) {
+        return res.status(403).json({
+          success: false,
+          error: "No tienes permiso para actualizar este lead.",
+        });
+      }
     }
 
     const { rows } = await pool.query(
@@ -479,12 +515,6 @@ export const actualizarContactoLead = async (req, res) => {
     );
 
     const leadActualizado = rows[0];
-    if (!leadActualizado) {
-      return res.status(404).json({
-        success: false,
-        error: "Lead no encontrado.",
-      });
-    }
 
     // Recién ahora hay contacto real: si todavía no se había notificado,
     // disparamos el correo al agente/organización

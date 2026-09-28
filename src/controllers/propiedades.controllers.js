@@ -13,6 +13,8 @@ import {
   validarPrecioUsuario,
 } from "../lib/precios_referencia_colombia.js";
 import { buildTipoFilter, esTipoVacacional } from "../lib/propertyFilters.js";
+import { selectFields } from "../lib/fieldSelection.helper.js";
+import { CAMPOS_PROPIEDAD } from "../constants/api/fields.js";
 
 const TAMANOS = ["thumbnail", "small", "medium", "large", "xlarge"];
 
@@ -141,6 +143,19 @@ function joinsCatalogo(alias = "p") {
   `;
 }
 
+// Resuelve las columnas base de `propiedades` para Sparse Fieldsets (?fields=).
+// El default es TODAS las permitidas (equivale al `p.*` actual pero sin `geom`),
+// manteniendo backward compatibility con los formularios de edición.
+function resolverColumnasPropiedad(fields) {
+  const { columnas, error } = selectFields(
+    fields,
+    CAMPOS_PROPIEDAD.permitidos,
+    CAMPOS_PROPIEDAD.permitidos,
+  );
+  if (error) return { error };
+  return { selectBase: columnas.map((c) => `p.${c}`).join(", "), error: null };
+}
+
 // Extrae el key real de S3 a partir de la URL completa que devuelve Rust.
 // Esto es lo que se guarda como public_id de cada fila, para que el borrado
 // en S3 funcione con el archivo real (no con un id inventado).
@@ -176,12 +191,18 @@ function buildVersionRows(imagenesRust, startOrden = 0) {
 // ok
 export const getPropiedades = async (req, res) => {
   try {
+    const { selectBase, error } = resolverColumnasPropiedad(req.query.fields);
+    if (error) {
+      return res.status(400).json({ success: false, error });
+    }
+
+    const cacheKey = `propiedades:all:${req.query.fields || "default"}`;
     const propiedadesConDatos = await cacheGet(
-      "propiedades:all",
+      cacheKey,
       30,
       async () => {
         const { rows: propiedades } = await pool.query(
-          `SELECT p.*, ${portadaSubquery("p")}, ${portadaPublicIdSubquery("p")},
+          `SELECT ${selectBase}, ${portadaSubquery("p")}, ${portadaPublicIdSubquery("p")},
                   ${camposCatalogoSelect("p")}
          FROM propiedades p
          ${joinsCatalogo("p")}
@@ -720,15 +741,20 @@ export const getPropiedadesById = async (req, res) => {
   try {
     const { id } = req.params;
 
-    const data = await cacheGet(`propiedad:${id}`, 30, async () => {
+    const { selectBase, error } = resolverColumnasPropiedad(req.query.fields);
+    if (error) {
+      return res.status(400).json({ success: false, error });
+    }
+
+    const cacheKey = `propiedad:${id}:${req.query.fields || "default"}`;
+    const data = await cacheGet(cacheKey, 30, async () => {
       const { rows } = await pool.query(
         `SELECT 
-          p.*,
+          ${selectBase},
           ${portadaSubquery("p")},
           ${portadaPublicIdSubquery("p")},
           ${camposCatalogoSelect("p")},
-          u.name AS usuario_nombre,
-          u.email AS usuario_email
+          u.name AS usuario_nombre
         FROM propiedades p
         ${joinsCatalogo("p")}
         JOIN usuarios u 
@@ -1858,6 +1884,11 @@ export const getPropiedadesHome = async (req, res) => {
     const limit = parseInt(req.query.limit) || 10;
     const cursor = req.query.cursor || null; // created_at de la última propiedad que ya vio el front
 
+    const { selectBase, error } = resolverColumnasPropiedad(req.query.fields);
+    if (error) {
+      return res.status(400).json({ success: false, error });
+    }
+
     // Armamos la query dinámicamente según si hay cursor o no
     const params = [limit];
     let whereClause = "";
@@ -1868,7 +1899,7 @@ export const getPropiedadesHome = async (req, res) => {
     }
 
     const { rows: propiedades } = await pool.query(
-      `SELECT p.*, ${portadaSubquery("p")}, ${portadaPublicIdSubquery("p")},
+      `SELECT ${selectBase}, ${portadaSubquery("p")}, ${portadaPublicIdSubquery("p")},
               ${camposCatalogoSelect("p")}
        FROM propiedades p
        ${joinsCatalogo("p")}
@@ -1951,8 +1982,13 @@ export const getPropiedadesMisAnuncios = async (req, res) => {
   try {
     const id = req.usuario.id;
 
+    const { selectBase, error } = resolverColumnasPropiedad(req.query.fields);
+    if (error) {
+      return res.status(400).json({ success: false, error });
+    }
+
     const { rows: propiedades } = await pool.query(
-      `SELECT p.*, ${portadaSubquery("p")}, ${portadaPublicIdSubquery("p")},
+      `SELECT ${selectBase}, ${portadaSubquery("p")}, ${portadaPublicIdSubquery("p")},
               ${camposCatalogoSelect("p")}
        FROM propiedades p
        ${joinsCatalogo("p")}
@@ -2107,8 +2143,13 @@ export const getPropiedadesByOrganizacion = async (req, res) => {
       params.push(cursor);
     }
 
+    const { selectBase, error } = resolverColumnasPropiedad(req.query.fields);
+    if (error) {
+      return res.status(400).json({ success: false, error });
+    }
+
     const { rows: propiedades } = await pool.query(
-      `SELECT p.*, ${portadaSubquery("p")}, ${portadaPublicIdSubquery("p")},
+      `SELECT ${selectBase}, ${portadaSubquery("p")}, ${portadaPublicIdSubquery("p")},
               ${camposCatalogoSelect("p")}
        FROM propiedades p
        ${joinsCatalogo("p")}
@@ -2377,7 +2418,7 @@ export const getPropertiesBySlugs = async (req, res) => {
     `;
 
     const selectFields = `
-      p.id, p.titulo, p.direccion, p.precio, p.price_per_sqm, p.estrato,
+      p.id, p.titulo, p.direccion, p.description, p.precio, p.price_per_sqm, p.estrato,
       p.private_area, p.constructed_area, p.bedroom_count, p.bathroom_count,
       p.created_at,
       ot.code as operacion_slug,
@@ -2773,7 +2814,7 @@ export const searchVivienda = async (req, res) => {
     `;
 
     const selectFields = `
-      p.id, p.titulo, p.direccion, p.precio, p.price_per_sqm, p.estrato,
+      p.id, p.titulo, p.direccion, p.description, p.precio, p.price_per_sqm, p.estrato,
       p.private_area, p.constructed_area, p.bedroom_count, p.bathroom_count,
       p.created_at,
       ot.code as operacion_slug,

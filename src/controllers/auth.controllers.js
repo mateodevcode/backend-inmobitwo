@@ -4,6 +4,8 @@ import jwt from "jsonwebtoken";
 import { pool } from "../db.js";
 import { JWT_SECRET, JWT_REFRESH_SECRET } from "../config.js";
 import { usuario_validate } from "../validations/usuario_validate.js";
+import { selectFields } from "../lib/fieldSelection.helper.js";
+import { CAMPOS_USUARIO } from "../constants/api/fields.js";
 
 // ─────────────────────────────────────────────
 // Helpers para generar tokens
@@ -374,9 +376,18 @@ export const logout = async (req, res) => {
 // ─────────────────────────────────────────────
 export const me = async (req, res) => {
   try {
+    const { columnas, error } = selectFields(
+      req.query.fields,
+      CAMPOS_USUARIO.permitidos,
+      CAMPOS_USUARIO.default,
+    );
+
+    if (error) {
+      return res.status(400).json({ success: false, error });
+    }
+
     const { rows } = await pool.query(
-      `SELECT id, name, email, rol, telefono, image_url, 
-              email_verificado, ultimo_login, created_at
+      `SELECT ${columnas.join(", ")}
        FROM usuarios WHERE id = $1`,
       [req.usuario.id],
     );

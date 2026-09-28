@@ -4,6 +4,8 @@ resumen.md
 
 # env files (can opt-in for committing if needed)
 .env*
+# plantilla commiteable (sin secretos)
+!.env.example
 
 .opencode
 MIGRACION_GO.md
