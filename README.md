@@ -1,115 +1,104 @@
-# Inmobitwo Backend **
+# backend-inmobitwo
 
-API REST para plataforma SaaS inmobiliaria con multi-tenancy, tracking de leads y notificaciones.
+API REST (Express 5 + ESM) para la plataforma inmobiliaria multi-tenant: auth JWT, propiedades con PostGIS, organizaciones con dominios propios, leads/tracking, catálogos, IA (DeepSeek), uploads a S3 y email Brevo. Microservicios Rust + Redis como apoyo.
 
 ## Stack
 
-- **Runtime**: Node.js 20+ (ESM)
-- **Framework**: Express 5
-- **Base de datos**: PostgreSQL
-- **Auth**: JWT (access + refresh tokens)
-- **Almacenamiento**: AWS S3
-- **Email**: Brevo SMTP (Nodemailer)
+- **Runtime**: Node.js 20+ · Express 5 · `pg` (pool PostgreSQL/PostGIS)
+- **Auth**: JWT access (header) + refresh (cookie httpOnly)
+- **Apoyo**: Redis (ioredis, caché) + 3 servicios Rust (`tracking :3002`, `media :3003`, `websocket :3004`)
+- **Externos**: AWS S3 (fotos/planos), Brevo SMTP, DeepSeek
 
 ## Requisitos
 
-- Node.js >= 20
-- PostgreSQL >= 14
+- Node.js >= 20 · Docker Desktop (redis + rust en local) · acceso al PostgreSQL (en local se usa el remoto del VPS)
 
-## Setup
+## Setup local
 
 ```bash
-# 1. Instalar dependencias
-npm install
+# 1. Stack de apoyo (redis + rust; la DB es la remota del VPS según .env)
+./dev-up.sh            # sube redis + rust (./dev-down.sh para apagar)
 
-# 2. Configurar variables de entorno
-cp .env.example .env
-# Editar .env con tus credenciales
+# 2. Backend Node con reload
+npm run dev            # http://localhost:3001 (node --env-file .env --watch src/index.js)
 
-# 3. Crear base de datos y aplicar schemas
-psql -U postgres -c "CREATE DATABASE inmobitwo;"
-psql -U postgres -d inmobitwo -f src/database/db.sql
-psql -U postgres -d inmobitwo -f src/database/schema.tracking.sql
-
-# 4. Cargar datos geográficos (España + Colombia)
+# 3. Solo si la DB está vacía: schemas + seed geográfico (Colombia)
+psql -U adminst -h <host> -d inmobitwo -f src/database/db.sql
 npm run seed:geo
 ```
+
+(O levanta todo junto con `bash dev.sh` desde la carpeta padre `inmobitwo/`.)
 
 ## Scripts
 
 | Comando | Descripción |
-|---------|-------------|
-| `npm run dev` | Modo desarrollo con hot reload (`--watch`) |
-| `npm start` | Producción |
-| `npm run seed:geo` | Carga países, provincias y ciudades |
+|---|---|
+| `npm run dev` | Desarrollo con `--watch` |
+| `npm start` | Producción (`node --env-file .env src/index.js`) |
+| `npm run seed:geo` | Países, regiones, deptos, ciudades y barrios (Colombia, PostGIS) |
+| `./dev-up.sh` / `./dev-down.sh` | Sube/baja redis + rust en local |
 
 ## Variables de entorno
 
+`.env` (gitignored, manual) — plantilla commiteable en `.env.example`. Las que mandan en cada entorno:
+
 | Variable | Descripción |
-|----------|-------------|
-| `PORT` | Puerto del servidor (default: 3001) |
-| `FRONTEND_URL` | URLs del frontend separadas por coma |
-| `DB_USER`, `DB_PASSWORD`, `DB_HOST`, `DB_PORT`, `DB_NAME` | Conexión PostgreSQL |
-| `JWT_SECRET` | Secreto para access tokens |
-| `JWT_REFRESH_SECRET` | Secreto para refresh tokens |
-| `AWS_BUCKET_NAME`, `AWS_BUCKET_REGION`, `AWS_ACCESS_KEY`, `AWS_SECRET_KEY` | Credenciales S3 |
-| `AWS_BUCKET_SUBFOLDER` | Subcarpeta en el bucket (ej: `inmobitwo`) |
-| `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS` | Brevo SMTP |
+|---|---|
+| `PORT` / `NODE_ENV` | `3001` · `production` en VPS (activa cookie `Secure`) |
+| `DB_HOST`, `DB_PORT`, `DB_USER`, `DB_PASSWORD`, `DB_NAME` | Local: IP remota `:5435` · VPS: `postgres_central:5432` (red `central_network`) |
+| `FRONTEND_URL` | Orígenes CORS (coma-separados). Prod: `https://inmobitwo.seventwo.tech`. Los dominios propios de orgs se validan contra DB (caché 60s) |
+| `JWT_SECRET`, `JWT_REFRESH_SECRET`, `API_SECRET_KEY` | Firmas de tokens + API key |
+| `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_DEFAULT_REGION`, `AWS_BUCKET`, `AWS_URL`, `AWS_BUCKET_SUBFOLDER` | S3 (`seventwo` / subcarpeta `inmobitwo`) |
+| `BREVO_SMTP_EMAIL`, `BREVO_SMTP_PASS`, `BREVO_EMAIL_INFO/SUPPORT/NO_REPLY/JOBS` | SMTP + remitentes |
+| `REDIS_PASSWORD`, `REDIS_URL` | OJO: dentro de docker debe apuntar al servicio (`redis://:PASS@inmobitwo-redis:6379`), nunca `localhost` |
+| `RUST_TRACKING_URL`, `RUST_MEDIA_URL`, `RUST_WEBSOCKET_URL` | En VPS los pisa el compose (`http://inmobitwo-rust-*:300x`); el websocket apunta al socket-core del host (`ws://host.docker.internal:3005`) |
+| `DEEPSEEK_API_KEY`, `DEEPSEEK_BASE_URL` | IA descripciones |
+
+> Claves con `#` o `@`: quotear con comillas simples en el `.env` (`DB_PASSWORD='...'`), si no compose las trunca.
 
 ## Estructura
 
 ```
 src/
-├── index.js              # Entry point - Express app
-├── config.js             # Variables de entorno
-├── db.js                 # Pool PostgreSQL
-├── cors.config.js        # CORS dinámico con dominios custom
-├── controllers/          # Lógica de negocio
-├── routes/               # Definición de rutas
-├── middleware/            # Auth, tenant, organización
-├── lib/                  # Utilidades (S3, geocode, scoring, rateLimit)
-├── utils/                # Emails, sanitización
-├── validations/          # Validadores
-└── database/             # Schemas SQL y seeds
+├── index.js              # App Express (trust proxy, CORS, cookies, JSON 5mb, rutas, errorHandler)
+├── config.js             # Lee process.env
+├── db.js                 # Pool pg
+├── cors.config.js        # CORS dinámico: FRONTEND_URL + custom_domain activos en DB
+├── controllers/          # Lógica de negocio (auth, usuarios, propiedades, organizaciones, miembros, favoritos, tracking, leads, geo, geocode, catalogos, ia…)
+├── routes/               # Una por módulo (ver tabla)
+├── middleware/           # auth (verificarToken/Rol), tenant (resolverTenant), organización, errores
+├── lib/                  # redis, S3, geocode, scoring, rateLimit, promptBuilder, permisos org…
+├── utils/                # Emails, transporte Brevo, sanitización
+├── validations/          # Validadores por módulo
+├── constants/            # Campos API permitidos por recurso
+└── database/             # db.sql, schema.tracking.sql, seed-geo.js + data/
+services/                 # rust-tracking-service, rust-media-service, rust-websocket-service
 ```
 
 ## Endpoints principales
 
 | Módulo | Prefijo | Auth |
-|--------|---------|------|
-| Auth | `/auth` | Mixto |
+|---|---|---|
+| Auth | `/auth/registro`, `/auth/login`, `/auth/refresh`, `/auth/logout`, `/auth/me`, `/auth/check-email` | Mixto (refresh/logout por cookie) |
 | Usuarios | `/usuarios` | JWT |
-| Propiedades | `/propiedades` | Mixto |
-| Organizaciones | `/organizaciones` | Mixto |
-| Miembros | `/organizaciones/:orgId/miembros` | JWT |
-| Favoritos | `/favoritos` | JWT |
-| Tracking | `/tracking` | Mixto |
+| Propiedades | `/propiedades` (+ `/inicio`, `/search-*`, `/inmuebles-en-bbox`) | Mixto |
+| Organizaciones | `/organizaciones` (+ `/publicas`, `/slug/:slug`, `/resolve-tenant`, aprobar/suspender, dominio/activar…) | Mixto (`superadmin` para gestión) |
+| Miembros | `/organizaciones/:orgId/miembros`, `/organizaciones/miembros/:id` | JWT (`agency_admin` o `superadmin`) |
+| Favoritos | `/favoritos/toggle`, `/favoritos/mis-favoritos` | JWT |
+| Tracking | `/tracking` (+ `/lead`, `/logs`) | Mixto |
 | Leads | `/leads` | JWT |
-| Geografía | `/api/countries`, `/api/states`, `/api/cities` | No |
+| Geografía | `/api/countries|states|cities|barrios|location-info|suggest-cities|*-geojson|inmuebles-en-poligono` | No |
 | Geocoding | `/api/geocode` | No |
-| Sugerencias | `/api/suggest-cities?q=` | No |
+| Catálogos | `/catalogos/operaciones|tipos-alquiler|tipos-inmueble|estados|calefaccion|caracteristicas` | No |
+| IA | `/ia/*` (descripciones DeepSeek) | JWT |
 
-### Configuración de país para sugerencias de ciudades
-
-El endpoint `/api/suggest-cities` filtra ciudades por país. El país se define en `src/controllers/geo.controllers.js:94`:
-
-```js
-const countryId = 2; // Colombia
-```
-
-IDs de países disponibles en la tabla `countries`:
-
-| ID | País |
-|----|------|
-| 1 | Spain |
-| 2 | Colombia |
-
-Para cambiar el país, editar la variable `countryId` en esa línea y reiniciar el servidor.
-
-### Filtrado insensible a tildes
-
-La búsqueda usa la extensión `unaccent` de PostgreSQL, por lo que escribir "medellin" encuentra "Medellín", "malaga" encuentra "Málaga", etc. El índice `idx_cities_name_unaccent` en la BD asegura buen rendimiento.
+Roles: `user` (registro), `superadmin` (se asigna por SQL: `UPDATE usuarios SET rol='superadmin' …`; el token lo incluye, re-login requerido), `agency_admin`/`agent` (por organización en `organizacion_miembros`).
 
 ## Deploy
 
-El servidor se despliega vía GitHub Actions con PM2 (`inmobitwo-api`). Al hacer push a `main` se ejecuta `git pull`, `npm install` y `pm2 restart`.
+Push a `main` → GitHub Actions (`.github/workflows/deploy.yml`, secrets `VPS_HOST/VPS_USER/VPS_SSH_KEY`):
+1. Clona/actualiza en `/srv/infra/inmobitwo/backend-inmobitwo` (preserva `.env`, falla si no existe).
+2. Verifica DB `inmobitwo` (no seed: ya poblada), `docker compose build` (secuencial) + `up -d`.
+3. Certbot `--nginx` para `api.inmobitwo.seventwo.tech` (independiente, solo si no existe) + copia `nginx/inmobitwo-api.conf` y `reload`. Health-check final contra `/auth/check-email`.
+
+Red docker en VPS: `central_network` (externa, la del postgres central). En local el `docker-compose.override.yml` (gitignored) la sustituye por una propia.
