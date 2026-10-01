@@ -3,6 +3,8 @@ import { Router } from "express";
 import {
   registro,
   login,
+  verificarOtpLogin,
+  reenviarOtpLogin,
   refresh,
   logout,
   me,
@@ -13,12 +15,15 @@ import {
   createRateLimitMiddleware,
   registerLimiter,
   loginLimiter,
+  verificacionCodigoLimiter,
 } from "../lib/rateLimit.js";
 
 const router = Router();
 
 const sLimiterRegistro = createRateLimitMiddleware(registerLimiter);
 const sLimiterLogin = createRateLimitMiddleware(loginLimiter);
+// OTP del segundo factor: 5 intentos cada 10 min (igual que verificación por email)
+const sLimiterOtp = createRateLimitMiddleware(verificacionCodigoLimiter);
 
 // Rutas públicas
 // router.post("/auth/registro", registro);
@@ -27,6 +32,8 @@ const sLimiterLogin = createRateLimitMiddleware(loginLimiter);
 router.post("/auth/registro", sLimiterRegistro, registro);
 router.post("/auth/check-email", checkEmail); // ← Agregar esto
 router.post("/auth/login", sLimiterLogin, login);
+router.post("/auth/verificar-otp-login", sLimiterOtp, verificarOtpLogin);
+router.post("/auth/reenviar-otp-login", sLimiterOtp, reenviarOtpLogin);
 
 router.post("/auth/refresh", refresh); // usa cookie httpOnly
 router.post("/auth/logout", logout); // usa cookie httpOnly

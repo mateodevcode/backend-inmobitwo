@@ -238,7 +238,12 @@ VALUES ('carga_electrica', 'Cargador vehículo eléctrico', 'technology', 'boole
 | `provider_id` | VARCHAR(255) | ID externo del proveedor OAuth |
 | `image_url` | VARCHAR(500) | Foto de perfil |
 | `public_id` | VARCHAR(255) | ID en servicio de imágenes (Cloudinary, etc.) |
-| `email_verificado` | BOOLEAN | ¿Confirmó su email? |
+| `email_verificado` | BOOLEAN | ¿Confirmó su email? (activa el 2FA por OTP en el login) |
+| `codigo_verificacion` | INTEGER | Código de 6 dígitos para verificar el email (10 min) |
+| `date_codigo_verificacion` | TIMESTAMP | Cuándo se generó el código de verificación |
+| `otp_login` | INTEGER | OTP de 6 dígitos del segundo factor de login (10 min, un solo uso) |
+| `otp_login_expira` | TIMESTAMP | Vencimiento del OTP de login |
+| `otp_login_intentos` | INTEGER | Intentos fallidos del OTP (máx. 5, luego se invalida) |
 | `bloqueado` | BOOLEAN | Cuenta suspendida |
 | `intentos_fallidos` | INTEGER | Intentos de login fallidos |
 | `ultimo_login` | TIMESTAMP | Último acceso |
