@@ -8,6 +8,7 @@ import morgan from "morgan";
 import { FRONTEND_URL, PORT } from "./config.js";
 import authRoutes from "./routes/auth.routes.js";
 import usuariosRoutes from "./routes/usuarios.routes.js";
+import roomSeekerRoutes from "./routes/room_seeker.routes.js";
 import propiedadesRoutes from "./routes/propiedades.routes.js";
 import organizacionesRoutes from "./routes/organizaciones.routes.js";
 import organizacionMiembrosRoutes from "./routes/organizacion_miembros.routes.js";
@@ -36,6 +37,7 @@ app.use(express.json({ limit: "5mb" }));
 // Rutas
 app.use(authRoutes);
 app.use(usuariosRoutes);
+app.use(roomSeekerRoutes);
 app.use(propiedadesRoutes);
 app.use(organizacionesRoutes);
 app.use(organizacionMiembrosRoutes);
