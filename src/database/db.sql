@@ -8,6 +8,7 @@
 -- 3. organizaciones
 -- 4. organizacion_miembros
 -- 5. geografía: countries → regions → states → cities → barrios
+-- 5b. room_seeker_profiles (perfil buscador de habitación, 1 por usuario)
 -- 6. propiedades
 -- 7. propiedades_galeria
 -- 8. propiedades_planos
@@ -218,6 +219,37 @@ CREATE TABLE IF NOT EXISTS barrios (
     geom GEOMETRY(Geometry, 4326),
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
+-- ============================================================================
+-- 5b. PERFIL BUSCADOR DE HABITACIÓN (un perfil por usuario)
+-- Presentación (quién soy como roomie) + preferencias de búsqueda
+-- (pre-rellenan los filtros del listado de habitaciones).
+-- Va aquí (tras geografía) porque referencia a states/cities.
+-- ============================================================================
+CREATE TABLE IF NOT EXISTS room_seeker_profiles (
+    id SERIAL PRIMARY KEY,
+    usuario_id INTEGER NOT NULL UNIQUE REFERENCES usuarios(id) ON DELETE CASCADE,
+    -- Presentación
+    genero VARCHAR(20) CHECK (genero IN ('hombre', 'mujer', 'otro')),
+    edad SMALLINT CHECK (edad BETWEEN 16 AND 100),
+    ocupacion VARCHAR(20) CHECK (ocupacion IN ('estudio', 'trabajo', 'ambos')),
+    fuma_en_casa BOOLEAN,
+    tiene_mascota BOOLEAN,
+    busca_con VARCHAR(20) DEFAULT 'solo_yo' CHECK (
+        busca_con IN ('solo_yo', 'pareja', 'amigos')
+    ),
+    -- Búsqueda
+    presupuesto_max INTEGER CHECK (presupuesto_max > 0),
+    state_id INTEGER REFERENCES states(id) ON DELETE SET NULL,
+    city_id INTEGER REFERENCES cities(id) ON DELETE SET NULL,
+    fecha_entrada DATE,
+    habitacion_privada BOOLEAN,
+    amoblada BOOLEAN,
+    bano_privado BOOLEAN,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_room_seeker_usuario ON room_seeker_profiles(usuario_id);
+CREATE INDEX IF NOT EXISTS idx_room_seeker_city ON room_seeker_profiles(city_id);
 -- ============================================================================
 -- 6. PROPIEDADES
 -- ============================================================================
@@ -484,6 +516,7 @@ DROP TRIGGER IF EXISTS trg_usuarios_updated_at ON usuarios;
 DROP TRIGGER IF EXISTS trg_organizaciones_updated_at ON organizaciones;
 DROP TRIGGER IF EXISTS trg_org_miembros_updated_at ON organizacion_miembros;
 DROP TRIGGER IF EXISTS trg_propiedades_updated_at ON propiedades;
+DROP TRIGGER IF EXISTS trg_room_seeker_updated_at ON room_seeker_profiles;
 CREATE TRIGGER trg_usuarios_updated_at BEFORE
 UPDATE ON usuarios FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 CREATE TRIGGER trg_organizaciones_updated_at BEFORE
@@ -492,6 +525,8 @@ CREATE TRIGGER trg_org_miembros_updated_at BEFORE
 UPDATE ON organizacion_miembros FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 CREATE TRIGGER trg_propiedades_updated_at BEFORE
 UPDATE ON propiedades FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+CREATE TRIGGER trg_room_seeker_updated_at BEFORE
+UPDATE ON room_seeker_profiles FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 -- Trigger de sincronización geom
 DROP TRIGGER IF EXISTS trg_propiedades_geom_sync ON propiedades;
 CREATE TRIGGER trg_propiedades_geom_sync BEFORE

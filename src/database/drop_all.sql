@@ -9,12 +9,14 @@ DROP TRIGGER IF EXISTS trg_usuarios_updated_at ON usuarios;
 DROP TRIGGER IF EXISTS trg_organizaciones_updated_at ON organizaciones;
 DROP TRIGGER IF EXISTS trg_org_miembros_updated_at ON organizacion_miembros;
 DROP TRIGGER IF EXISTS trg_propiedades_updated_at ON propiedades;
+DROP TRIGGER IF EXISTS trg_room_seeker_updated_at ON room_seeker_profiles;
 DROP TRIGGER IF EXISTS trg_propiedades_geom_sync ON propiedades;
 -- 3. Eliminación de Funciones
 DROP FUNCTION IF EXISTS update_updated_at_column();
 DROP FUNCTION IF EXISTS sync_geom_from_lat_lng();
 -- 4. Eliminación de Tablas (orden inverso de dependencias)
 -- Tablas relacionales / N:M / historiales
+DROP TABLE IF EXISTS room_seeker_profiles CASCADE;
 DROP TABLE IF EXISTS refresh_tokens CASCADE;
 DROP TABLE IF EXISTS usuario_favoritos CASCADE;
 DROP TABLE IF EXISTS price_history CASCADE;
