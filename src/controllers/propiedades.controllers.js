@@ -714,7 +714,7 @@ export const createPropiedades = async (req, res) => {
     const portadaFila = imagenesGaleria.find(
       (r) => r.es_portada && r.tamaño === "medium",
     );
-    await cacheInvalidate("propiedades:*");
+    await cacheInvalidate("propiedad*");
     return res.status(201).json({
       success: true,
       message: "Propiedad creada.",
@@ -1229,6 +1229,58 @@ export const updatePropiedades = async (req, res) => {
     }
 
     // ========================================
+    // SWAP DE PORTADA: promover una foto de galería (por `orden`) a portada.
+    // La portada anterior pasa a la galería ocupando el orden liberado.
+    // Todo es UPDATE (sin re-subir ni tocar S3). Si además subieron archivo
+    // de portada, el archivo manda y este parámetro se ignora.
+    // ========================================
+    let huboSwapPortada = false;
+    const rawPortadaOrden = formDataObj.portada_orden;
+    const quiereSwap =
+      rawPortadaOrden !== undefined &&
+      rawPortadaOrden !== null &&
+      rawPortadaOrden !== "";
+    if (quiereSwap && !(file && file.size > 0)) {
+      const ordenObjetivo = parseInt(rawPortadaOrden);
+      if (isNaN(ordenObjetivo) || ordenObjetivo < 0) {
+        return res.status(400).json({
+          success: false,
+          error: "portada_orden inválido.",
+        });
+      }
+      const { rows: objetivo } = await pool.query(
+        `SELECT 1 FROM propiedades_galeria
+          WHERE propiedad_id = $1 AND orden = $2 AND es_portada = false LIMIT 1`,
+        [id, ordenObjetivo],
+      );
+      if (objetivo.length === 0) {
+        return res.status(400).json({
+          success: false,
+          error: "La foto indicada no existe en la galería.",
+        });
+      }
+      // 1. Aparcar la portada actual (evita violar el índice único de portada)
+      await pool.query(
+        `UPDATE propiedades_galeria SET es_portada = false, orden = -2
+          WHERE propiedad_id = $1 AND es_portada = true`,
+        [id],
+      );
+      // 2. Promover la foto elegida
+      await pool.query(
+        `UPDATE propiedades_galeria SET es_portada = true, orden = -1
+          WHERE propiedad_id = $1 AND orden = $2 AND es_portada = false`,
+        [id, ordenObjetivo],
+      );
+      // 3. La portada anterior ocupa el orden liberado en la galería
+      await pool.query(
+        `UPDATE propiedades_galeria SET es_portada = false, orden = $2
+          WHERE propiedad_id = $1 AND orden = -2`,
+        [id, ordenObjetivo],
+      );
+      huboSwapPortada = true;
+    }
+
+    // ========================================
     // ACTUALIZAR CAMPOS
     // ========================================
     const updates = [];
@@ -1363,7 +1415,8 @@ export const updatePropiedades = async (req, res) => {
       imagenesGaleria.length === 0 &&
       imagesToDelete.length === 0 &&
       imagenesPlanos.length === 0 &&
-      planosToDelete.length === 0
+      planosToDelete.length === 0 &&
+      !huboSwapPortada
     ) {
       return res.status(400).json({
         success: false,
@@ -1489,7 +1542,7 @@ export const updatePropiedades = async (req, res) => {
        WHERE propiedad_id = $1 ORDER BY orden ASC, tamaño ASC`,
       [id],
     );
-    await cacheInvalidate("propiedades:*");
+    await cacheInvalidate("propiedad*");
     return res.status(200).json({
       success: true,
       message: "Propiedad actualizada.",
@@ -1598,7 +1651,7 @@ export const deletePropiedades = async (req, res) => {
         error: "No se pudo eliminar la propiedad",
       });
     }
-    await cacheInvalidate("propiedades:*");
+    await cacheInvalidate("propiedad*");
     res.status(200).json({
       success: true,
       message: "Propiedad eliminada",
@@ -1859,7 +1912,7 @@ export const publicarAnuncios = async (req, res) => {
       );
     }
 
-    await cacheInvalidate("propiedades:*");
+    await cacheInvalidate("propiedad*");
     return res.status(201).json({
       success: true,
       message: "Propiedad creada.",
@@ -3153,7 +3206,7 @@ export const guardarPropiedadCaracteristicas = async (req, res) => {
       );
     }
 
-    await cacheInvalidate("propiedades:*");
+    await cacheInvalidate("propiedad*");
     res.json({
       success: true,
       message: "Características guardadas.",
