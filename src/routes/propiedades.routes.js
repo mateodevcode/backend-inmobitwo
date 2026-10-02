@@ -21,7 +21,6 @@ import {
   searchVivienda,
 } from "../controllers/propiedades.controllers.js";
 import { createRateLimitMiddleware, defaultLimiter } from "../lib/rateLimit.js";
-import { APIKEY } from "../config.js";
 import { upload } from "../lib/multer.js";
 import { verificarToken, verificarRol } from "../middleware/auth.middleware.js";
 
@@ -66,11 +65,7 @@ router.get(`${ruta}/inmuebles-en-bbox`, rateLimit, getInmueblesEnBbox);
 router.get(`${ruta}/:id/resumen`, rateLimit, getPropiedadResumen);
 
 // Historial de precios (price_history)
-router.get(
-  `${ruta}/:id/historial-precios`,
-  rateLimit,
-  getHistorialPrecios,
-);
+router.get(`${ruta}/:id/historial-precios`, rateLimit, getHistorialPrecios);
 
 // Características N:M de una propiedad (feature_catalog)
 router.get(
@@ -98,11 +93,7 @@ router.post(
   rateLimit,
   calcularPrecioSugeridoPropiedad,
 );
-router.post(
-  `${ruta}/validar-precio`,
-  rateLimit,
-  validarPrecioPropiedad,
-);
+router.post(`${ruta}/validar-precio`, rateLimit, validarPrecioPropiedad);
 
 // 4. PARÁMETROS DINÁMICOS GENERALES (Siempre abajo del todo para evitar colisiones de tipos)
 router.get(`${ruta}/:id`, rateLimit, getPropiedadesById);
