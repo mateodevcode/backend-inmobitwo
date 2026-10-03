@@ -15,6 +15,17 @@ import {
 import { buildTipoFilter, esTipoVacacional } from "../lib/propertyFilters.js";
 import { selectFields } from "../lib/fieldSelection.helper.js";
 import { CAMPOS_PROPIEDAD } from "../constants/api/fields.js";
+import {
+  HttpError,
+  actualizarOferta,
+  cambiarOperacion,
+  crearOferta,
+  obtenerOfertas,
+  quitarOferta,
+  verificarPropiedad,
+} from "../lib/ofertas.service.js";
+import { regenerarTitulo } from "../lib/tituloPropiedad.js";
+import { getOperationCode } from "../lib/catalogos.js";
 
 const TAMANOS = ["thumbnail", "small", "medium", "large", "xlarge"];
 
@@ -107,10 +118,51 @@ function portadaSubquery(alias = "propiedades") {
 function portadaPublicIdSubquery(alias = "propiedades") {
   return `COALESCE(
     (SELECT pg.public_id FROM propiedades_galeria pg 
-     WHERE pg.propiedad_id = ${alias}.id AND pg.es_portada = true AND pg.tamaño = 'medium'
-     LIMIT 1),
+    WHERE pg.propiedad_id = ${alias}.id AND pg.es_portada = true AND pg.tamaño = 'medium'
+    LIMIT 1),
     NULL
   ) as imagen_principal_public_id`;
+}
+
+// Fase 5 — ofertas por propiedad (misma forma que el servicio, sin N+1).
+function ofertasSubquery(alias = "p") {
+  return `COALESCE(
+    (SELECT json_agg(json_build_object(
+      'id', l.id,
+      'operation', ot2.code,
+      'operation_type_id', l.operation_type_id,
+      'precio', l.precio,
+      'price_per_sqm', l.price_per_sqm,
+      'rental_type_id', l.rental_type_id,
+      'parking_space_price', l.parking_space_price,
+      'listing_status', l.listing_status,
+      'published_at', l.published_at,
+      'expires_at', l.expires_at
+    ) ORDER BY (ot2.code = 'venta') DESC, l.updated_at DESC)
+    FROM property_listings l
+    JOIN operation_types ot2 ON ot2.id = l.operation_type_id
+    WHERE l.propiedad_id = ${alias}.id),
+    '[]'::json
+  ) as ofertas`;
+}
+
+// Fase 5 — JOIN a la oferta ACTIVA de la operación filtrada. opId proviene de
+// nuestra propia consulta (entero saneado), igual que rentalList existente.
+function joinOfertaActiva(opId) {
+  const id = Number(opId);
+  if (!Number.isInteger(id) || id <= 0) {
+    throw new Error("Operación inválida para el filtro de ofertas.");
+  }
+  return `INNER JOIN property_listings l ON l.propiedad_id = p.id AND l.operation_type_id = ${id} AND l.listing_status = 'active'`;
+}
+
+// Resuelve el id de operation_types por code (para los filtros de búsqueda).
+async function operationIdPorCode(code) {
+  const { rows } = await pool.query(
+    "SELECT id FROM operation_types WHERE LOWER(code) = LOWER($1)",
+    [String(code)],
+  );
+  return rows[0]?.id ?? null;
 }
 
 // Campos de los catálogos (schema v5.0) que se agregan a los SELECT de
@@ -203,6 +255,7 @@ export const getPropiedades = async (req, res) => {
       async () => {
         const { rows: propiedades } = await pool.query(
           `SELECT ${selectBase}, ${portadaSubquery("p")}, ${portadaPublicIdSubquery("p")},
+                  ${ofertasSubquery("p")},
                   ${camposCatalogoSelect("p")}
          FROM propiedades p
          ${joinsCatalogo("p")}
@@ -674,6 +727,67 @@ export const createPropiedades = async (req, res) => {
       );
     }
 
+    // Ofertas (Fase 4): formato nuevo `ofertas` o una del formato antiguo.
+    // Ante fallo se responde 500 con el id (recuperable con PUT ofertas/upsert).
+    let ofertasBodyCreate = req.body.ofertas;
+    if (typeof ofertasBodyCreate === "string" && ofertasBodyCreate.trim() !== "") {
+      try {
+        ofertasBodyCreate = JSON.parse(ofertasBodyCreate);
+      } catch {
+        return res.status(400).json({
+          success: false,
+          error: "El campo ofertas debe ser un JSON válido.",
+        });
+      }
+    }
+    if (ofertasBodyCreate !== undefined || campos.operation_type_id) {
+      const ofertasACrear = Array.isArray(ofertasBodyCreate)
+        ? ofertasBodyCreate.map((o) => ({
+            operation: o.operation,
+            operation_type_id: o.operation_type_id,
+            datos: o,
+          }))
+        : [
+            {
+              operation: undefined,
+              operation_type_id: campos.operation_type_id,
+              datos: {
+                precio: campos.precio,
+                rental_type_id: campos.rental_type_id,
+                parking_space_price: campos.parking_space_price,
+              },
+            },
+          ];
+      const clientOfertasCreate = await pool.connect();
+      try {
+        await clientOfertasCreate.query("BEGIN");
+        for (const item of ofertasACrear) {
+          const code = item.operation
+            ? String(item.operation).toLowerCase()
+            : await getOperationCode(item.operation_type_id);
+          await crearOferta(clientOfertasCreate, {
+            propiedadId: nuevaPropiedad.id,
+            operation: code,
+            datos: item.datos,
+            usuarioId: req.usuario.id,
+          });
+        }
+        await clientOfertasCreate.query("COMMIT");
+      } catch (errorOfertas) {
+        await clientOfertasCreate.query("ROLLBACK");
+        if (errorOfertas instanceof HttpError) {
+          return res.status(errorOfertas.status).json({
+            success: false,
+            error: errorOfertas.error,
+            data: { propiedad_id: nuevaPropiedad.id },
+          });
+        }
+        throw errorOfertas;
+      } finally {
+        clientOfertasCreate.release();
+      }
+    }
+
     if (imagenesGaleria.length > 0) {
       await Promise.all(
         imagenesGaleria.map((imagen) =>
@@ -751,6 +865,8 @@ export const getPropiedadesById = async (req, res) => {
       const { rows } = await pool.query(
         `SELECT 
           ${selectBase},
+          p.description_needs_review,
+          ${ofertasSubquery("p")},
           ${portadaSubquery("p")},
           ${portadaPublicIdSubquery("p")},
           ${camposCatalogoSelect("p")},
@@ -896,6 +1012,87 @@ export const updatePropiedades = async (req, res) => {
           error: errores[0],
         });
       }
+    }
+
+    // ========================================
+    // COMPAT OFERTAS (Fase 4): el precio vive en property_listings.
+    // - operation_type_id distinto al principal → 400 (usar cambiar-operacion).
+    // - precio/rental_type_id/parking_space_price a secas: con UNA oferta se
+    //   aplican vía actualizarOferta (sin duplicar price_history); con dos → 400.
+    // ========================================
+    const CLAVES_OFERTA = ["precio", "rental_type_id", "parking_space_price"];
+    const traeClavesOferta = CLAVES_OFERTA.filter(
+      (k) =>
+        formDataObj[k] !== undefined &&
+        formDataObj[k] !== null &&
+        formDataObj[k] !== "",
+    );
+    let ofertaAplicadaPorServicio = false;
+    const { rows: ofertasActuales } = await pool.query(
+      `SELECT l.*, ot.code FROM property_listings l
+       JOIN operation_types ot ON ot.id = l.operation_type_id
+       WHERE l.propiedad_id = $1`,
+      [id],
+    );
+    const ofertaPrincipal = [...ofertasActuales].sort(
+      (a, b) =>
+        Number(b.listing_status === "active") -
+          Number(a.listing_status === "active") ||
+        Number(String(b.code).toLowerCase() === "venta") -
+          Number(String(a.code).toLowerCase() === "venta"),
+    )[0];
+
+    if (
+      formDataObj.operation_type_id !== undefined &&
+      formDataObj.operation_type_id !== null &&
+      formDataObj.operation_type_id !== "" &&
+      ofertaPrincipal &&
+      Number(formDataObj.operation_type_id) !== ofertaPrincipal.operation_type_id
+    ) {
+      return res.status(400).json({
+        success: false,
+        error:
+          "Para cambiar la operación usa POST /propiedades/:id/cambiar-operacion.",
+      });
+    }
+
+    if (traeClavesOferta.length > 0 && ofertasActuales.length > 1) {
+      return res.status(400).json({
+        success: false,
+        error:
+          "La propiedad tiene varias ofertas: usa PUT /propiedades/:id/ofertas/:operacion.",
+      });
+    }
+
+    if (traeClavesOferta.length > 0 && ofertasActuales.length === 1) {
+      const unica = ofertasActuales[0];
+      const datosOferta = {};
+      for (const k of traeClavesOferta) datosOferta[k] = formDataObj[k];
+      const clientOferta = await pool.connect();
+      try {
+        await clientOferta.query("BEGIN");
+        await actualizarOferta(clientOferta, {
+          propiedadId: id,
+          operation: unica.code,
+          datos: datosOferta,
+          usuarioId: req.usuario.id,
+        });
+        await clientOferta.query("COMMIT");
+      } catch (errorOferta) {
+        await clientOferta.query("ROLLBACK");
+        if (errorOferta instanceof HttpError) {
+          return res.status(errorOferta.status).json({
+            success: false,
+            error: errorOferta.error,
+          });
+        }
+        throw errorOferta;
+      } finally {
+        clientOferta.release();
+      }
+      // Ya aplicado vía ofertas: la ruta genérica los ignora (sin duplicar historial).
+      for (const k of traeClavesOferta) delete formDataObj[k];
+      ofertaAplicadaPorServicio = true;
     }
 
     let imagesToDelete = [];
@@ -1287,16 +1484,17 @@ export const updatePropiedades = async (req, res) => {
     const values = [];
     let paramCount = 1;
 
-    if (titulo) {
-      updates.push(`titulo = $${paramCount}`);
-      values.push(titulo);
-      paramCount++;
-    }
+    // El título lo genera el backend (Fase 4): el del cliente se valida
+    // arriba pero nunca se persiste; se regenera si cambia tipo/barrio/ciudad.
     if (estado) {
       updates.push(`estado = $${paramCount}`);
       values.push(estado);
       paramCount++;
     }
+    const tocoDescripcion =
+      formDataObj.description !== undefined &&
+      formDataObj.description !== null &&
+      formDataObj.description !== "";
 
     // --- PRECIO: detectar cambio ANTES del UPDATE para registrar price_history
     let nuevoPrecio = null;
@@ -1411,6 +1609,7 @@ export const updatePropiedades = async (req, res) => {
     }
 
     if (
+      !ofertaAplicadaPorServicio &&
       updates.length === 0 &&
       imagenesGaleria.length === 0 &&
       imagesToDelete.length === 0 &&
@@ -1461,6 +1660,21 @@ export const updatePropiedades = async (req, res) => {
         return res
           .status(404)
           .json({ success: false, error: "Propiedad no encontrada." });
+      }
+
+      // Título derivado (Fase 4): si cambió tipo, barrio o ciudad, se regenera.
+      const tocoTitulo = updates.some((u) =>
+        /^(property_type_id|barrio_id|barrio_nombre|city_id|state_id) =/.test(u),
+      );
+      if (tocoTitulo) {
+        await regenerarTitulo(pool, id);
+      }
+      // Editar la descripción levanta la marca de revisión pendiente.
+      if (tocoDescripcion) {
+        await pool.query(
+          "UPDATE propiedades SET description_needs_review = FALSE WHERE id = $1",
+          [id],
+        );
       }
     }
 
@@ -1743,8 +1957,19 @@ export const publicarAnuncios = async (req, res) => {
     }
 
     // ========================================
-    // VALIDACIONES
+    // VALIDACIONES (acepta formato antiguo y nuevo `ofertas`)
     // ========================================
+    let ofertasBody = raw.ofertas;
+    if (typeof ofertasBody === "string" && ofertasBody.trim() !== "") {
+      try {
+        ofertasBody = JSON.parse(ofertasBody);
+      } catch {
+        return res.status(400).json({
+          success: false,
+          error: "El campo ofertas debe ser un JSON válido.",
+        });
+      }
+    }
     const data = {
       operation_type_id,
       property_type_id,
@@ -1754,9 +1979,14 @@ export const publicarAnuncios = async (req, res) => {
       state_id,
       estrato,
       precio,
+      rental_type_id,
+      parking_space_price,
+      listing_status: raw.listing_status,
+      expires_at: raw.expires_at,
       publicado_por_id: req.usuario.id,
+      ...(ofertasBody !== undefined ? { ofertas: ofertasBody } : {}),
     };
-    const errores = publicar_anuncio_validate(data);
+    const errores = await publicar_anuncio_validate(data);
     if (errores.length > 0) {
       return res.status(400).json({
         success: false,
@@ -1791,6 +2021,8 @@ export const publicarAnuncios = async (req, res) => {
 
     const estadoFinal = raw.estado || "publicado";
     const listingStatusFinal = raw.listing_status || "active";
+    // how_to_contact es NOT NULL en BD: default al canal completo.
+    const contactoFinal = how_to_contact || "telefono_chat";
 
     // ========================================
     // INSERTAR EN BD
@@ -1895,7 +2127,7 @@ export const publicarAnuncios = async (req, res) => {
       organizacion_id,
       req.usuario.id,
       rental_type_id,
-      how_to_contact,
+      contactoFinal,
       telefono_contacto,
       barrio_nombre,
     ];
@@ -1912,11 +2144,66 @@ export const publicarAnuncios = async (req, res) => {
       );
     }
 
+    // Ofertas (Fase 4): formato nuevo `ofertas` o una oferta del formato antiguo.
+    // Todo en una transacción; ante fallo se responde 500 con el id para
+    // recuperar con PUT /propiedades/:id/ofertas/:operacion (upsert).
+    const ofertasACrear = Array.isArray(ofertasBody)
+      ? ofertasBody.map((o) => ({
+          operation: o.operation,
+          operation_type_id: o.operation_type_id,
+          datos: o,
+        }))
+      : [
+          {
+            operation: undefined,
+            operation_type_id,
+            datos: {
+              precio,
+              rental_type_id,
+              parking_space_price,
+            },
+          },
+        ];
+    const clientOfertas = await pool.connect();
+    try {
+      await clientOfertas.query("BEGIN");
+      for (const item of ofertasACrear) {
+        const code = item.operation
+          ? String(item.operation).toLowerCase()
+          : await getOperationCode(item.operation_type_id);
+        await crearOferta(clientOfertas, {
+          propiedadId: nuevaPropiedad.id,
+          operation: code,
+          datos: item.datos,
+          usuarioId: req.usuario.id,
+        });
+      }
+      await clientOfertas.query("COMMIT");
+    } catch (errorOfertas) {
+      await clientOfertas.query("ROLLBACK");
+      if (errorOfertas instanceof HttpError) {
+        return res.status(errorOfertas.status).json({
+          success: false,
+          error: errorOfertas.error,
+          data: { propiedad_id: nuevaPropiedad.id },
+        });
+      }
+      throw errorOfertas;
+    } finally {
+      clientOfertas.release();
+    }
+
+    const tituloOfertas = await regenerarTitulo(pool, nuevaPropiedad.id);
+
     await cacheInvalidate("propiedad*");
     return res.status(201).json({
       success: true,
       message: "Propiedad creada.",
-      data: nuevaPropiedad,
+      data: {
+        ...nuevaPropiedad,
+        titulo: tituloOfertas ?? nuevaPropiedad.titulo,
+        ofertas: await obtenerOfertas(pool, nuevaPropiedad.id),
+      },
     });
   } catch (error) {
     console.error("❌ Error en POST /propiedades:", error);
@@ -1953,6 +2240,7 @@ export const getPropiedadesHome = async (req, res) => {
 
     const { rows: propiedades } = await pool.query(
       `SELECT ${selectBase}, ${portadaSubquery("p")}, ${portadaPublicIdSubquery("p")},
+              ${ofertasSubquery("p")},
               ${camposCatalogoSelect("p")}
        FROM propiedades p
        ${joinsCatalogo("p")}
@@ -2042,6 +2330,8 @@ export const getPropiedadesMisAnuncios = async (req, res) => {
 
     const { rows: propiedades } = await pool.query(
       `SELECT ${selectBase}, ${portadaSubquery("p")}, ${portadaPublicIdSubquery("p")},
+              p.description_needs_review,
+              ${ofertasSubquery("p")},
               ${camposCatalogoSelect("p")}
        FROM propiedades p
        ${joinsCatalogo("p")}
@@ -2203,6 +2493,7 @@ export const getPropiedadesByOrganizacion = async (req, res) => {
 
     const { rows: propiedades } = await pool.query(
       `SELECT ${selectBase}, ${portadaSubquery("p")}, ${portadaPublicIdSubquery("p")},
+              ${ofertasSubquery("p")},
               ${camposCatalogoSelect("p")}
        FROM propiedades p
        ${joinsCatalogo("p")}
@@ -2277,7 +2568,8 @@ export const getPropertiesBySlugs = async (req, res) => {
   }
 
   try {
-    const params = [operation.toLowerCase()];
+    let opSlug = operation.toLowerCase();
+    const params = [];
 
     const { sql: tipoFilterSql, params: tipoFilterParams } = buildTipoFilter(
       type,
@@ -2290,8 +2582,8 @@ export const getPropertiesBySlugs = async (req, res) => {
     const minPrecio = parseFloat(req.query.min) * 1000000;
     const maxPrecio = parseFloat(req.query.max) * 1000000;
     const precioCondiciones = [
-      !isNaN(minPrecio) ? `p.precio >= ${minPrecio}` : null,
-      !isNaN(maxPrecio) ? `p.precio <= ${maxPrecio}` : null,
+      !isNaN(minPrecio) ? `l.precio >= ${minPrecio}` : null,
+      !isNaN(maxPrecio) ? `l.precio <= ${maxPrecio}` : null,
     ].filter(Boolean);
     const precioWhere = precioCondiciones.length
       ? `AND ${precioCondiciones.join(" AND ")}`
@@ -2318,7 +2610,7 @@ export const getPropertiesBySlugs = async (req, res) => {
       .map(Number)
       .filter(Boolean);
     const rentalWhere = rentalList.length
-      ? `AND p.rental_type_id IN (${rentalList.join(",")})`
+      ? `AND l.rental_type_id IN (${rentalList.join(",")})`
       : "";
 
     // Filtro por fecha de publicación (created_at). Saneado a valores fijos.
@@ -2438,8 +2730,21 @@ export const getPropertiesBySlugs = async (req, res) => {
 
     // Vacacional solo aplica a arriendo (por temporada).
     if (esTipoVacacional(type)) {
-      params[0] = "arriendo";
+      opSlug = "arriendo";
     }
+
+    // Fase 5: la operación filtrada sale de la oferta activa (una "ambas"
+    // aparece en venta con su precio de venta y en arriendo con su canon).
+    const opIdSlugs = await operationIdPorCode(opSlug);
+    if (!opIdSlugs) {
+      return res.status(400).json({
+        success: false,
+        message: "Operación no válida.",
+        data: null,
+        error: null,
+      });
+    }
+    const listingsJoinSlugs = joinOfertaActiva(opIdSlugs);
 
     const galeriaSubquery = `
       COALESCE(
@@ -2471,7 +2776,8 @@ export const getPropertiesBySlugs = async (req, res) => {
     `;
 
     const selectFields = `
-      p.id, p.titulo, p.direccion, p.description, p.precio, p.price_per_sqm, p.estrato,
+      p.id, p.titulo, p.direccion, p.description, l.precio, l.price_per_sqm, p.estrato,
+      l.rental_type_id,
       p.private_area, p.constructed_area, p.bedroom_count, p.bathroom_count,
       p.created_at,
       ot.code as operacion_slug,
@@ -2484,6 +2790,7 @@ export const getPropertiesBySlugs = async (req, res) => {
       p.es_de_organizacion,
       ${galeriaSubquery},
       ${planosSubquery},
+      ${ofertasSubquery("p")},
       c.name as city_name,
       s.name as state_name,
       o.nombre as organizacion_nombre,
@@ -2497,6 +2804,7 @@ export const getPropertiesBySlugs = async (req, res) => {
       INNER JOIN operation_types ot ON p.operation_type_id = ot.id
       INNER JOIN property_types pt ON p.property_type_id = pt.id
       LEFT JOIN condition_types ct ON p.condition_type_id = ct.id
+      ${listingsJoinSlugs}
     `;
 
     let query;
@@ -2512,7 +2820,7 @@ export const getPropertiesBySlugs = async (req, res) => {
         INNER JOIN cities c ON p.city_id = c.id
         INNER JOIN states s ON c.state_id = s.id 
         ${orgJoin}
-        WHERE LOWER(ot.code) = $1
+        WHERE 1 = 1 -- la operación la filtra el JOIN a la oferta activa
           ${typeCondition}
           AND c.slug = $${cityIdx}
           AND s.slug = $${deptIdx}
@@ -2555,7 +2863,7 @@ export const getPropertiesBySlugs = async (req, res) => {
         INNER JOIN cities c ON p.city_id = c.id
         INNER JOIN states s ON c.state_id = s.id 
         ${orgJoin}
-        WHERE LOWER(ot.code) = $1
+        WHERE 1 = 1 -- la operación la filtra el JOIN a la oferta activa
           ${typeCondition}
           AND s.slug = $${fallbackIdx}
           AND p.estado = 'publicado'
@@ -2583,7 +2891,7 @@ export const getPropertiesBySlugs = async (req, res) => {
         INNER JOIN cities c ON p.city_id = c.id
         INNER JOIN states s ON c.state_id = s.id 
         ${orgJoin}
-        WHERE LOWER(ot.code) = $1
+        WHERE 1 = 1 -- la operación la filtra el JOIN a la oferta activa
           ${typeCondition}
           AND s.slug = $${geoIdx}
           AND p.estado = 'publicado'
@@ -2621,7 +2929,7 @@ export const getPropertiesBySlugs = async (req, res) => {
         INNER JOIN states s ON c.state_id = s.id
         INNER JOIN regions r ON s.region_id = r.id
         ${orgJoin}
-        WHERE LOWER(ot.code) = $1
+        WHERE 1 = 1 -- la operación la filtra el JOIN a la oferta activa
           ${typeCondition}
           AND r.slug = $${geoIdx}
           AND p.estado = 'publicado'
@@ -2691,18 +2999,30 @@ export const searchVivienda = async (req, res) => {
       });
     }
 
+    // Fase 5: la operación filtrada sale de la oferta activa.
+    const opIdVivienda = await operationIdPorCode(operation);
+    if (!opIdVivienda) {
+      return res.status(400).json({
+        success: false,
+        message: "Operación no válida.",
+        data: null,
+        error: null,
+      });
+    }
+
     const minPrecio = parseFloat(min) * 1000000;
     const maxPrecio = parseFloat(max) * 1000000;
     const minTamNum = parseInt(tamMin, 10);
     const maxTamNum = parseInt(tamMax, 10);
 
-    const params = [operation.toLowerCase(), tipoLista];
+    const params = [tipoLista];
     const conds = [
-      "LOWER(ot.code) = $1",
-      "LOWER(pt.code) = ANY($2::text[])",
+      // La operación la filtra el JOIN a la oferta activa (una "ambas" sale
+      // en venta y en arriendo con su precio); el espejo no se usa aquí.
+      "LOWER(pt.code) = ANY($1::text[])",
       "p.estado = 'publicado'",
     ];
-    let idx = 3;
+    let idx = 2;
 
     if (city) {
       params.push(city.toLowerCase(), dept.toLowerCase());
@@ -2714,11 +3034,11 @@ export const searchVivienda = async (req, res) => {
 
     if (!isNaN(minPrecio)) {
       params.push(minPrecio);
-      conds.push(`p.precio >= $${idx++}`);
+      conds.push(`l.precio >= $${idx++}`);
     }
     if (!isNaN(maxPrecio)) {
       params.push(maxPrecio);
-      conds.push(`p.precio <= $${idx++}`);
+      conds.push(`l.precio <= $${idx++}`);
     }
     if (!isNaN(minTamNum)) {
       params.push(minTamNum);
@@ -2736,7 +3056,7 @@ export const searchVivienda = async (req, res) => {
       .filter(Boolean);
     if (rentalList.length) {
       params.push(rentalList);
-      conds.push(`p.rental_type_id = ANY($${idx++}::int[])`);
+      conds.push(`l.rental_type_id = ANY($${idx++}::int[])`);
     }
 
     // Filtro por fecha de publicación (created_at). Saneado a valores fijos.
@@ -2867,7 +3187,8 @@ export const searchVivienda = async (req, res) => {
     `;
 
     const selectFields = `
-      p.id, p.titulo, p.direccion, p.description, p.precio, p.price_per_sqm, p.estrato,
+      p.id, p.titulo, p.direccion, p.description, l.precio, l.price_per_sqm, p.estrato,
+      l.rental_type_id,
       p.private_area, p.constructed_area, p.bedroom_count, p.bathroom_count,
       p.created_at,
       ot.code as operacion_slug,
@@ -2880,6 +3201,7 @@ export const searchVivienda = async (req, res) => {
       p.es_de_organizacion,
       ${galeriaSubquery},
       ${planosSubquery},
+      ${ofertasSubquery("p")},
       c.name as city_name,
       s.name as state_name,
       o.nombre as organizacion_nombre,
@@ -2894,6 +3216,7 @@ export const searchVivienda = async (req, res) => {
       INNER JOIN operation_types ot ON p.operation_type_id = ot.id
       INNER JOIN property_types pt ON p.property_type_id = pt.id
       LEFT JOIN condition_types ct ON p.condition_type_id = ct.id
+      ${joinOfertaActiva(opIdVivienda)}
       LEFT JOIN cities c ON p.city_id = c.id
       LEFT JOIN states s ON c.state_id = s.id
       LEFT JOIN organizaciones o ON p.organizacion_id = o.id
@@ -2944,9 +3267,25 @@ export const getInmueblesEnBbox = async (req, res) => {
       operation = "arriendo";
     }
 
+    // params[0] se reservaba a la operación del espejo; la operación la filtra
+    // el JOIN a la oferta activa (ver abajo), así que no se envía parámetro.
+
+    // Fase 5: con filtro de operación, filtra el JOIN a la oferta activa
+    // (el espejo no sirve para "ambas"); sin filtro, valores del espejo.
+    let listingsJoinBbox = "";
+    let precioSelectBbox = "p.precio";
     if (operation) {
-      params.push(operation.toLowerCase());
-      filters.push(`LOWER(ot.code) = LOWER($${params.length})`);
+      const opIdBbox = await operationIdPorCode(operation);
+      if (!opIdBbox) {
+        return res.status(400).json({
+          success: false,
+          message: "Operación no válida.",
+          data: null,
+          error: null,
+        });
+      }
+      listingsJoinBbox = joinOfertaActiva(opIdBbox);
+      precioSelectBbox = "l.precio";
     }
 
     if (tipoInmueble) {
@@ -2962,14 +3301,16 @@ export const getInmueblesEnBbox = async (req, res) => {
     const bboxParamIdx = params.length - 3;
 
     const query = `
-      SELECT p.id, p.titulo, p.precio, p.estrato,
+      SELECT p.id, p.titulo, ${precioSelectBbox} as precio, p.estrato,
              ot.label_es as operacion, ot.code as operacion_slug,
              pt.label_es as tipo_inmueble, pt.code as tipo_slug,
              ${portadaSubquery("p")},
+             ${ofertasSubquery("p")},
              ST_Y(p.geom) AS lat, ST_X(p.geom) AS lng
       FROM propiedades p
       LEFT JOIN operation_types ot ON p.operation_type_id = ot.id
       LEFT JOIN property_types pt ON p.property_type_id = pt.id
+      ${listingsJoinBbox}
       WHERE ST_Intersects(
         p.geom,
         ST_MakeEnvelope(
@@ -3020,15 +3361,16 @@ export const getPropiedadResumen = async (req, res) => {
   }
 
   try {
-    const { rows } = await pool.query(
-      `SELECT
-         p.latitude, p.longitude,
-         (SELECT COUNT(DISTINCT pg.orden) FROM propiedades_galeria pg WHERE pg.propiedad_id = p.id AND pg.es_portada = false)::int AS galeria_count,
-         (SELECT COUNT(DISTINCT pp.orden) FROM propiedades_planos pp WHERE pp.propiedad_id = p.id)::int AS planos_count
-       FROM propiedades p
-       WHERE p.id = $1`,
-      [id],
-    );
+      const { rows } = await pool.query(
+        `SELECT
+          p.latitude, p.longitude, p.description_needs_review,
+          ${ofertasSubquery("p")},
+          (SELECT COUNT(DISTINCT pg.orden) FROM propiedades_galeria pg WHERE pg.propiedad_id = p.id AND pg.es_portada = false)::int AS galeria_count,
+          (SELECT COUNT(DISTINCT pp.orden) FROM propiedades_planos pp WHERE pp.propiedad_id = p.id)::int AS planos_count
+        FROM propiedades p
+        WHERE p.id = $1`,
+        [id],
+      );
 
     if (!rows.length) {
       return res.status(404).json({
@@ -3051,9 +3393,10 @@ export const getPropiedadResumen = async (req, res) => {
   }
 };
 
-// GET /propiedades/:id/historial-precios
+// GET /propiedades/:id/historial-precios[?operacion=venta|arriendo]
 export const getHistorialPrecios = async (req, res) => {
   const { id } = req.params;
+  const { operacion } = req.query;
 
   if (!id) {
     return res.status(400).json({
@@ -3065,13 +3408,31 @@ export const getHistorialPrecios = async (req, res) => {
   }
 
   try {
+    const params = [id];
+    let filtroOperacion = "";
+    if (operacion) {
+      const { rows: opRows } = await pool.query(
+        "SELECT id FROM operation_types WHERE LOWER(code) = LOWER($1)",
+        [String(operacion)],
+      );
+      if (opRows.length === 0) {
+        return res.status(400).json({
+          success: false,
+          message: "Operación no válida (venta|arriendo).",
+          data: null,
+          error: null,
+        });
+      }
+      params.push(opRows[0].id);
+      filtroOperacion = `AND ph.operation_type_id = $${params.length}`;
+    }
     const { rows } = await pool.query(
-      `SELECT id, old_price, new_price, price_change, change_percent,
-              change_type, detected_at, source
-       FROM price_history
-       WHERE propiedad_id = $1
-       ORDER BY detected_at DESC`,
-      [id],
+      `SELECT ph.id, ph.old_price, ph.new_price, ph.price_change, ph.change_percent,
+              ph.change_type, ph.detected_at, ph.source, ph.operation_type_id
+       FROM price_history ph
+       WHERE ph.propiedad_id = $1 ${filtroOperacion}
+       ORDER BY ph.detected_at DESC`,
+      params,
     );
 
     res.json({ success: true, message: null, data: rows, error: null });
@@ -3102,7 +3463,7 @@ export const getPropiedadCaracteristicas = async (req, res) => {
 
   try {
     const { rows } = await pool.query(
-      `SELECT fc.id, fc.code, fc.label_es, fc.category, fc.data_type,
+      `SELECT fc.id, fc.code, fc.label_es, fc.category, fc.data_type, fc.applies_to,
               pf.bool_value, pf.numeric_value, pf.text_value
        FROM property_features pf
        JOIN feature_catalog fc ON pf.feature_id = fc.id
@@ -3118,6 +3479,7 @@ export const getPropiedadCaracteristicas = async (req, res) => {
         code: fila.code,
         label_es: fila.label_es,
         data_type: fila.data_type,
+        applies_to: fila.applies_to,
         bool_value: fila.bool_value,
         numeric_value: fila.numeric_value,
         text_value: fila.text_value,
@@ -3184,6 +3546,31 @@ export const guardarPropiedadCaracteristicas = async (req, res) => {
       });
     }
 
+    // Fase 4: características solo-rent exigen oferta de arriendo.
+    if (features.length > 0) {
+      const { rows: rentRows } = await pool.query(
+        `SELECT fc.code FROM feature_catalog fc
+         WHERE fc.id = ANY($1::int[]) AND fc.applies_to = 'rent'`,
+        [features.map((f) => f.feature_id).filter(Boolean)],
+      );
+      if (rentRows.length > 0) {
+        const { rows: arriendo } = await pool.query(
+          `SELECT 1 FROM property_listings l
+           JOIN operation_types ot ON ot.id = l.operation_type_id
+           WHERE l.propiedad_id = $1 AND LOWER(ot.code) = 'arriendo'`,
+          [id],
+        );
+        if (arriendo.length === 0) {
+          return res.status(400).json({
+            success: false,
+            message: `Estas características exigen oferta de arriendo: ${rentRows.map((r) => r.code).join(", ")}.`,
+            data: null,
+            error: null,
+          });
+        }
+      }
+    }
+
     // 1. Borrar características existentes de esa propiedad
     await pool.query("DELETE FROM property_features WHERE propiedad_id = $1", [
       id,
@@ -3218,6 +3605,81 @@ export const guardarPropiedadCaracteristicas = async (req, res) => {
     res.status(500).json({
       success: false,
       message: "Error al guardar características",
+      data: null,
+      error: error.message,
+    });
+  }
+};
+
+// GET /propiedades/:id/stats — vistas, favoritos y mensajes del anuncio.
+// Solo el dueño (o miembro activo de su organización). Las vistas cuentan
+// sesiones distintas con evento vista_propiedad (incluye las del propio dueño).
+export const getPropiedadStats = async (req, res) => {
+  const { id } = req.params;
+  if (!id || isNaN(parseInt(id))) {
+    return res.status(400).json({
+      success: false,
+      message: "ID de propiedad inválido o requerido",
+      data: null,
+      error: null,
+    });
+  }
+
+  try {
+    const { rows: propRows } = await pool.query(
+      `SELECT p.id FROM propiedades p
+        WHERE p.id = $1
+          AND (p.publicado_por_id = $2
+            OR p.organizacion_id IN (
+              SELECT organizacion_id FROM organizacion_miembros
+              WHERE usuario_id = $2 AND estado = 'activo'
+            ))`,
+      [id, req.usuario.id],
+    );
+    if (propRows.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: "Propiedad no encontrada o sin permiso.",
+        data: null,
+        error: null,
+      });
+    }
+
+    const [{ rows: vistas }, { rows: favs }, { rows: leads }] =
+      await Promise.all([
+        pool.query(
+          `SELECT COUNT(DISTINCT sesion_id)::int AS total
+           FROM eventos_tracking
+           WHERE propiedad_id = $1 AND tipo_evento = 'vista_propiedad'`,
+          [id],
+        ),
+        pool.query(
+          `SELECT COUNT(*)::int AS total FROM usuario_favoritos
+           WHERE propiedad_id = $1`,
+          [id],
+        ),
+        pool.query(
+          `SELECT COUNT(*)::int AS total FROM leads WHERE propiedad_id = $1`,
+          [id],
+        ),
+      ]);
+
+    res.json({
+      success: true,
+      message: null,
+      data: {
+        propiedad_id: Number(id),
+        vistas: vistas[0]?.total ?? 0,
+        favoritos: favs[0]?.total ?? 0,
+        mensajes: leads[0]?.total ?? 0,
+      },
+      error: null,
+    });
+  } catch (error) {
+    console.error("Error en getPropiedadStats:", error);
+    res.status(500).json({
+      success: false,
+      message: "Error al obtener estadísticas",
       data: null,
       error: error.message,
     });
@@ -3349,4 +3811,160 @@ export const validarPrecioPropiedad = async (req, res) => {
     console.error("Error en validar-precio:", error);
     res.status(500).json({ success: false, error: error.message, data: null });
   }
+};
+
+// ============================================================================
+// OFERTAS POR OPERACIÓN (rutas :id/ofertas y :id/cambiar-operacion)
+// Cada handler abre su transacción; el servicio recibe el client.
+// ============================================================================
+
+async function conTransaccion(res, fn) {
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    const data = await fn(client);
+    await client.query("COMMIT");
+    await cacheInvalidate("propiedad*");
+    return res.status(200).json({
+      success: true,
+      message: data.message || "Operación realizada correctamente.",
+      data: data.payload ?? null,
+      error: null,
+    });
+  } catch (error) {
+    await client.query("ROLLBACK");
+    if (error instanceof HttpError) {
+      return res.status(error.status).json({
+        success: false,
+        message: null,
+        data: null,
+        error: error.error,
+      });
+    }
+    console.error("❌ Error en ofertas:", error);
+    return res.status(500).json({
+      success: false,
+      message: null,
+      data: null,
+      error: "Error interno del servidor.",
+    });
+  } finally {
+    client.release();
+  }
+}
+
+// GET /propiedades/:id/ofertas — solo lectura (sin transacción de escritura)
+export const getOfertasPropiedad = async (req, res) => {
+  const { id } = req.params;
+  if (!id || isNaN(parseInt(id))) {
+    return res.status(400).json({
+      success: false,
+      message: "ID de propiedad inválido o requerido",
+      data: null,
+      error: null,
+    });
+  }
+  try {
+    await verificarPropiedad(pool, id, req.usuario.id);
+    const ofertas = await obtenerOfertas(pool, id);
+    return res.json({ success: true, message: null, data: ofertas, error: null });
+  } catch (error) {
+    if (error instanceof HttpError) {
+      return res.status(error.status).json({
+        success: false,
+        message: null,
+        data: null,
+        error: error.error,
+      });
+    }
+    console.error("Error en getOfertasPropiedad:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Error al obtener ofertas",
+      data: null,
+      error: error.message,
+    });
+  }
+};
+
+// PUT /propiedades/:id/ofertas/:operacion — upsert (crea si no existe)
+export const upsertOfertaPropiedad = async (req, res) => {
+  const { id, operacion } = req.params;
+  if (!id || isNaN(parseInt(id))) {
+    return res.status(400).json({
+      success: false,
+      message: "ID de propiedad inválido o requerido",
+      data: null,
+      error: null,
+    });
+  }
+  return conTransaccion(res, async (client) => {
+    const { rows: existentes } = await client.query(
+      `SELECT l.id FROM property_listings l
+       JOIN operation_types ot ON ot.id = l.operation_type_id
+       WHERE l.propiedad_id = $1 AND LOWER(ot.code) = LOWER($2)`,
+      [id, operacion],
+    );
+    if (existentes.length > 0) {
+      const payload = await actualizarOferta(client, {
+        propiedadId: id,
+        operation: operacion,
+        datos: req.body || {},
+        usuarioId: req.usuario.id,
+      });
+      return { message: "Oferta actualizada correctamente.", payload };
+    }
+    const payload = await crearOferta(client, {
+      propiedadId: id,
+      operation: operacion,
+      datos: req.body || {},
+      usuarioId: req.usuario.id,
+    });
+    return { message: "Oferta creada correctamente.", payload };
+  });
+};
+
+// DELETE /propiedades/:id/ofertas/:operacion
+export const eliminarOfertaPropiedad = async (req, res) => {
+  const { id, operacion } = req.params;
+  if (!id || isNaN(parseInt(id))) {
+    return res.status(400).json({
+      success: false,
+      message: "ID de propiedad inválido o requerido",
+      data: null,
+      error: null,
+    });
+  }
+  return conTransaccion(res, async (client) => {
+    const payload = await quitarOferta(client, {
+      propiedadId: id,
+      operation: operacion,
+      usuarioId: req.usuario.id,
+    });
+    return { message: "Oferta eliminada correctamente.", payload };
+  });
+};
+
+// POST /propiedades/:id/cambiar-operacion — { desde, hacia, datos }
+export const cambiarOperacionPropiedad = async (req, res) => {
+  const { id } = req.params;
+  if (!id || isNaN(parseInt(id))) {
+    return res.status(400).json({
+      success: false,
+      message: "ID de propiedad inválido o requerido",
+      data: null,
+      error: null,
+    });
+  }
+  const { desde, hacia, datos } = req.body || {};
+  return conTransaccion(res, async (client) => {
+    const payload = await cambiarOperacion(client, {
+      propiedadId: id,
+      desde,
+      hacia,
+      datos: datos || {},
+      usuarioId: req.usuario.id,
+    });
+    return { message: "Operación cambiada correctamente.", payload };
+  });
 };
