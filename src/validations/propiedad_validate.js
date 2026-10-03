@@ -1,18 +1,19 @@
+import { validarOferta } from "./ofertas_validate.js";
+import { getOperationCode, getPropertyTypeCode } from "../lib/catalogos.js";
+
 const ESTADOS_PERMITIDOS = ["publicado", "no_publicado"];
 
 export function propiedad_validate(datos, { requerirPublicador = true } = {}) {
   const errores = [];
 
-  if (datos.titulo !== undefined) {
-    if (!datos.titulo) {
-      errores.push("El título es requerido.");
-    } else if (datos.titulo.length < 3) {
+  // El título lo genera el backend: si el cliente lo manda se valida el
+  // formato, pero nunca es obligatorio.
+  if (datos.titulo !== undefined && datos.titulo !== null && datos.titulo !== "") {
+    if (datos.titulo.length < 3) {
       errores.push("El título debe tener al menos 3 caracteres.");
     } else if (datos.titulo.length > 500) {
       errores.push("El título no puede exceder los 500 caracteres.");
     }
-  } else if (requerirPublicador) {
-    errores.push("El título es requerido.");
   }
 
   if (datos.estado && !ESTADOS_PERMITIDOS.includes(datos.estado)) {
@@ -35,12 +36,8 @@ export function propiedad_validate(datos, { requerirPublicador = true } = {}) {
   return errores;
 }
 
-export function publicar_anuncio_validate(datos) {
+export async function publicar_anuncio_validate(datos) {
   const errores = [];
-
-  if (!datos.operation_type_id) {
-    errores.push("operation_type_id es requerido.");
-  }
 
   if (!datos.property_type_id) {
     errores.push("property_type_id es requerido.");
@@ -65,10 +62,42 @@ export function publicar_anuncio_validate(datos) {
     }
   }
 
-  if (datos.precio !== undefined && datos.precio !== null && datos.precio !== "") {
-    const precio = Number(datos.precio);
-    if (isNaN(precio) || precio <= 0) {
-      errores.push("El precio debe ser un número positivo.");
+  const tipoCode = datos.property_type_id
+    ? await getPropertyTypeCode(datos.property_type_id)
+    : null;
+
+  // Formato nuevo: array de ofertas [{ operation|operation_type_id, precio, ... }]
+  if (Array.isArray(datos.ofertas)) {
+    if (datos.ofertas.length === 0) {
+      errores.push("Debe incluir al menos una oferta.");
+    }
+    for (const oferta of datos.ofertas) {
+      const code = oferta.operation
+        ? String(oferta.operation).toLowerCase()
+        : await getOperationCode(oferta.operation_type_id);
+      errores.push(
+        ...(await validarOferta(code, oferta, { tipoInmuebleCode: tipoCode })),
+      );
+    }
+  } else {
+    // Formato antiguo: operation_type_id + precio + rental_type_id sueltos
+    const code = await getOperationCode(datos.operation_type_id);
+    if (!code) {
+      errores.push("operation_type_id es requerido.");
+    } else {
+      errores.push(
+        ...(await validarOferta(
+          code,
+          {
+            precio: datos.precio,
+            rental_type_id: datos.rental_type_id,
+            parking_space_price: datos.parking_space_price,
+            listing_status: datos.listing_status,
+            expires_at: datos.expires_at,
+          },
+          { tipoInmuebleCode: tipoCode },
+        )),
+      );
     }
   }
 

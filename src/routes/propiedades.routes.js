@@ -16,9 +16,14 @@ import {
   getHistorialPrecios,
   getPropiedadCaracteristicas,
   guardarPropiedadCaracteristicas,
+  getPropiedadStats,
   calcularPrecioSugeridoPropiedad,
   validarPrecioPropiedad,
   searchVivienda,
+  getOfertasPropiedad,
+  upsertOfertaPropiedad,
+  eliminarOfertaPropiedad,
+  cambiarOperacionPropiedad,
 } from "../controllers/propiedades.controllers.js";
 import { createRateLimitMiddleware, defaultLimiter } from "../lib/rateLimit.js";
 import { upload } from "../lib/multer.js";
@@ -67,6 +72,14 @@ router.get(`${ruta}/:id/resumen`, rateLimit, getPropiedadResumen);
 // Historial de precios (price_history)
 router.get(`${ruta}/:id/historial-precios`, rateLimit, getHistorialPrecios);
 
+// Estadísticas del anuncio (vistas, favoritos, mensajes) — solo el dueño
+router.get(
+  `${ruta}/:id/stats`,
+  verificarToken,
+  rateLimit,
+  getPropiedadStats,
+);
+
 // Características N:M de una propiedad (feature_catalog)
 router.get(
   `${ruta}/:id/caracteristicas`,
@@ -95,10 +108,31 @@ router.post(
 );
 router.post(`${ruta}/validar-precio`, rateLimit, validarPrecioPropiedad);
 
-// 4. PARÁMETROS DINÁMICOS GENERALES (Siempre abajo del todo para evitar colisiones de tipos)
+// 4. OFERTAS POR OPERACIÓN (antes de :id para evitar colisiones de tipos)
+router.get(`${ruta}/:id/ofertas`, verificarToken, rateLimit, getOfertasPropiedad);
+router.put(
+  `${ruta}/:id/ofertas/:operacion`,
+  verificarToken,
+  rateLimit,
+  upsertOfertaPropiedad,
+);
+router.delete(
+  `${ruta}/:id/ofertas/:operacion`,
+  verificarToken,
+  rateLimit,
+  eliminarOfertaPropiedad,
+);
+router.post(
+  `${ruta}/:id/cambiar-operacion`,
+  verificarToken,
+  rateLimit,
+  cambiarOperacionPropiedad,
+);
+
+// 5. PARÁMETROS DINÁMICOS GENERALES (Siempre abajo del todo para evitar colisiones de tipos)
 router.get(`${ruta}/:id`, rateLimit, getPropiedadesById);
 
-// 5. MÉTODOS DE ESCRITURA Y ACCIONES
+// 6. MÉTODOS DE ESCRITURA Y ACCIONES
 router.post(ruta, verificarToken, uploadFields, createPropiedades);
 router.patch(`${ruta}/:id`, verificarToken, uploadFields, updatePropiedades);
 

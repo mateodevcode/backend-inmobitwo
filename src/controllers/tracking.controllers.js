@@ -29,6 +29,30 @@ const fetchOrNull = async (...args) => {
 };
 
 // ─────────────────────────────────────────────
+// Fase 6: operación del lead. Si el cliente envía `operation` ("venta" o
+// "arriendo") se usa su id; si no, la operación principal del espejo.
+// Si Rust escribe el lead, NO lo tocamos (solo Node aquí).
+// ─────────────────────────────────────────────
+const resolverOperationLead = async (operation, propiedadId) => {
+  try {
+    if (operation) {
+      const { rows } = await pool.query(
+        "SELECT id FROM operation_types WHERE LOWER(code) = LOWER($1)",
+        [String(operation)],
+      );
+      if (rows[0]?.id) return rows[0].id;
+    }
+    const { rows } = await pool.query(
+      "SELECT operation_type_id FROM propiedades WHERE id = $1",
+      [propiedadId],
+    );
+    return rows[0]?.operation_type_id ?? null;
+  } catch {
+    return null;
+  }
+};
+
+// ─────────────────────────────────────────────
 // Busca a quién notificar (dueño de la propiedad, o agentes de la organización)
 // y le envía el correo. Marca el lead como notificado.
 // ─────────────────────────────────────────────
@@ -267,9 +291,15 @@ export const registrarEvento = async (req, res) => {
       }
       const tieneContacto = !!(datosUsuario?.email || datosUsuario?.telefono);
 
+      // Fase 6: operación del lead (body `operation`) o la principal del espejo.
+      const operationTypeId = await resolverOperationLead(
+        req.body.operation,
+        propiedad_id,
+      );
+
       const { rows: insertadoRows } = await pool.query(
-        `INSERT INTO leads (propiedad_id, sesion_id, usuario_id, nombre, email, telefono, score, origen)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, 'scoring_comportamiento')
+        `INSERT INTO leads (propiedad_id, sesion_id, usuario_id, nombre, email, telefono, score, origen, operation_type_id)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, 'scoring_comportamiento', $8)
          ON CONFLICT (sesion_id, propiedad_id) DO NOTHING
          RETURNING *`,
         [
@@ -280,6 +310,7 @@ export const registrarEvento = async (req, res) => {
           datosUsuario?.email || null,
           datosUsuario?.telefono || null,
           score,
+          operationTypeId,
         ],
       );
 
@@ -431,12 +462,18 @@ export const crearLeadDirecto = async (req, res) => {
       sesion_id_uuid = rows[0]?.id || null;
     }
 
+    // Fase 6: operación del lead (body `operation`) o la principal del espejo.
+    const operationTypeId = await resolverOperationLead(
+      req.body.operation,
+      propiedad_id,
+    );
+
     const { rows } = await pool.query(
-      `INSERT INTO leads 
-        (propiedad_id, sesion_id, nombre, email, telefono, score, origen, estado)
-       VALUES ($1, $2, $3, $4, $5, 20, 'formulario_directo', 'nuevo')
+      `INSERT INTO leads
+        (propiedad_id, sesion_id, nombre, email, telefono, score, origen, estado, operation_type_id)
+       VALUES ($1, $2, $3, $4, $5, 20, 'formulario_directo', 'nuevo', $6)
        RETURNING *`,
-      [propiedad_id, sesion_id_uuid, nombre, email, telefono],
+      [propiedad_id, sesion_id_uuid, nombre, email, telefono, operationTypeId],
     );
 
     const leadCreado = rows[0];
