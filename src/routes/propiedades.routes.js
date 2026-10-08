@@ -24,14 +24,24 @@ import {
   upsertOfertaPropiedad,
   eliminarOfertaPropiedad,
   cambiarOperacionPropiedad,
+  emitirTokenVista,
 } from "../controllers/propiedades.controllers.js";
-import { createRateLimitMiddleware, defaultLimiter } from "../lib/rateLimit.js";
+import { createRateLimitMiddleware, createRateLimiter, defaultLimiter } from "../lib/rateLimit.js";
+import { ipReal } from "../lib/ipReal.js";
+import { requiereVistas } from "../lib/validarSecretos.js";
 import { upload } from "../lib/multer.js";
 import { verificarToken, verificarRol } from "../middleware/auth.middleware.js";
 
 const router = Router();
 
 const rateLimit = createRateLimitMiddleware(defaultLimiter);
+
+// Emisor de tokens de vista (lote 3 punto 5): 30/min por IP real. Autenticados
+// 300/min por usuario (regla del limiter). Fail-open si Redis cae: bloquear
+// tokens no cuenta vistas, así que ante la duda se deja pasar.
+// Espacio propio (lote 5 punto 2): no consume el cupo de login/default.
+const viewTokenLimiter = createRateLimiter(30, 60000, 300, (req) => ipReal(req), "view-token");
+const rateLimitViewToken = createRateLimitMiddleware(viewTokenLimiter);
 
 const uploadFields = upload.fields([
   { name: "imagenPrincipal", maxCount: 1 },
@@ -128,6 +138,9 @@ router.post(
   rateLimit,
   cambiarOperacionPropiedad,
 );
+
+// Token de ficha para medición de vistas (pública + rate-limit; verifica Rust)
+router.post(`${ruta}/:id/view-token`, requiereVistas, rateLimitViewToken, emitirTokenVista);
 
 // 5. PARÁMETROS DINÁMICOS GENERALES (Siempre abajo del todo para evitar colisiones de tipos)
 router.get(`${ruta}/:id`, rateLimit, getPropiedadesById);

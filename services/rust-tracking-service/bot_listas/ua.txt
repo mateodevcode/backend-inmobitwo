@@ -1,0 +1,33 @@
+# Listas de user-agents de bots (una subcadenas por línea, en minúsculas).
+# Líneas vacías y las que empiezan con # se ignoran.
+# Se carga en memoria al arrancar rust-tracking y cada 10 min (punto 5).
+# Versionalo: cualquier cambio aquí se propaga sin redeploy en ≤10 min.
+bot
+crawl
+spider
+slurp
+mediapartners
+baidu
+yandex
+sogou
+exabot
+facebot
+ia_archiver
+python-requests
+curl
+wget
+headless
+ahrefs
+semrush
+mj12bot
+dotbot
+petalbot
+bytespider
+gptbot
+ccbot
+anthropic-ai
+claudebot
+perplexitybot
+dataforseo
+serpstat
+oai-searchbot

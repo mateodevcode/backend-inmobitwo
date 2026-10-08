@@ -44,6 +44,14 @@ services:
       context: ./services/rust-tracking-service
       dockerfile: Dockerfile
     container_name: inmobitwo-rust-tracking
+    # Paso8 6c: drenaje del lote de vistas_log antes de matar (cierre ordenado).
+    stop_grace_period: 35s
+    # Paso9 2: ua.txt como volumen de SOLO LECTURA desde el host
+    # (services/rust-tracking-service/bot_listas). Editar el archivo en el
+    # repo basta: la recarga cada 10 min lo toma sin reconstruir la imagen.
+    # La copia dentro de la imagen queda como respaldo si se corre sin mount.
+    volumes:
+      - ./services/rust-tracking-service/bot_listas:/root/bot_listas:ro
     env_file:
       - .env
     environment:

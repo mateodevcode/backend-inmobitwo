@@ -10,6 +10,15 @@
 -- 1. drop_tracking.sql
 -- 2. schema.tracking.sql
 --
+-- MIGRACIONES INCREMENTALES (src/database/migrations/, en orden numérico):
+-- 001_property_listings.sql -> ofertas por operación
+-- 002_vistas_detalle.sql    -> log + resumen diario de vistas (no toca tracking existente)
+-- 003_vistas_log_sin_fk.sql -> vistas_log.propiedad_id sin FK (el log sobrevive al borrado)
+-- 004_vistas_log_tope_ip.sql -> motivo tope_ip en el CHECK de vistas_log
+-- 005_vistas_log_visible_incoherente.sql -> motivo visible_incoherente en el CHECK
+-- 007_vistas_bot_ips.sql -> CIDRs de bots/datacenters para vistas (carga en memoria)
+-- 008_vistas_log_counted_idx.sql -> índice parcial (propiedad, fecha) WHERE counted
+--
 -- NOTA: db.sql es la fuente de verdad única. Actualizarlo siempre al agregar
 --       catálogos, columnas o features nuevos.
 -- ============================================================================

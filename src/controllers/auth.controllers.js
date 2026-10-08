@@ -9,6 +9,31 @@ import { CAMPOS_USUARIO } from "../constants/api/fields.js";
 import { createTransporter } from "../utils/createTransporter.js";
 import { codigoOtpLogin } from "../utils/emails/codigoOtpLogin.js";
 import { BREVO_EMAIL_NO_REPLY } from "../config.js";
+import {
+  COOKIE_INTERNO,
+  firmarInterno,
+  opcionesCookieInterno,
+} from "../lib/cookieInterno.js";
+
+// ─────────────────────────────────────────────
+// Cookie de interno (paso8 6b): se setea al emitir sesión si el usuario es
+// superadmin o miembro ACTIVO (agent/agency_admin) de alguna organización.
+// ─────────────────────────────────────────────
+const setCookieInternoSiCorresponde = async (res, usuario) => {
+  let esInterno = usuario.rol === "superadmin";
+  if (!esInterno) {
+    const { rows } = await pool.query(
+      `SELECT 1 FROM organizacion_miembros
+       WHERE usuario_id = $1 AND estado = 'activo'
+       LIMIT 1`,
+      [usuario.id],
+    );
+    esInterno = rows.length > 0;
+  }
+  if (esInterno) {
+    res.cookie(COOKIE_INTERNO, firmarInterno(usuario.id), opcionesCookieInterno());
+  }
+};
 
 // ─────────────────────────────────────────────
 // Segundo factor OTP en el login (solo usuarios con email_verificado)
@@ -53,6 +78,14 @@ const emitirSesion = async (res, usuario, message = "Login correcto.") => {
   );
 
   res.cookie("refresh_token", refreshToken, cookieOpciones);
+
+  // Cookie de interno (paso8 6b): solo superadmin o miembro activo
+  // (agent/agency_admin). Nunca para usuarios normales que solo publican.
+  try {
+    await setCookieInternoSiCorresponde(res, usuario);
+  } catch (e) {
+    console.error("⚠️ No se pudo setear cookie de interno:", e.message);
+  }
 
   return res.status(200).json({
     success: true,
@@ -576,8 +609,9 @@ export const logout = async (req, res) => {
       );
     }
 
-    // Eliminar la cookie
+    // Eliminar las cookies (refresh + interno)
     res.clearCookie("refresh_token", cookieOpciones);
+    res.clearCookie(COOKIE_INTERNO, opcionesCookieInterno());
 
     return res.status(200).json({
       success: true,

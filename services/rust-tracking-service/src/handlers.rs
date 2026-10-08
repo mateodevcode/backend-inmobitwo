@@ -6,8 +6,23 @@ use crate::models::*;
 use crate::scoring;
 use crate::state::AppState;
 
-pub async fn health_check() -> impl Responder {
-    HttpResponse::Ok().json(serde_json::json!({ "status": "ok", "service": "rust-tracking" }))
+pub async fn health_check(state: web::Data<crate::state::AppState>) -> HttpResponse {
+    let bot_listas = state.vista_deps.as_ref().and_then(|d| {
+        d.bot_listas
+            .read()
+            .ok()
+            .map(|e| serde_json::json!({
+                "ua": e.listas.ua_substrings.len(),
+                "cidr": e.listas.redes.len(),
+                "fuente": e.ua_fuente,
+            }))
+    });
+    HttpResponse::Ok().json(serde_json::json!({
+        "status": "ok",
+        "service": "rust-tracking",
+        "vistas_habilitado": state.vista_deps.is_some(),
+        "bot_listas": bot_listas,
+    }))
 }
 
 pub async fn registrar_sesion(
