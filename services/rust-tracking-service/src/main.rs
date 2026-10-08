@@ -20,14 +20,51 @@ async fn main() -> std::io::Result<()> {
     tracing_subscriber::fmt::init();
     dotenvy::dotenv().ok();
 
-    let database_url = std::env::var("DATABASE_URL").expect("DATABASE_URL must be set");
+    let database_url = std::env::var("DATABASE_URL").unwrap_or_default();
     let redis_url = std::env::var("REDIS_URL").expect("REDIS_URL must be set");
 
-    let pool = PgPoolOptions::new()
-        .max_connections(50)
-        .connect(&database_url)
-        .await
-        .expect("Error connecting to database");
+    // Vista de detalle: la conexión a Postgres se arma por PARTES (host,
+    // puerto, usuario, password, base), igual que el backend Node. Armarla
+    // como string URL se rompe si el password trae @ # / ? : sin codificar
+    // (sqlx informa EmptyHost aunque las credenciales sean correctas).
+    // Se mantiene DATABASE_URL como respaldo por compatibilidad.
+    let pool = match (
+        std::env::var("DB_HOST"),
+        std::env::var("DB_PORT"),
+        std::env::var("DB_USER"),
+        std::env::var("DB_PASSWORD"),
+        std::env::var("DB_NAME"),
+    ) {
+        (Ok(host), Ok(port), Ok(user), Ok(password), Ok(db))
+            if !host.is_empty() && !user.is_empty() && !db.is_empty() =>
+        {
+            let port: u16 = port.parse().unwrap_or(5432);
+            tracing::info!("vistas: Postgres por partes ({host}:{port}/{db})");
+            PgPoolOptions::new()
+                .max_connections(50)
+                .connect_with(
+                    sqlx::postgres::PgConnectOptions::new()
+                        .host(&host)
+                        .port(port)
+                        .username(&user)
+                        .password(&password)
+                        .database(&db),
+                )
+                .await
+                .expect("Error connecting to database")
+        }
+        _ => {
+            if database_url.is_empty() {
+                panic!("Faltan DB_HOST/DB_PORT/DB_USER/DB_PASSWORD/DB_NAME y tampoco hay DATABASE_URL");
+            }
+            tracing::info!("vistas: Postgres por DATABASE_URL");
+            PgPoolOptions::new()
+                .max_connections(50)
+                .connect(&database_url)
+                .await
+                .expect("Error connecting to database")
+        }
+    };
 
     let redis_client = redis::Client::open(redis_url).expect("Error creating Redis client");
     let redis_conn = redis_client.get_multiplexed_async_connection().await.expect("Error connecting to Redis");

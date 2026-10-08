@@ -453,6 +453,8 @@ pub fn decidir_vista(
 /// Lee una variable de entorno para tests de integración (punto 6): si falta
 /// y no existe `VISTAS_SKIP_INTEGRATION=1`, PANIC con mensaje claro en vez de
 /// omitir en silencio. Con `=1`, devuelve `None` y el test se auto-omite.
+/// Solo se usa en tests.
+#[cfg(test)]
 pub fn req_env_integracion(nombre: &str) -> Option<String> {
     match std::env::var(nombre) {
         Ok(v) => Some(v),

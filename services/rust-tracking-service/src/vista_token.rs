@@ -37,15 +37,6 @@ pub enum ErrorViewToken {
     Expirado,
 }
 
-impl ErrorViewToken {
-    pub fn motivo(&self) -> &'static str {
-        match self {
-            ErrorViewToken::Invalido => "token_invalido",
-            ErrorViewToken::Expirado => "token_expirado",
-        }
-    }
-}
-
 #[derive(Debug, Deserialize)]
 struct PayloadToken {
     pid: i32,
