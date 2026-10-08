@@ -26,6 +26,7 @@ import {
 } from "../lib/ofertas.service.js";
 import { regenerarTitulo } from "../lib/tituloPropiedad.js";
 import { getOperationCode } from "../lib/catalogos.js";
+import { emitirViewToken } from "../lib/viewToken.js";
 
 const TAMANOS = ["thumbnail", "small", "medium", "large", "xlarge"];
 
@@ -3612,8 +3613,10 @@ export const guardarPropiedadCaracteristicas = async (req, res) => {
 };
 
 // GET /propiedades/:id/stats — vistas, favoritos y mensajes del anuncio.
-// Solo el dueño (o miembro activo de su organización). Las vistas cuentan
-// sesiones distintas con evento vista_propiedad (incluye las del propio dueño).
+// Solo el dueño (o miembro activo de su organización). Las vistas salen del
+// resumen diario del algoritmo de vista de detalle (vistas_log es la fuente
+// de verdad; el funnel legacy de eventos_tracking sigue intacto pero ya no
+// alimenta este contador: ahora excluye internos, bots y duplicados).
 export const getPropiedadStats = async (req, res) => {
   const { id } = req.params;
   if (!id || isNaN(parseInt(id))) {
@@ -3648,9 +3651,10 @@ export const getPropiedadStats = async (req, res) => {
     const [{ rows: vistas }, { rows: favs }, { rows: leads }] =
       await Promise.all([
         pool.query(
-          `SELECT COUNT(DISTINCT sesion_id)::int AS total
-           FROM eventos_tracking
-           WHERE propiedad_id = $1 AND tipo_evento = 'vista_propiedad'`,
+          `SELECT COALESCE(SUM(vistas), 0)::int AS total,
+                  COALESCE(SUM(visitantes_unicos), 0)::int AS unicos
+           FROM vistas_resumen_diario
+           WHERE propiedad_id = $1`,
           [id],
         ),
         pool.query(
@@ -3670,6 +3674,7 @@ export const getPropiedadStats = async (req, res) => {
       data: {
         propiedad_id: Number(id),
         vistas: vistas[0]?.total ?? 0,
+        visitantes_unicos: vistas[0]?.unicos ?? 0,
         favoritos: favs[0]?.total ?? 0,
         mensajes: leads[0]?.total ?? 0,
       },
@@ -3967,4 +3972,44 @@ export const cambiarOperacionPropiedad = async (req, res) => {
     });
     return { message: "Operación cambiada correctamente.", payload };
   });
+};
+
+// Token de ficha para medición de vistas (algoritmo de vista de detalle, Fase 3).
+// Ruta pública con rate-limit: prueba que la ficha se cargó y ata el evento al inmueble.
+// La verificación (firma, vigencia, uso único) la hace el tracking-service en Rust.
+export const emitirTokenVista = async (req, res) => {
+  const { id } = req.params;
+  const pid = parseInt(id);
+  if (!id || isNaN(pid)) {
+    return res.status(400).json({
+      success: false,
+      message: "ID de propiedad inválido o requerido",
+      data: null,
+      error: null,
+    });
+  }
+  try {
+    const { token, expires_at } = emitirViewToken(pid);
+    return res.json({
+      success: true,
+      message: "Token de vista generado.",
+      data: { view_token: token, expires_at },
+      error: null,
+    });
+  } catch (e) {
+    if (e.message === "VIEW_TOKEN_SECRET no configurado") {
+      return res.status(500).json({
+        success: false,
+        message: "Medición de vistas no configurada.",
+        data: null,
+        error: null,
+      });
+    }
+    return res.status(400).json({
+      success: false,
+      message: e.message,
+      data: null,
+      error: null,
+    });
+  }
 };

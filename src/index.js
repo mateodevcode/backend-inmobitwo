@@ -22,10 +22,37 @@ import iaRoutes from "./routes/ia.routes.js";
 import passwordRecoveryRoutes from "./routes/password.recovery.routes.js";
 import { corsOptions } from "./cors.config.js";
 import { errorHandler } from "./middleware/error.middleware.js";
+import { validarSecretosArranque, vistasHabilitadas } from "./lib/validarSecretos.js";
+
+// Secretos de vistas: si faltan, error MUY visible pero el resto arranca
+// (punto 1). Solo las rutas de vistas responden 503 (ver requiereVistas).
+try {
+  validarSecretosArranque();
+} catch (e) {
+  console.error(`\n❌❌❌ ${e.message} — VISTAS DESHABILITADAS (view-token y /tracking/vista responden 503) ❌❌❌\n`);
+}
+
+// Depuración de IP (paso8 6d): advertencia explícita si está activa.
+if (process.env.VISTA_DEBUG_IP === "1") {
+  console.warn(
+    "\n⚠️⚠️⚠️ VISTA_DEBUG_IP=1 ACTIVO: registrarVista imprime IPs en claro en el log. ¡Apágalo en producción! ⚠️⚠️⚠️\n",
+  );
+}
 
 const app = express();
 
-app.set("trust proxy", true);
+// Un solo salto (nginx). Con `true` se aceptaba X-Forwarded-For de cualquiera
+// que llegara directo al puerto (lote 6 punto 6a + paso2).
+app.set("trust proxy", 1);
+
+// Salud: incluye si las vistas están habilitadas (punto 1).
+app.get("/health", (req, res) => {
+  res.json({
+    status: "ok",
+    service: "backend-inmobitwo",
+    vistas_habilitado: vistasHabilitadas(),
+  });
+});
 
 app.use(cors(corsOptions));
 app.use(cookieParser()); // ← necesario para leer req.cookies

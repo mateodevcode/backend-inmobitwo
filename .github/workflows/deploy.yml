@@ -77,6 +77,25 @@ jobs:
             echo "→ Estado..."
             sleep 5
             docker compose ps
-            docker compose ps | grep -q "Up" || (echo "❌ Algún contenedor no está corriendo" && exit 1)
+            docker compose ps | grep -q "Up" || { echo "❌ Algún contenedor no está corriendo"; exit 1; }
             curl -sf https://api.inmobitwo.seventwo.tech/auth/check-email -X POST -H 'Content-Type: application/json' -d '{}' || echo "⚠️ la API no responde aún (revisa: docker logs inmobitwo-backend)"
+
+            echo "→ Verificando vistas_habilitado en ambos /health (paso8 6g, paso9: reintentos)..."
+            esperar_health() {
+              # $1 = descripción, $2 = comando que imprime el JSON (entre comillas)
+              i=1
+              while [ $i -le 12 ]; do
+                SALUD=$(eval "$2" 2>/dev/null) && echo "$SALUD" | grep -q '"vistas_habilitado":true' && {
+                  echo "✅ $1: vistas_habilitado=true (intento $i)"
+                  return 0
+                }
+                echo "… $1 sin vistas todavía (intento $i/12), esperando 5 s..."
+                sleep 5
+                i=$((i + 1))
+              done
+              echo "❌ vistas_habilitado de $1 no es true tras 12 intentos (último: $SALUD)"
+              return 1
+            }
+            esperar_health "BACKEND" "curl -sf https://api.inmobitwo.seventwo.tech/health" || exit 1
+            esperar_health "RUST-TRACKING" "docker exec inmobitwo-backend node -e \"fetch('http://inmobitwo-rust-tracking:3002/health').then(r=>r.text()).then(t=>console.log(t))\"" || exit 1
             echo "✅ Deploy Backend OK"

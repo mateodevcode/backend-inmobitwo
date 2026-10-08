@@ -11,7 +11,10 @@ import {
   BREVO_EMAIL_NO_REPLY,
   FRONTEND_URL,
   RUST_TRACKING_URL,
+  VIEW_INTERNAL_SECRET,
 } from "../config.js";
+import { ipReal } from "../lib/ipReal.js";
+import { esInternoPorCookie } from "../lib/cookieInterno.js";
 
 const fetchOrNull = async (...args) => {
   try {
@@ -720,5 +723,145 @@ export const getLogsTracking = async (req, res) => {
       error: "Error interno del servidor.",
       details: error.message,
     });
+  }
+};
+
+// ─────────────────────────────────────────────
+// Vista de detalle (algoritmo Fase 5). Node NO decide: enriquece el evento
+// (user_id, IP real, user-agent, estado del inmueble, es_interno) y lo
+// reenvía a Rust. SIN fallback a Express (decisión 3): si Rust no responde
+// (timeout 5s), se contesta error_sistema y no se cuenta.
+// ─────────────────────────────────────────────
+const vistaErrorSistema = (res) =>
+  res.status(200).json({
+    success: true,
+    message: "Vista no contada: error del sistema.",
+    data: { result: "rejected", reason: "error_sistema" },
+  });
+
+export const registrarVista = async (req, res) => {
+  try {
+    if (!RUST_TRACKING_URL) return vistaErrorSistema(res);
+
+    const {
+      view_token,
+      propiedad_id,
+      anon_id,
+      source,
+      utm,
+      referer,
+      visible_seconds,
+    } = req.body || {};
+    const pid = parseInt(propiedad_id);
+    if (!view_token || isNaN(pid)) {
+      return res.status(400).json({
+        success: false,
+        error: "view_token y propiedad_id son requeridos.",
+      });
+    }
+
+    const user_id = req.usuario?.id ?? null;
+
+    // Depuración de IP (paso8 6d): solo con VISTA_DEBUG_IP=1. ¡Imprime datos
+    // personales en el log! Apagado por defecto.
+    if (process.env.VISTA_DEBUG_IP === "1") {
+      console.warn(`[VISTA_DEBUG_IP] ip_address en claro: ${req.ip ?? null}`);
+    }
+
+    // anon_id solo si la sesión dio consentimiento; si no, cae a identidad
+    // débil (fail-closed de identidad, decisión 9).
+    let anon = typeof anon_id === "string" && anon_id.trim() ? anon_id : null;
+    if (anon) {
+      try {
+        const { rows } = await pool.query(
+          "SELECT consentimiento_dado FROM sesiones_tracking WHERE session_id = $1",
+          [anon],
+        );
+        if (!rows[0]?.consentimiento_dado) anon = null;
+      } catch {
+        anon = null;
+      }
+    }
+
+    // Estado del inmueble + cálculo de interno (dueño, superadmin o miembro
+    // activo de la organización del inmueble).
+    let inmueble = null;
+    try {
+      const { rows } = await pool.query(
+        `SELECT estado, listing_status, expires_at, organizacion_id, publicado_por_id
+         FROM propiedades WHERE id = $1`,
+        [pid],
+      );
+      inmueble = rows[0] ?? null;
+    } catch {
+      return vistaErrorSistema(res);
+    }
+
+    let es_interno = false;
+    if (user_id && inmueble) {
+      if (inmueble.publicado_por_id === user_id) {
+        es_interno = true;
+      } else {
+        try {
+          const { rows: urows } = await pool.query(
+            "SELECT rol FROM usuarios WHERE id = $1",
+            [user_id],
+          );
+          if (urows[0]?.rol === "superadmin") {
+            es_interno = true;
+          } else if (inmueble.organizacion_id) {
+            const { rows: mrows } = await pool.query(
+              `SELECT 1 FROM organizacion_miembros
+               WHERE organizacion_id = $1 AND usuario_id = $2 AND estado = 'activo'`,
+              [inmueble.organizacion_id, user_id],
+            );
+            es_interno = mrows.length > 0;
+          }
+        } catch {
+          return vistaErrorSistema(res);
+        }
+      }
+    }
+
+    // Cookie de interno (paso8 6b): staff navegando sin sesión también cuenta
+    // como interno si la cookie es válida.
+    if (!es_interno && esInternoPorCookie(req)) {
+      es_interno = true;
+    }
+
+    try {
+      const axios = (await import("axios")).default;
+      const response = await axios.post(
+        `${RUST_TRACKING_URL}/tracking/vista`,
+        {
+          view_token,
+          propiedad_id: pid,
+          anon_id: anon,
+          user_id,
+          ip_address: ipReal(req),
+          user_agent: req.headers["user-agent"] ?? null,
+          es_interno,
+          source: source ?? null,
+          utm: utm ?? null,
+          referer: referer ?? req.headers.referer ?? null,
+          visible_seconds: visible_seconds ?? null,
+        },
+        {
+          timeout: 5000,
+          headers: {
+            // Secreto interno: Rust responde 401 sin él (lote 3 punto 4).
+            ...(VIEW_INTERNAL_SECRET
+              ? { "X-Internal-Secret": VIEW_INTERNAL_SECRET }
+              : {}),
+          },
+        },
+      );
+      return res.status(200).json(response.data);
+    } catch {
+      return vistaErrorSistema(res);
+    }
+  } catch (error) {
+    console.error("Error en POST /tracking/vista:", error.message);
+    return vistaErrorSistema(res);
   }
 };

@@ -6,10 +6,12 @@ RUN mkdir src && echo "fn main() {}" > src/main.rs
 RUN cargo build --release
 RUN rm -rf src
 COPY src ./src
+COPY bot_listas ./bot_listas
 RUN touch src/main.rs && cargo build --release
 FROM alpine:latest
 RUN apk --no-cache add ca-certificates
 WORKDIR /root/
 COPY --from=builder /app/target/release/rust-tracking-service .
+COPY --from=builder /app/bot_listas ./bot_listas
 EXPOSE 3002
 CMD ["./rust-tracking-service"]

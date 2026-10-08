@@ -30,6 +30,15 @@ export const RUST_TRACKING_URL = process.env.RUST_TRACKING_URL;
 export const RUST_MEDIA_URL = process.env.RUST_MEDIA_URL;
 export const RUST_WEBSOCKET_URL = process.env.RUST_WEBSOCKET_URL;
 
+// vistas — token de ficha HMAC (algoritmo de vista de detalle, Fase 3).
+// Secreto NUEVO, distinto de JWT_SECRET. Debe coincidir con el del tracking-service.
+export const VIEW_TOKEN_SECRET = process.env.VIEW_TOKEN_SECRET;
+export const VIEW_TOKEN_MAX_AGE_MINUTES = process.env.VIEW_TOKEN_MAX_AGE_MINUTES;
+// Secreto interno Node→Rust (lote 3): Rust exige X-Internal-Secret en /tracking/vista.
+export const VIEW_INTERNAL_SECRET = process.env.VIEW_INTERNAL_SECRET;
+// Cookie de interno (paso8 6b): HMAC propio, NUNCA el de vistas.
+export const INTERNO_COOKIE_SECRET = process.env.INTERNO_COOKIE_SECRET;
+
 // ia (DeepSeek)
 export const DEEPSEEK_API_KEY = process.env.DEEPSEEK_API_KEY;
 export const DEEPSEEK_BASE_URL = process.env.DEEPSEEK_BASE_URL;

@@ -4,14 +4,19 @@ import { redis } from "./redis.js";
 // - Anónimo (por IP, compartida tras un NAT): estricto, como hasta ahora.
 // - Autenticado (por usuario, requiere que verificarToken corra antes):
 //   generoso — un toggle dispara PATCH + lista + detalle + leads + título.
+// - Espacio de nombres (namespace): cada limitador tiene sus claves
+//   (punto 2), p. ej. rate_limit:view-token:ip:{ip}. Sin namespace se
+//   mantiene el formato histórico rate_limit:ip:{ip}.
 // Si Redis falla, se deja pasar (fail-open): el límite no puede tumbar la app.
-export function createRateLimiter(maxRequests = 10, windowMs = 60000, authMaxRequests = null) {
+export function createRateLimiter(maxRequests = 10, windowMs = 60000, authMaxRequests = null, getAnonKey = null, namespace = "") {
   const authMax = authMaxRequests ?? maxRequests * 10;
+  const ns = namespace ? `:${namespace}` : "";
   return async (req) => {
     const userId = req.usuario?.id;
-    const key = userId
-      ? `rate_limit:user:${userId}`
-      : `rate_limit:ip:${req.headers["x-api-key"] || req.ip || "anonymous"}`;
+    const anonKey = getAnonKey
+      ? getAnonKey(req) || "anonymous"
+      : req.headers["x-api-key"] || req.ip || "anonymous";
+    const key = userId ? `rate_limit${ns}:user:${userId}` : `rate_limit${ns}:ip:${anonKey}`;
     const max = userId ? authMax : maxRequests;
 
     try {
