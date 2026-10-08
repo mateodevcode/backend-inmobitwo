@@ -33,8 +33,8 @@ use std::sync::Arc;
 use tokio::sync::mpsc;
 
 use crate::vista_decision::{
-    decidir_vista, fecha_bogota_string, req_env_integracion, MotivoRechazo, VistaConfig,
-    VistaDecision, VistaEvento, VistaEstadoConsultado,
+    decidir_vista, fecha_bogota_string, MotivoRechazo, VistaConfig, VistaDecision, VistaEvento,
+    VistaEstadoConsultado,
 };
 use crate::vista_estado::{aplicar_estado, DecisionEstado, EntradaEstado, ErrorEstado};
 use crate::vista_token::{verificar_view_token, ErrorViewToken};
@@ -156,7 +156,11 @@ impl EmisorLog {
         match self.tx.try_send(fila) {
             Ok(()) => ResultadoEnvio::Encolada,
             Err(mpsc::error::TrySendError::Closed(fila)) => {
-                tracing::error!("vistas: canal de log cerrado");
+                // Canal muerto (apagado a medias): se registra qué se perdió.
+                tracing::error!(
+                    "vistas: canal de log cerrado, fila perdida (propiedad {})",
+                    fila.propiedad_id
+                );
                 if es_counted {
                     ResultadoEnvio::PerdidaCounted
                 } else {
@@ -211,6 +215,8 @@ impl EmisorLog {
     }
 
     /// Filas descartadas por canal lleno desde el arranque.
+    /// Solo se lee en tests (en producción solo se incrementa).
+    #[cfg(test)]
     pub fn descartes(&self) -> u64 {
         self.descartes.load(Ordering::Relaxed)
     }
@@ -452,6 +458,8 @@ pub struct BotEstado {
 }
 
 impl BotEstado {
+    /// Solo para tests (en producción se usa `cargar_listas_bots`).
+    #[cfg(test)]
     pub fn base() -> Self {
         Self {
             listas: BotListas::base(),
@@ -1134,6 +1142,8 @@ pub async fn consolidar_resumen(pool: &PgPool) -> Result<u64, sqlx::Error> {
 
 /// Recálculo MANUAL de toda la ventana de retención (punto 2): corrige
 /// cualquier fecha, no solo hoy/ayer. Idempotente. Uso explícito, no automático.
+/// Solo se usa en tests (en producción corre el job); el binario no lo llama.
+#[cfg(test)]
 pub async fn consolidar_completo(pool: &PgPool) -> Result<u64, sqlx::Error> {
     consolidar_fechas(pool, None).await
 }
@@ -1175,6 +1185,7 @@ async fn consolidar_fechas(
 mod tests {
     use super::*;
     use crate::state::AppState;
+    use crate::vista_decision::req_env_integracion;
     use dashmap::DashMap;
     use std::sync::Arc;
 
@@ -1658,7 +1669,7 @@ mod tests {
             .connect_lazy("postgres://t:t@127.0.0.1:1/t")
             .expect("lazy no falla al crear");
         let cliente = redis::Client::open(redis_url).unwrap();
-        let mut conn = cliente.get_multiplexed_async_connection().await.unwrap();
+        let conn = cliente.get_multiplexed_async_connection().await.unwrap();
         let deps = VistaDeps {
             config: VistaConfig::default(),
             view_token_secret: SECRETO.to_string(),

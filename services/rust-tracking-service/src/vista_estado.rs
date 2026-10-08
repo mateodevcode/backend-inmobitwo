@@ -13,7 +13,7 @@
 //! primera. El dedupe se verifica contra todas; el tope se SUMA entre todas
 //! y solo se incrementa/marcan las de la primaria.
 
-use crate::vista_decision::{req_env_integracion, VistaConfig};
+use crate::vista_decision::VistaConfig;
 
 /// Prefijo propio para no chocar con `score:*` / `rate_limit:*` actuales.
 pub const PREFIJO: &str = "vistas";
@@ -172,6 +172,8 @@ pub enum DecisionEstado {
 }
 
 impl DecisionEstado {
+    /// Solo se usa en tests (el mapeo real a `VistaDecision` está en vista_api).
+    #[cfg(test)]
     pub fn motivo(&self) -> &'static str {
         match self {
             DecisionEstado::Counted => "counted",
@@ -186,7 +188,10 @@ impl DecisionEstado {
 
 pub struct SalidaEstado {
     pub decision: DecisionEstado,
+    /// Conteos devueltos por el Lua (informativos; hoy solo se usa `decision`).
+    #[allow(dead_code)]
     pub rate_visitante: i64,
+    #[allow(dead_code)]
     pub rate_ip: i64,
 }
 
@@ -274,6 +279,7 @@ pub async fn aplicar_estado(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::vista_decision::req_env_integracion;
 
     fn cfg() -> VistaConfig {
         VistaConfig::default()
