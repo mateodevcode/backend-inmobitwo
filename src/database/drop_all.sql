@@ -1,5 +1,6 @@
 -- SCRIPT DE LIMPIEZA TOTAL (DROP) — INMOBITWO Master Reset
--- Versión: 5.0 Colombia — Incluye catálogos, features N:M, historial de precios
+-- Versión: 5.0 Colombia + Tracking + Vistas — Incluye catálogos, features N:M,
+-- historial de precios, tracking/leads y vistas de detalle
 -- ============================================================================
 -- 1. Eliminación de Vistas
 DROP VIEW IF EXISTS v_property_summary CASCADE;
@@ -11,10 +12,27 @@ DROP TRIGGER IF EXISTS trg_org_miembros_updated_at ON organizacion_miembros;
 DROP TRIGGER IF EXISTS trg_propiedades_updated_at ON propiedades;
 DROP TRIGGER IF EXISTS trg_room_seeker_updated_at ON room_seeker_profiles;
 DROP TRIGGER IF EXISTS trg_propiedades_geom_sync ON propiedades;
+DROP TRIGGER IF EXISTS trg_leads_updated_at ON leads;
+DROP TRIGGER IF EXISTS trg_listings_updated_at ON property_listings;
+DROP TRIGGER IF EXISTS trg_property_listings_sync ON property_listings;
 -- 3. Eliminación de Funciones
 DROP FUNCTION IF EXISTS update_updated_at_column();
 DROP FUNCTION IF EXISTS sync_geom_from_lat_lng();
 -- 4. Eliminación de Tablas (orden inverso de dependencias)
+-- Vistas de detalle (primero: referencian propiedades/usuarios/organizaciones;
+-- vistas_log y vistas_bot_ips NO tienen FK entrante que las arrastre)
+DROP TABLE IF EXISTS vistas_rate_limit_agregado CASCADE;
+DROP TABLE IF EXISTS vistas_identidades CASCADE;
+DROP TABLE IF EXISTS vistas_resumen_diario CASCADE;
+DROP TABLE IF EXISTS vistas_log CASCADE;
+DROP TABLE IF EXISTS vistas_bot_ips CASCADE;
+-- Tracking y leads
+DROP TABLE IF EXISTS leads CASCADE;
+DROP TABLE IF EXISTS eventos_tracking CASCADE;
+DROP TABLE IF EXISTS sesiones_tracking CASCADE;
+-- Ofertas por operación + historial
+DROP TABLE IF EXISTS property_listing_history CASCADE;
+DROP TABLE IF EXISTS property_listings CASCADE;
 -- Tablas relacionales / N:M / historiales
 DROP TABLE IF EXISTS room_seeker_profiles CASCADE;
 DROP TABLE IF EXISTS refresh_tokens CASCADE;
@@ -50,5 +68,5 @@ DROP EXTENSION IF EXISTS postgis CASCADE;
 DROP EXTENSION IF EXISTS unaccent CASCADE;
 DROP EXTENSION IF EXISTS pg_trgm CASCADE;
 -- ============================================================================
--- ✅ BASE DE DATOS LIMPIA — Listo para ejecutar db_completo_colombia.sql
+-- ✅ BASE DE DATOS LIMPIA — Listo para ejecutar db.sql
 -- ============================================================================

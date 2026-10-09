@@ -20,6 +20,11 @@
 -- 14. funciones y triggers
 -- 15. vistas útiles
 -- 16. índices finales
+-- 17. datos de catálogos
+-- 18. ofertas por operación (réplica de migrations/001)
+-- 19. tracking y leads (réplica de schema.tracking.sql; va ANTES del
+--     bloque 18 porque este hace ALTER TABLE leads)
+-- 20. vistas de detalle (estado final de migrations/002-008, sin FK en log)
 -- ============================================================================
 -- ============================================================================
 -- 0. EXTENSIONES PREVIAS REQUERIDAS
@@ -1045,6 +1050,114 @@ VALUES (
         'boolean'
     );
 -- ============================================================================
+-- 19. TRACKING Y LEADS (réplica de src/database/schema.tracking.sql para
+-- instalaciones nuevas; el orden respeta dependencias ya creadas)
+-- ============================================================================
+-- NOTA: este bloque es idéntico a src/database/schema.tracking.sql
+-- (salvo este encabezado). Cualquier cambio debe hacerse en ambos.
+-- Va ANTES del bloque 18 porque aquel hace ALTER TABLE leads.
+-- ============================================================================
+-- 19.1 SESIONES_TRACKING
+-- Identifica a cada visitante (anónimo o logueado) de forma persistente
+-- ============================================================================
+CREATE TABLE IF NOT EXISTS sesiones_tracking (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    session_id VARCHAR(100) UNIQUE NOT NULL,
+    usuario_id INTEGER,
+    ip_address VARCHAR(45),
+    user_agent TEXT,
+    ciudad_aproximada VARCHAR(100),
+    consentimiento_dado BOOLEAN DEFAULT false,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    ultima_actividad TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (usuario_id) REFERENCES usuarios(id) ON DELETE SET NULL
+);
+CREATE INDEX IF NOT EXISTS idx_sesiones_session_id ON sesiones_tracking(session_id);
+CREATE INDEX IF NOT EXISTS idx_sesiones_usuario_id ON sesiones_tracking(usuario_id);
+
+-- ============================================================================
+-- 19.2 EVENTOS_TRACKING
+-- Cada acción individual del visitante sobre una propiedad
+-- ============================================================================
+CREATE TABLE IF NOT EXISTS eventos_tracking (
+    id BIGSERIAL PRIMARY KEY,
+    sesion_id UUID NOT NULL,
+    propiedad_id INTEGER NOT NULL,
+    -- 'vista_propiedad' | 'vista_imagen' | 'favorito_agregado' |
+    -- 'click_telefono' | 'click_whatsapp' | 'formulario_enviado' | 'tiempo_en_pagina'
+    tipo_evento VARCHAR(50) NOT NULL,
+    metadata JSONB,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (sesion_id) REFERENCES sesiones_tracking(id) ON DELETE CASCADE,
+    FOREIGN KEY (propiedad_id) REFERENCES propiedades(id) ON DELETE CASCADE,
+    CONSTRAINT tipo_evento_valido CHECK (
+        tipo_evento IN (
+            'vista_propiedad',
+            'vista_imagen',
+            'favorito_agregado',
+            'click_telefono',
+            'click_whatsapp',
+            'formulario_enviado',
+            'tiempo_en_pagina'
+        )
+    )
+);
+CREATE INDEX IF NOT EXISTS idx_eventos_sesion ON eventos_tracking(sesion_id);
+CREATE INDEX IF NOT EXISTS idx_eventos_propiedad ON eventos_tracking(propiedad_id);
+CREATE INDEX IF NOT EXISTS idx_eventos_tipo ON eventos_tracking(tipo_evento);
+CREATE INDEX IF NOT EXISTS idx_eventos_sesion_propiedad ON eventos_tracking(sesion_id, propiedad_id);
+
+-- ============================================================================
+-- 19.3 LEADS
+-- Se crea cuando el scoring cruza el umbral, o cuando alguien manda un formulario
+-- ============================================================================
+CREATE TABLE IF NOT EXISTS leads (
+    id SERIAL PRIMARY KEY,
+    propiedad_id INTEGER NOT NULL,
+    sesion_id UUID,
+    usuario_id INTEGER,
+    nombre VARCHAR(150),
+    email VARCHAR(150),
+    telefono VARCHAR(30),
+    score INTEGER NOT NULL DEFAULT 0,
+    -- 'formulario_directo' | 'scoring_comportamiento'
+    origen VARCHAR(50) NOT NULL,
+    -- 'nuevo' | 'contactado' | 'en_negociacion' | 'cerrado' | 'descartado'
+    estado VARCHAR(30) DEFAULT 'nuevo' NOT NULL,
+    notificado BOOLEAN DEFAULT false,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (propiedad_id) REFERENCES propiedades(id) ON DELETE CASCADE,
+    FOREIGN KEY (sesion_id) REFERENCES sesiones_tracking(id) ON DELETE SET NULL,
+    FOREIGN KEY (usuario_id) REFERENCES usuarios(id) ON DELETE SET NULL,
+    CONSTRAINT origen_lead_valido CHECK (
+        origen IN ('formulario_directo', 'scoring_comportamiento')
+    ),
+    CONSTRAINT estado_lead_valido CHECK (
+        estado IN (
+            'nuevo',
+            'contactado',
+            'en_negociacion',
+            'cerrado',
+            'descartado'
+        )
+    ),
+    -- Evita que dos eventos concurrentes (misma sesión + misma
+    -- propiedad) generen dos leads y por lo tanto dos correos duplicados.
+    -- Postgres trata cada NULL como distinto entre sí, así que esto NO
+    -- afecta a los leads de origen 'formulario_directo' que no tengan
+    -- sesion_id (pueden repetirse sin problema).
+    CONSTRAINT uq_leads_sesion_propiedad UNIQUE (sesion_id, propiedad_id)
+);
+CREATE INDEX IF NOT EXISTS idx_leads_propiedad ON leads(propiedad_id);
+CREATE INDEX IF NOT EXISTS idx_leads_estado ON leads(estado);
+
+-- Trigger updated_at (reutiliza update_updated_at_column() del schema central)
+DROP TRIGGER IF EXISTS trg_leads_updated_at ON leads;
+CREATE TRIGGER trg_leads_updated_at BEFORE
+UPDATE ON leads FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
+-- ============================================================================
 -- 18. OFERTAS POR OPERACIÓN (réplica de migrations/001_property_listings.sql
 -- para instalaciones nuevas; el orden respeta dependencias ya creadas)
 -- ============================================================================
@@ -1180,5 +1293,91 @@ ALTER TABLE leads ADD COLUMN IF NOT EXISTS operation_type_id SMALLINT REFERENCES
 
 COMMIT;
 -- ============================================================================
--- ✅ SCHEMA CREADO CORRECTAMENTE (Versión 5.0 Colombia + Ofertas por operación)
+-- 20. VISTAS DE DETALLE (estado final de migrations/002, 003, 004, 005, 007
+-- y 008 para instalaciones nuevas; el orden respeta dependencias ya creadas)
+-- ============================================================================
+-- NOTA: cualquier cambio debe hacerse también en la migración correspondiente.
+-- Sin FK de vistas_log a propiedades (003): el log sobrevive al borrado.
+BEGIN;
+
+-- 20.1 Log: un registro por evento RECIBIDO, siempre (fuente de verdad).
+CREATE TABLE IF NOT EXISTS vistas_log (
+    event_id BIGSERIAL PRIMARY KEY,
+    received_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    fecha_local DATE NOT NULL,
+    propiedad_id INTEGER NOT NULL,
+    agency_id INTEGER REFERENCES organizaciones(id) ON DELETE SET NULL,
+    user_id INTEGER REFERENCES usuarios(id) ON DELETE SET NULL,
+    anon_id VARCHAR(100),
+    identidad_debil BOOLEAN NOT NULL DEFAULT FALSE,
+    ip_hash VARCHAR(128) NOT NULL,
+    user_agent TEXT,
+    source VARCHAR(50),
+    utm JSONB,
+    referer TEXT,
+    visible_seconds INTEGER,
+    server_elapsed_ms INTEGER NOT NULL,
+    result VARCHAR(10) NOT NULL CHECK (result IN ('counted','rejected')),
+    reason VARCHAR(30) NOT NULL CHECK (reason IN (
+        'counted','evento_invalido','token_invalido','token_expirado',
+        'token_reutilizado','tiempo_insuficiente','inmueble_inexistente',
+        'inmueble_no_activo','sin_identidad','interno','bot',
+        'rate_limit','duplicado','tope_diario','tope_ip',
+        'visible_incoherente','error_sistema')),
+    sospechoso BOOLEAN NOT NULL DEFAULT FALSE,
+    rules_version VARCHAR(20) NOT NULL DEFAULT 'v1',
+    CONSTRAINT chk_vistas_log_result_reason CHECK (
+        (result = 'counted' AND reason = 'counted') OR
+        (result = 'rejected' AND reason <> 'counted'))
+);
+CREATE INDEX IF NOT EXISTS idx_vistas_log_prop_fecha ON vistas_log(propiedad_id, received_at DESC);
+CREATE INDEX IF NOT EXISTS idx_vistas_log_agencia_fecha ON vistas_log(agency_id, fecha_local);
+CREATE INDEX IF NOT EXISTS idx_vistas_log_user ON vistas_log(user_id);
+
+-- 20.2 Resumen diario por inmueble (DERIVADO del log, recalculable).
+CREATE TABLE IF NOT EXISTS vistas_resumen_diario (
+    propiedad_id INTEGER NOT NULL REFERENCES propiedades(id) ON DELETE CASCADE,
+    fecha_local DATE NOT NULL,
+    vistas INTEGER NOT NULL DEFAULT 0 CHECK (vistas >= 0),
+    visitantes_unicos INTEGER NOT NULL DEFAULT 0 CHECK (visitantes_unicos >= 0),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    PRIMARY KEY (propiedad_id, fecha_local)
+);
+
+-- 20.3 Vinculación anon_id <-> user_id (dedupe y tope cruzan identidades).
+CREATE TABLE IF NOT EXISTS vistas_identidades (
+    anon_id VARCHAR(100) NOT NULL,
+    user_id INTEGER NOT NULL REFERENCES usuarios(id) ON DELETE CASCADE,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    UNIQUE (anon_id, user_id)
+);
+CREATE INDEX IF NOT EXISTS idx_vistas_ident_user ON vistas_identidades(user_id);
+CREATE INDEX IF NOT EXISTS idx_vistas_ident_anon ON vistas_identidades(anon_id);
+
+-- 20.4 Agregado anti-inflado de log (máx 1 fila/min/IP para rate_limit).
+CREATE TABLE IF NOT EXISTS vistas_rate_limit_agregado (
+    ip_hash VARCHAR(128) NOT NULL,
+    ventana_minuto TIMESTAMPTZ NOT NULL,
+    motivo VARCHAR(30) NOT NULL DEFAULT 'rate_limit' CHECK (motivo = 'rate_limit'),
+    conteo INTEGER NOT NULL DEFAULT 1 CHECK (conteo >= 1),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    PRIMARY KEY (ip_hash, ventana_minuto)
+);
+
+-- 20.5 IPs/rangos de bots (carga en memoria del tracking, recarga 10 min).
+CREATE TABLE IF NOT EXISTS vistas_bot_ips (
+    id SERIAL PRIMARY KEY,
+    cidr CIDR NOT NULL UNIQUE,
+    descripcion VARCHAR(200),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- 20.6 Índice parcial para la consolidación (solo counted recientes).
+CREATE INDEX IF NOT EXISTS idx_vistas_log_prop_fecha_counted
+    ON vistas_log (propiedad_id, fecha_local)
+    WHERE result = 'counted';
+
+COMMIT;
+-- ============================================================================
+-- ✅ SCHEMA CREADO CORRECTAMENTE (Versión 5.0 Colombia + Ofertas por operación + Tracking + Vistas)
 -- ============================================================================
