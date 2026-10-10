@@ -22,6 +22,8 @@
 -- 005_vistas_log_visible_incoherente.sql -> motivo visible_incoherente en el CHECK
 -- 007_vistas_bot_ips.sql -> CIDRs de bots/datacenters para vistas (carga en memoria)
 -- 008_vistas_log_counted_idx.sql -> índice parcial (propiedad, fecha) WHERE counted
+-- 009_busquedas_guardadas.sql -> búsquedas guardadas + eventos de vivienda + notificaciones + push_subscriptions
+--                                (triggers trg_property_events_listings y trg_property_events_publicar)
 --
 -- NOTA: db.sql es la fuente de verdad única. Actualizarlo siempre al agregar
 --       catálogos, columnas o features nuevos.

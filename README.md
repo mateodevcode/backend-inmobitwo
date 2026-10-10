@@ -36,6 +36,7 @@ npm run seed:geo
 | `npm run dev` | Desarrollo con `--watch` |
 | `npm start` | Producción (`node --env-file .env src/index.js`) |
 | `npm run seed:geo` | Países, regiones, deptos, ciudades y barrios (Colombia, PostGIS) |
+| `npm run job:busquedas -- <frecuencia>` | Ejecuta el procesador de alertas una vez (`inmediata`/`diaria`/`semanal`) |
 | `./dev-up.sh` / `./dev-down.sh` | Sube/baja redis + rust en local |
 
 ## Variables de entorno
@@ -53,6 +54,10 @@ npm run seed:geo
 | `REDIS_PASSWORD`, `REDIS_URL` | OJO: dentro de docker debe apuntar al servicio (`redis://:PASS@inmobitwo-redis:6379`), nunca `localhost` |
 | `RUST_TRACKING_URL`, `RUST_MEDIA_URL`, `RUST_WEBSOCKET_URL` | En VPS los pisa el compose (`http://inmobitwo-rust-*:300x`); el websocket apunta al socket-core del host (`ws://host.docker.internal:3005`) |
 | `DEEPSEEK_API_KEY`, `DEEPSEEK_BASE_URL` | IA descripciones |
+| `CRON_BUSQUEDAS_ENABLED` | `true` = arranca node-cron con el servidor (apagado en local) |
+| `ALERTAS_DRY_RUN` | `true` = el procesador solo loguea, no envía ni marca |
+| `ALERTAS_MAX_BUSQUEDAS_USUARIO`, `ALERTAS_MAX_ITEMS_EMAIL` | Topes (defecto `10`/`10`) |
+| `PUSH_ENABLED`, `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT` | Push web (apagado por defecto; sin `web-push` instalado hasta activarlo) |
 
 > Claves con `#` o `@`: quotear con comillas simples en el `.env` (`DB_PASSWORD='...'`), si no compose las trunca.
 
@@ -64,11 +69,12 @@ src/
 ├── config.js             # Lee process.env
 ├── db.js                 # Pool pg
 ├── cors.config.js        # CORS dinámico: FRONTEND_URL + custom_domain activos en DB
-├── controllers/          # Lógica de negocio (auth, usuarios, propiedades, organizaciones, miembros, favoritos, tracking, leads, geo, geocode, catalogos, ia…)
+├── controllers/          # Lógica de negocio (auth, usuarios, propiedades, organizaciones, miembros, favoritos, tracking, leads, geo, geocode, catalogos, ia, busquedas.guardadas, push…)
 ├── routes/               # Una por módulo (ver tabla)
+├── jobs/                 # busquedasGuardadas.job.js (cron), run-once.js (ejecución manual)
 ├── middleware/           # auth (verificarToken/Rol), tenant (resolverTenant), organización, errores
-├── lib/                  # redis, S3, geocode, scoring, rateLimit, promptBuilder, permisos org…
-├── utils/                # Emails, transporte Brevo, sanitización
+├── lib/                  # redis, S3, geocode, scoring, rateLimit, promptBuilder, permisos org, busquedasGuardadas/…
+├── utils/                # Emails (incl. alertaBusqueda.js), transporte Brevo, sanitización
 ├── validations/          # Validadores por módulo
 ├── constants/            # Campos API permitidos por recurso
 └── database/             # db.sql, schema.tracking.sql, seed-geo.js + data/
@@ -91,8 +97,19 @@ services/                 # rust-tracking-service, rust-media-service, rust-webs
 | Geocoding | `/api/geocode` | No |
 | Catálogos | `/catalogos/operaciones|tipos-alquiler|tipos-inmueble|estados|calefaccion|caracteristicas` | No |
 | IA | `/ia/*` (descripciones DeepSeek) | JWT |
+| Búsquedas guardadas | `/busquedas-guardadas` (CRUD + `/verificar`), `/busquedas-guardadas/baja/:token[/reactivar]` (públicas), `/busquedas-guardadas/push/*` (503 si push apagado) | Mixto |
 
 Roles: `user` (registro), `superadmin` (se asigna por SQL: `UPDATE usuarios SET rol='superadmin' …`; el token lo incluye, re-login requerido), `agency_admin`/`agent` (por organización en `organizacion_miembros`).
+
+## Búsquedas guardadas con alertas
+
+El usuario guarda una búsqueda (`filtros` JSONB con los mismos params de `/propiedades/search-slugs` + hash anti-duplicado) y recibe un email agrupado ante vivienda nueva, bajada de precio o disponibilidad recuperada.
+
+- **Migración** `src/database/migrations/009_busquedas_guardadas.sql` (también en `db.sql`/`orden.sql`): `saved_searches` (filtros, frecuencia inmediata/diaria/semanal, canales, `last_checked_at`, `unsubscribe_token`, consentimiento Habeas Data), `property_events` (`created`/`price_drop`/`relisted` con `clock_timestamp()`), `saved_search_notifications` (anti-duplicado), `push_subscriptions` (lista, sin uso).
+- **Eventos por triggers** (sin tocar controladores): `trg_property_events_listings` (INSERT/UPDATE en `property_listings`) y `trg_property_events_publicar` (`no_publicado`→`publicado`). En backfills masivos, desactivarlos antes.
+- **Match** `src/lib/busquedasGuardadas/filtros.js`: replica el WHERE de `getPropertiesBySlugs` (usa el `buildTipoFilter` real + fallback a `regions.slug`).
+- **Cron** `src/jobs/busquedasGuardadas.job.js`: cada 15 min (`inmediata`), diario 8:00 y lunes 8:00 (`America/Bogota`), con `pg_advisory_lock` + corte a `NOW()-30s` + auto-pausa a los 5 fallos. Plantilla `alertaBusqueda.js` (logo, tarjetas Nuevo/Bajó/Disponible, baja por token, header `List-Unsubscribe`, 3 reintentos).
+- **Probar sin esperar**: `ALERTAS_DRY_RUN=true npm run job:busquedas -- diaria` (solo loguea).
 
 ## Deploy
 
