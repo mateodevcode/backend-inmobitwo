@@ -20,6 +20,8 @@ import leadsRoutes from "./routes/leads.routes.js";
 import catalogosRoutes from "./routes/catalogos.routes.js";
 import iaRoutes from "./routes/ia.routes.js";
 import passwordRecoveryRoutes from "./routes/password.recovery.routes.js";
+import busquedasGuardadasRoutes from "./routes/busquedas.guardadas.routes.js";
+import { iniciarCronBusquedas } from "./jobs/busquedasGuardadas.job.js";
 import { corsOptions } from "./cors.config.js";
 import { errorHandler } from "./middleware/error.middleware.js";
 import { validarSecretosArranque, vistasHabilitadas } from "./lib/validarSecretos.js";
@@ -76,9 +78,13 @@ app.use("/api", geocodeRoutes);
 app.use("/catalogos", catalogosRoutes);
 app.use("/ia", iaRoutes);
 app.use(passwordRecoveryRoutes);
+app.use(busquedasGuardadasRoutes);
 
 // Middleware de errores (debe ir después de todas las rutas)
 app.use(errorHandler);
 
 app.listen(PORT);
 console.log("Server running on port", PORT);
+
+// Cron de búsquedas guardadas (solo si CRON_BUSQUEDAS_ENABLED=true)
+iniciarCronBusquedas();
