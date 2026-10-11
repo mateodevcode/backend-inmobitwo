@@ -24,6 +24,7 @@
 -- 008_vistas_log_counted_idx.sql -> índice parcial (propiedad, fecha) WHERE counted
 -- 009_busquedas_guardadas.sql -> búsquedas guardadas + eventos de vivienda + notificaciones + push_subscriptions
 --                                (triggers trg_property_events_listings y trg_property_events_publicar)
+-- 010_descartados.sql -> descartados de propiedades (usuario_descartados)
 --
 -- NOTA: db.sql es la fuente de verdad única. Actualizarlo siempre al agregar
 --       catálogos, columnas o features nuevos.

@@ -30,7 +30,7 @@ import { createRateLimitMiddleware, createRateLimiter, defaultLimiter } from "..
 import { ipReal } from "../lib/ipReal.js";
 import { requiereVistas } from "../lib/validarSecretos.js";
 import { upload } from "../lib/multer.js";
-import { verificarToken, verificarRol } from "../middleware/auth.middleware.js";
+import { verificarToken, verificarRol, verificarTokenOpcional } from "../middleware/auth.middleware.js";
 
 const router = Router();
 
@@ -53,7 +53,7 @@ const ruta = "/propiedades";
 
 // 1. RUTAS ESTÁTICAS GENERALES DE PROPIEDADES (Siempre arriba)
 router.get(ruta, rateLimit, getPropiedades);
-router.get(`${ruta}/inicio`, rateLimit, getPropiedadesHome);
+router.get(`${ruta}/inicio`, verificarTokenOpcional, rateLimit, getPropiedadesHome);
 router.get(
   `${ruta}/mis-anuncios`,
   verificarToken,
@@ -68,13 +68,13 @@ router.get(
 );
 
 // 2. NUEVA RUTA POR SLUG ESTILO IDEALISTA (Corregida con el prefijo ${ruta} y bien posicionada)
-router.get(`${ruta}/search-slugs`, rateLimit, getPropertiesBySlugs);
+router.get(`${ruta}/search-slugs`, verificarTokenOpcional, rateLimit, getPropertiesBySlugs);
 
 // Búsqueda por múltiples tipos de vivienda (agrupados)
-router.get(`${ruta}/search-vivienda`, rateLimit, searchVivienda);
+router.get(`${ruta}/search-vivienda`, verificarTokenOpcional, rateLimit, searchVivienda);
 
 // Búsqueda por bounding box (MapaInmuebles)
-router.get(`${ruta}/inmuebles-en-bbox`, rateLimit, getInmueblesEnBbox);
+router.get(`${ruta}/inmuebles-en-bbox`, verificarTokenOpcional, rateLimit, getInmueblesEnBbox);
 
 // Resumen ligero de propiedad para PropertyCard
 router.get(`${ruta}/:id/resumen`, rateLimit, getPropiedadResumen);

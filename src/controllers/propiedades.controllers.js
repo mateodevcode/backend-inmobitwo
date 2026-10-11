@@ -13,6 +13,7 @@ import {
   validarPrecioUsuario,
 } from "../lib/precios_referencia_colombia.js";
 import { buildTipoFilter, esTipoVacacional } from "../lib/propertyFilters.js";
+import { clausulaExcluirDescartados } from "../utils/descartados.js";
 import { selectFields } from "../lib/fieldSelection.helper.js";
 import { CAMPOS_PROPIEDAD } from "../constants/api/fields.js";
 import {
@@ -2232,12 +2233,15 @@ export const getPropiedadesHome = async (req, res) => {
 
     // Armamos la query dinámicamente según si hay cursor o no
     const params = [limit];
-    let whereClause = "";
+    let whereClause = "WHERE TRUE";
 
     if (cursor) {
-      whereClause = "WHERE p.created_at < $2";
+      whereClause += " AND p.created_at < $2";
       params.push(cursor);
     }
+
+    // Excluye los descartados del usuario logueado (anónimos ven todo)
+    whereClause += clausulaExcluirDescartados(req.usuario?.id, params);
 
     const { rows: propiedades } = await pool.query(
       `SELECT ${selectBase}, ${portadaSubquery("p")}, ${portadaPublicIdSubquery("p")},
@@ -2776,6 +2780,14 @@ export const getPropertiesBySlugs = async (req, res) => {
       ) as planos
     `;
 
+    // Excluye los descartados del usuario logueado (anónimos ven todo).
+    // Se calcula aquí para que los índices posicionales de city/dept
+    // (computados después con params.length) queden correctos.
+    const excluirDescartados = clausulaExcluirDescartados(
+      req.usuario?.id,
+      params,
+    );
+
     const selectFields = `
       p.id, p.titulo, p.direccion, p.description, l.precio, l.price_per_sqm, p.estrato,
       l.rental_type_id,
@@ -2836,6 +2848,7 @@ export const getPropertiesBySlugs = async (req, res) => {
           ${banosWhere}
           ${estadoWhere}
           ${caractWhere}
+          ${excluirDescartados}
         ORDER BY p.id DESC
         LIMIT 100;
       `;
@@ -2878,6 +2891,7 @@ export const getPropertiesBySlugs = async (req, res) => {
           ${banosWhere}
           ${estadoWhere}
           ${caractWhere}
+          ${excluirDescartados}
         ORDER BY p.id DESC
         LIMIT 100;
       `;
@@ -2906,6 +2920,7 @@ export const getPropertiesBySlugs = async (req, res) => {
           ${banosWhere}
           ${estadoWhere}
           ${caractWhere}
+          ${excluirDescartados}
         ORDER BY p.id DESC
         LIMIT 100;
       `;
@@ -2944,6 +2959,7 @@ export const getPropertiesBySlugs = async (req, res) => {
           ${banosWhere}
           ${estadoWhere}
           ${caractWhere}
+          ${excluirDescartados}
         ORDER BY p.id DESC
         LIMIT 100;
       `;
@@ -3168,6 +3184,10 @@ export const searchVivienda = async (req, res) => {
     });
     if (caractConds.length) conds.push(`(${caractConds.join(" AND ")})`);
 
+    // Excluye los descartados del usuario logueado (anónimos ven todo)
+    const excluirVivienda = clausulaExcluirDescartados(req.usuario?.id, params);
+    if (excluirVivienda) conds.push(excluirVivienda.replace(/^ AND /, ""));
+
     const galeriaSubquery = `
       COALESCE(
         (SELECT json_agg(json_build_object(
@@ -3297,6 +3317,11 @@ export const getInmueblesEnBbox = async (req, res) => {
       tipoParams.forEach((t) => params.push(t));
       if (sql) filters.push(sql);
     }
+
+    // Excluye los descartados del usuario logueado (anónimos ven todo).
+    // Antes de los params del bbox para no desplazar sus índices.
+    const excluirBbox = clausulaExcluirDescartados(req.usuario?.id, params);
+    if (excluirBbox) filters.push(excluirBbox.replace(/^ AND /, ""));
 
     params.push(minLng, minLat, maxLng, maxLat);
     const bboxParamIdx = params.length - 3;

@@ -13,6 +13,7 @@ import propiedadesRoutes from "./routes/propiedades.routes.js";
 import organizacionesRoutes from "./routes/organizaciones.routes.js";
 import organizacionMiembrosRoutes from "./routes/organizacion_miembros.routes.js";
 import favoritosRoutes from "./routes/favoritos.routes.js";
+import descartadosRoutes from "./routes/descartados.routes.js";
 import geoRoutes from "./routes/geo.routes.js";
 import geocodeRoutes from "./routes/geocode.routes.js";
 import trackingRoutes from "./routes/tracking.routes.js";
@@ -71,6 +72,7 @@ app.use(propiedadesRoutes);
 app.use(organizacionesRoutes);
 app.use(organizacionMiembrosRoutes);
 app.use(favoritosRoutes); // ← agregar esto
+app.use(descartadosRoutes);
 app.use(trackingRoutes);
 app.use(leadsRoutes);
 app.use("/api", geoRoutes);
