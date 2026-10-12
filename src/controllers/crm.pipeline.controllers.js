@@ -3,14 +3,14 @@ import { pool } from "../db.js";
 import { whereEspacioPropio } from "../lib/crmPermisos.js";
 
 const ETAPAS_SEED = [
-  { nombre: "Prospecto", color: "#64748b", probabilidad_default: 10, tipo: "abierta" },
-  { nombre: "Contactado", color: "#1944c5", probabilidad_default: 25, tipo: "abierta" },
-  { nombre: "Interesado", color: "#7c3aed", probabilidad_default: 40, tipo: "abierta" },
-  { nombre: "Visita", color: "#d97706", probabilidad_default: 60, tipo: "abierta" },
-  { nombre: "Oferta", color: "#0d9488", probabilidad_default: 75, tipo: "abierta" },
-  { nombre: "Negociando", color: "#dc2626", probabilidad_default: 90, tipo: "abierta" },
-  { nombre: "Ganado", color: "#16a34a", probabilidad_default: 100, tipo: "ganada" },
-  { nombre: "Perdido", color: "#525252", probabilidad_default: 0, tipo: "perdida" },
+  { nombre: "Prospecto", color: "#A3A3A3", probabilidad_default: 10, tipo: "abierta" },
+  { nombre: "Contactado", color: "#737373", probabilidad_default: 25, tipo: "abierta" },
+  { nombre: "Interesado", color: "#525252", probabilidad_default: 40, tipo: "abierta" },
+  { nombre: "Visita", color: "#404040", probabilidad_default: 60, tipo: "abierta" },
+  { nombre: "Oferta", color: "#262626", probabilidad_default: 75, tipo: "abierta" },
+  { nombre: "Negociando", color: "#171717", probabilidad_default: 90, tipo: "abierta" },
+  { nombre: "Ganado", color: "#000000", probabilidad_default: 100, tipo: "ganada" },
+  { nombre: "Perdido", color: "#D4D4D4", probabilidad_default: 0, tipo: "perdida" },
 ];
 
 const duenoCols = (crm) =>
