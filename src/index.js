@@ -23,6 +23,7 @@ import catalogosRoutes from "./routes/catalogos.routes.js";
 import iaRoutes from "./routes/ia.routes.js";
 import passwordRecoveryRoutes from "./routes/password.recovery.routes.js";
 import busquedasGuardadasRoutes from "./routes/busquedas.guardadas.routes.js";
+import crmRoutes from "./routes/crm.routes.js";
 import { iniciarCronBusquedas } from "./jobs/busquedasGuardadas.job.js";
 import { corsOptions } from "./cors.config.js";
 import { errorHandler } from "./middleware/error.middleware.js";
@@ -83,6 +84,7 @@ app.use("/catalogos", catalogosRoutes);
 app.use("/ia", iaRoutes);
 app.use(passwordRecoveryRoutes);
 app.use(busquedasGuardadasRoutes);
+app.use(crmRoutes);
 
 // Middleware de errores (debe ir después de todas las rutas)
 app.use(errorHandler);
