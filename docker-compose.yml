@@ -7,7 +7,6 @@ services:
     environment:
       - RUST_TRACKING_URL=http://inmobitwo-rust-tracking:3002
       - RUST_MEDIA_URL=http://inmobitwo-rust-media:3003
-      - RUST_WEBSOCKET_URL=ws://inmobitwo-rust-websocket:3004
       - REDIS_URL=${REDIS_URL}
     ports:
       - "127.0.0.1:3001:3001"
@@ -75,26 +74,6 @@ services:
     environment:
       - REDIS_URL=${REDIS_URL}
       - RUST_LOG=info
-    networks:
-      - central_network
-    depends_on:
-      redis:
-        condition: service_healthy
-    restart: unless-stopped
-
-  rust-websocket:
-    build:
-      context: ./services/rust-websocket-service
-      dockerfile: Dockerfile
-    container_name: inmobitwo-rust-websocket
-    env_file:
-      - .env
-    environment:
-      - DATABASE_URL=postgres://${DB_USER}:${DB_PASSWORD}@postgres_central:5432/${DB_NAME}
-      - REDIS_URL=${REDIS_URL}
-      - RUST_LOG=info
-    ports:
-      - "127.0.0.1:3004:3004"
     networks:
       - central_network
     depends_on:

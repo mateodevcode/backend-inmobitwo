@@ -28,7 +28,6 @@ export const BREVO_EMAIL_NO_REPLY = process.env.BREVO_EMAIL_NO_REPLY;
 // rust
 export const RUST_TRACKING_URL = process.env.RUST_TRACKING_URL;
 export const RUST_MEDIA_URL = process.env.RUST_MEDIA_URL;
-export const RUST_WEBSOCKET_URL = process.env.RUST_WEBSOCKET_URL;
 
 // vistas — token de ficha HMAC (algoritmo de vista de detalle, Fase 3).
 // Secreto NUEVO, distinto de JWT_SECRET. Debe coincidir con el del tracking-service.

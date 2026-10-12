@@ -1,12 +1,12 @@
 # backend-inmobitwo
 
-API REST (Express 5 + ESM) para la plataforma inmobiliaria multi-tenant: auth JWT, propiedades con PostGIS, organizaciones con dominios propios, leads/tracking, catálogos, IA (DeepSeek), uploads a S3 y email Brevo. Microservicios Rust + Redis como apoyo.
+API REST (Express 5 + ESM) para la plataforma inmobiliaria multi-tenant: auth JWT, propiedades con PostGIS, organizaciones con dominios propios, leads/tracking, catálogos, IA (DeepSeek), chat en tiempo real (vía socket-core), uploads a S3 y email Brevo. Microservicios Rust + Redis como apoyo.
 
 ## Stack
 
 - **Runtime**: Node.js 20+ · Express 5 · `pg` (pool PostgreSQL/PostGIS)
 - **Auth**: JWT access (header) + refresh (cookie httpOnly)
-- **Apoyo**: Redis (ioredis, caché) + 3 servicios Rust (`tracking :3002`, `media :3003`, `websocket :3004`)
+- **Apoyo**: Redis (ioredis, caché) + 2 servicios Rust (`tracking :3002`, `media :3003`)
 - **Externos**: AWS S3 (fotos/planos), Brevo SMTP, DeepSeek
 
 ## Requisitos
@@ -52,7 +52,8 @@ npm run seed:geo
 | `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_DEFAULT_REGION`, `AWS_BUCKET`, `AWS_URL`, `AWS_BUCKET_SUBFOLDER` | S3 (`seventwo` / subcarpeta `inmobitwo`) |
 | `BREVO_SMTP_EMAIL`, `BREVO_SMTP_PASS`, `BREVO_EMAIL_INFO/SUPPORT/NO_REPLY/JOBS` | SMTP + remitentes |
 | `REDIS_PASSWORD`, `REDIS_URL` | OJO: dentro de docker debe apuntar al servicio (`redis://:PASS@inmobitwo-redis:6379`), nunca `localhost` |
-| `RUST_TRACKING_URL`, `RUST_MEDIA_URL`, `RUST_WEBSOCKET_URL` | En VPS los pisa el compose (`http://inmobitwo-rust-*:300x`); el websocket apunta al socket-core del host (`ws://host.docker.internal:3005`) |
+| `RUST_TRACKING_URL`, `RUST_MEDIA_URL` | En VPS los pisa el compose (`http://inmobitwo-rust-*:300x`) |
+| `SOCKET_CORE_URL`, `SOCKET_CORE_API_KEY`, `SOCKET_CORE_ORIGIN`, `SOCKET_CORE_WS_PUBLIC_URL` | Chat: URL interna (`http://socket-core:3005` en Docker), API key (nunca al frontend), Origin registrado en la key, URL WS pública que se entrega al navegador (`wss://ws.seventwo.tech/ws` en prod) |
 | `DEEPSEEK_API_KEY`, `DEEPSEEK_BASE_URL` | IA descripciones |
 | `CRON_BUSQUEDAS_ENABLED` | `true` = arranca node-cron con el servidor (apagado en local) |
 | `ALERTAS_DRY_RUN` | `true` = el procesador solo loguea, no envía ni marca |
@@ -73,12 +74,12 @@ src/
 ├── routes/               # Una por módulo (ver tabla)
 ├── jobs/                 # busquedasGuardadas.job.js (cron), run-once.js (ejecución manual)
 ├── middleware/           # auth (verificarToken/Rol), tenant (resolverTenant), organización, errores
-├── lib/                  # redis, S3, geocode, scoring, rateLimit, promptBuilder, permisos org, busquedasGuardadas/…
+├── lib/                  # redis, S3, geocode, scoring, rateLimit, promptBuilder, permisos org, busquedasGuardadas/, socketCore.js (chat)…
 ├── utils/                # Emails (incl. alertaBusqueda.js), transporte Brevo, sanitización
 ├── validations/          # Validadores por módulo
 ├── constants/            # Campos API permitidos por recurso
 └── database/             # db.sql, schema.tracking.sql, seed-geo.js + data/
-services/                 # rust-tracking-service, rust-media-service, rust-websocket-service
+services/                 # rust-tracking-service, rust-media-service (el chat en vivo usa socket-core, servicio externo)
 ```
 
 ## Endpoints principales
@@ -91,6 +92,8 @@ services/                 # rust-tracking-service, rust-media-service, rust-webs
 | Organizaciones | `/organizaciones` (+ `/publicas`, `/slug/:slug`, `/resolve-tenant`, aprobar/suspender, dominio/activar…) | Mixto (`superadmin` para gestión) |
 | Miembros | `/organizaciones/:orgId/miembros`, `/organizaciones/miembros/:id` | JWT (`agency_admin` o `superadmin`) |
 | Favoritos | `/favoritos/toggle`, `/favoritos/mis-favoritos` | JWT |
+| Descartados | `/descartados/descartar`, `/descartados/restaurar`, `/descartados/ids`, `/descartados/mis-descartados` | JWT |
+| Chat | `/chat/token`, `/chat/conversaciones` (GET/POST), `/chat/conversaciones/:id/mensajes` (GET/POST), `/chat/conversaciones/:id/leer`, `/chat/no-leidos` | JWT |
 | Tracking | `/tracking` (+ `/lead`, `/logs`) | Mixto |
 | Leads | `/leads` | JWT |
 | Geografía | `/api/countries|states|cities|barrios|location-info|suggest-cities|*-geojson|inmuebles-en-poligono` | No |
@@ -110,6 +113,15 @@ El usuario guarda una búsqueda (`filtros` JSONB con los mismos params de `/prop
 - **Match** `src/lib/busquedasGuardadas/filtros.js`: replica el WHERE de `getPropertiesBySlugs` (usa el `buildTipoFilter` real + fallback a `regions.slug`).
 - **Cron** `src/jobs/busquedasGuardadas.job.js`: cada 15 min (`inmediata`), diario 8:00 y lunes 8:00 (`America/Bogota`), con `pg_advisory_lock` + corte a `NOW()-30s` + auto-pausa a los 5 fallos. Plantilla `alertaBusqueda.js` (logo, tarjetas Nuevo/Bajó/Disponible, baja por token, header `List-Unsubscribe`, 3 reintentos).
 - **Probar sin esperar**: `ALERTAS_DRY_RUN=true npm run job:busquedas -- diaria` (solo loguea).
+
+## Chat en tiempo real (vía socket-core)
+
+Una conversación por (interesado, anuncio); el receptor es `publicado_por_id`. El backend es dueño de todo (PostgreSQL) y usa a socket-core solo como transporte: tras guardar, publica el evento en el canal personal `inmobitwo:user:{id}` del receptor.
+
+- **Migración** `src/database/migrations/011_chat.sql` (también en `db.sql`/`orden.sql`): `chat_conversaciones` (participantes distintos, única por anuncio, contadores de no leídos por lado, título de respaldo) y `chat_mensajes` (1–2000 caracteres, idempotencia por `clientMsgId`, `leido_at`).
+- **Transporte** `src/lib/socketCore.js` (`fetch` nativo + `AbortSignal.timeout(3000)`, caché nombre→uuid con revalidación): `asegurarCanal`, `crearTokenUsuario` (JWT `subscribe` del canal propio), `publicarAUsuario` (nunca lanza; el fallo se loguea sin contenido y no rompe la petición).
+- **Endpoints** (`routes/chat.routes.js` + `controllers/chat.controllers.js`, limiters propios `chat-envio` 30/min, `chat-crear`/`chat-token` 20/hora): crear/reutilizar (reglas: publicado, no `solo_telefono`, no propio), lista enriquecida en una consulta, historial paginado (`antesDe`/`limite` máx 50), envío transaccional idempotente, marcar leído, contador total. Rutas con `:id` ajeno responden 404 (no 403).
+- **Reglas de negocio**: `estado = 'publicado'` y `how_to_contact <> 'solo_telefono'` para iniciar; lo ya iniciado sobrevive a despublicar/borrar ("Anuncio no disponible"); al publicador solo le aparece con mensajes.
 
 ## Deploy
 
