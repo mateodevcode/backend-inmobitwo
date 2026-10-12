@@ -38,6 +38,13 @@ import {
   moverOportunidad,
   obtenerOportunidad,
 } from "../controllers/crm.pipeline.controllers.js";
+import {
+  actividad,
+  conversion,
+  embudo,
+  leadsOrigen,
+  valorGanado,
+} from "../controllers/crm.reportes.controllers.js";
 
 const router = Router();
 const rateLimit = createRateLimitMiddleware(defaultLimiter);
@@ -76,5 +83,12 @@ router.get("/crm/oportunidades/:id", ...conEspacio, obtenerOportunidad);
 router.patch("/crm/oportunidades/:id", ...conEspacio, actualizarOportunidad);
 router.patch("/crm/oportunidades/:id/mover", ...conEspacio, moverOportunidad);
 router.patch("/crm/oportunidades/:id/cerrar", ...conEspacio, cerrarOportunidad);
+
+// Fase 4 — reportes
+router.get("/crm/reportes/embudo", ...conEspacio, embudo);
+router.get("/crm/reportes/conversion", ...conEspacio, conversion);
+router.get("/crm/reportes/valor-ganado", ...conEspacio, valorGanado);
+router.get("/crm/reportes/actividad", ...conEspacio, actividad);
+router.get("/crm/reportes/leads-origen", ...conEspacio, leadsOrigen);
 
 export default router;
