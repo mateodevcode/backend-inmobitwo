@@ -26,6 +26,8 @@
 --                                (triggers trg_property_events_listings y trg_property_events_publicar)
 -- 010_descartados.sql -> descartados de propiedades (usuario_descartados)
 -- 011_chat.sql -> chat entre usuarios (chat_conversaciones, chat_mensajes)
+-- 012_chat_borrado.sql -> borrado por participante (soft + hard)
+-- 013_crm_nucleo.sql -> núcleo CRM (crm_contactos, crm_actividades, crm_tareas)
 --
 -- NOTA: db.sql es la fuente de verdad única. Actualizarlo siempre al agregar
 --       catálogos, columnas o features nuevos.
