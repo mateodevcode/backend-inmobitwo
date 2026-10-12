@@ -21,6 +21,13 @@ const conversacionDe = async (id, uid) => {
   return c;
 };
 
+// True si el usuario borró la conversación y ningún mensaje nuevo
+// la revivió desde entonces. El otro participante la sigue viendo.
+const borradaPara = (conv, uid) =>
+  conv.interesado_id === uid
+    ? conv.borrado_interesado_at != null
+    : conv.borrado_publicador_at != null;
+
 const mensajePublico = (m) => ({
   id: Number(m.id),
   remitenteId: m.remitente_id,
@@ -82,11 +89,21 @@ export const crearObtenerConversacion = async (req, res) => {
     }
 
     const { rows: ya } = await pool.query(
-      `SELECT id FROM chat_conversaciones
+      `SELECT id, borrado_interesado_at FROM chat_conversaciones
        WHERE propiedad_id = $1 AND interesado_id = $2`,
       [propiedadId, uid],
     );
     if (ya.length > 0) {
+      // Re-contacto sobre el mismo anuncio: revive si yo la había borrado
+      // (misma fila por UNIQUE, se conserva el historial).
+      if (ya[0].borrado_interesado_at != null) {
+        await pool.query(
+          `UPDATE chat_conversaciones
+           SET borrado_interesado_at = NULL, updated_at = now()
+           WHERE id = $1`,
+          [ya[0].id],
+        );
+      }
       return res
         .status(200)
         .json({ success: true, data: { id: Number(ya[0].id), creada: false } });
@@ -166,8 +183,9 @@ export const listarConversaciones = async (req, res) => {
        LEFT JOIN propiedades p ON p.id = c.propiedad_id
        JOIN usuarios ou ON ou.id = CASE WHEN c.interesado_id = $1
          THEN c.publicador_id ELSE c.interesado_id END
-       WHERE c.interesado_id = $1
-          OR (c.publicador_id = $1 AND c.ultimo_mensaje_at IS NOT NULL)
+        WHERE (c.interesado_id = $1 AND c.borrado_interesado_at IS NULL)
+           OR (c.publicador_id = $1 AND c.ultimo_mensaje_at IS NOT NULL
+               AND c.borrado_publicador_at IS NULL)
        ORDER BY COALESCE(c.ultimo_mensaje_at, c.created_at) DESC`,
       [uid],
     );
@@ -224,7 +242,7 @@ export const listarMensajes = async (req, res) => {
       });
     }
     const conv = await conversacionDe(id, uid);
-    if (!conv) {
+    if (!conv || borradaPara(conv, uid)) {
       return res.status(404).json({
         success: false,
         error: "Conversación no encontrada.",
@@ -337,12 +355,15 @@ export const enviarMensaje = async (req, res) => {
     const columnaNoLeidos = soyInteresado
       ? "no_leidos_publicador"
       : "no_leidos_interesado";
+    // Un mensaje nuevo revive el chat para ambos (por si alguno lo borró).
     await client.query(
       `UPDATE chat_conversaciones
        SET ultimo_mensaje_texto = left($2, 200),
            ultimo_mensaje_de = $3,
            ultimo_mensaje_at = now(),
            updated_at = now(),
+           borrado_interesado_at = NULL,
+           borrado_publicador_at = NULL,
            ${columnaNoLeidos} = ${columnaNoLeidos} + 1
        WHERE id = $1`,
       [id, contenido, uid],
@@ -394,7 +415,8 @@ export const marcarLeida = async (req, res) => {
     const conv = convRows[0];
     if (
       !conv ||
-      (conv.interesado_id !== uid && conv.publicador_id !== uid)
+      (conv.interesado_id !== uid && conv.publicador_id !== uid) ||
+      borradaPara(conv, uid)
     ) {
       return res.status(404).json({
         success: false,
@@ -444,6 +466,7 @@ export const marcarLeida = async (req, res) => {
 
 // ────────────────────────────────────────────────────────────────
 // GET /chat/no-leidos -> { total }
+// Solo cuenta conversaciones visibles (no borradas por mí).
 // ────────────────────────────────────────────────────────────────
 export const contarNoLeidos = async (req, res) => {
   try {
@@ -451,7 +474,8 @@ export const contarNoLeidos = async (req, res) => {
       `SELECT COALESCE(SUM(CASE WHEN interesado_id = $1
          THEN no_leidos_interesado ELSE no_leidos_publicador END), 0) AS total
        FROM chat_conversaciones
-       WHERE interesado_id = $1 OR publicador_id = $1`,
+       WHERE (interesado_id = $1 AND borrado_interesado_at IS NULL)
+          OR (publicador_id = $1 AND borrado_publicador_at IS NULL)`,
       [req.usuario.id],
     );
     res
@@ -463,5 +487,90 @@ export const contarNoLeidos = async (req, res) => {
       success: false,
       error: "Error al contar no leídos.",
     });
+  }
+};
+
+// ────────────────────────────────────────────────────────────────
+// DELETE /chat/conversaciones/:id
+// Borrado por participante: oculto para mí, intacto para el otro.
+// Si el otro ya lo había borrado -> borrado físico total (CASCADE
+// elimina los mensajes). Idempotente: borrar 2 veces = 404 la 2da.
+// ────────────────────────────────────────────────────────────────
+export const eliminarConversacion = async (req, res) => {
+  const client = await pool.connect();
+  try {
+    const uid = req.usuario.id;
+    const id = parseId(req.params.id);
+    if (!id) {
+      return res.status(400).json({
+        success: false,
+        error: "Conversación inválida.",
+      });
+    }
+
+    await client.query("BEGIN");
+    const { rows } = await client.query(
+      "SELECT * FROM chat_conversaciones WHERE id = $1 FOR UPDATE",
+      [id],
+    );
+    const conv = rows[0];
+    if (
+      !conv ||
+      (conv.interesado_id !== uid && conv.publicador_id !== uid) ||
+      borradaPara(conv, uid)
+    ) {
+      await client.query("ROLLBACK");
+      return res.status(404).json({
+        success: false,
+        error: "Conversación no encontrada.",
+      });
+    }
+
+    const soyInteresado = conv.interesado_id === uid;
+    const miColBorrado = soyInteresado
+      ? "borrado_interesado_at"
+      : "borrado_publicador_at";
+    const miColNoLeidos = soyInteresado
+      ? "no_leidos_interesado"
+      : "no_leidos_publicador";
+    const otroBorro = soyInteresado
+      ? conv.borrado_publicador_at != null
+      : conv.borrado_interesado_at != null;
+
+    if (otroBorro) {
+      // Ambos borraron -> borrado definitivo (mensajes por CASCADE).
+      await client.query("DELETE FROM chat_conversaciones WHERE id = $1", [id]);
+      await client.query("COMMIT");
+      return res.status(200).json({
+        success: true,
+        data: { eliminadoDefinitivo: true },
+      });
+    }
+
+    await client.query(
+      `UPDATE chat_conversaciones
+       SET ${miColBorrado} = now(), ${miColNoLeidos} = 0, updated_at = now()
+       WHERE id = $1`,
+      [id],
+    );
+    await client.query("COMMIT");
+    // Sin aviso socket al otro: para él nada cambia, sigue viendo el chat.
+    return res.status(200).json({
+      success: true,
+      data: { eliminadoDefinitivo: false },
+    });
+  } catch (error) {
+    try {
+      await client.query("ROLLBACK");
+    } catch {
+      // la transacción ya estaba cerrada
+    }
+    console.error(error);
+    return res.status(500).json({
+      success: false,
+      error: "Error al eliminar la conversación.",
+    });
+  } finally {
+    client.release();
   }
 };

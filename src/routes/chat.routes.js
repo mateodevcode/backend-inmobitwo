@@ -7,6 +7,7 @@ import {
   enviarMensaje,
   marcarLeida,
   contarNoLeidos,
+  eliminarConversacion,
 } from "../controllers/chat.controllers.js";
 import { verificarToken } from "../middleware/auth.middleware.js";
 import {
@@ -69,6 +70,13 @@ router.post(
   verificarToken,
   rateLimit,
   marcarLeida,
+);
+
+router.delete(
+  `${ruta}/conversaciones/:id`,
+  verificarToken,
+  rateLimit,
+  eliminarConversacion,
 );
 
 router.get(`${ruta}/no-leidos`, verificarToken, rateLimit, contarNoLeidos);
