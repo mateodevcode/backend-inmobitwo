@@ -89,6 +89,18 @@ export const getMisFavoritos = async (req, res) => {
       SELECT 
         f.*,
         COALESCE(
+          (SELECT pg.url FROM propiedades_galeria pg
+           WHERE pg.propiedad_id = f.id AND pg.es_portada = true AND pg.tamaño = 'medium'
+           LIMIT 1),
+          NULL
+        ) as imagen_principal_url,
+        COALESCE(
+          (SELECT pg.public_id FROM propiedades_galeria pg
+           WHERE pg.propiedad_id = f.id AND pg.es_portada = true AND pg.tamaño = 'medium'
+           LIMIT 1),
+          NULL
+        ) as imagen_principal_public_id,
+        COALESCE(
           (
             SELECT json_agg(
               json_build_object(

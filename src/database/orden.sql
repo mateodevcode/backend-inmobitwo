@@ -25,6 +25,7 @@
 -- 009_busquedas_guardadas.sql -> búsquedas guardadas + eventos de vivienda + notificaciones + push_subscriptions
 --                                (triggers trg_property_events_listings y trg_property_events_publicar)
 -- 010_descartados.sql -> descartados de propiedades (usuario_descartados)
+-- 011_chat.sql -> chat entre usuarios (chat_conversaciones, chat_mensajes)
 --
 -- NOTA: db.sql es la fuente de verdad única. Actualizarlo siempre al agregar
 --       catálogos, columnas o features nuevos.

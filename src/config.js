@@ -42,3 +42,9 @@ export const INTERNO_COOKIE_SECRET = process.env.INTERNO_COOKIE_SECRET;
 // ia (DeepSeek)
 export const DEEPSEEK_API_KEY = process.env.DEEPSEEK_API_KEY;
 export const DEEPSEEK_BASE_URL = process.env.DEEPSEEK_BASE_URL;
+
+// chat — socket-core (transporte en tiempo real). La API key nunca sale al frontend.
+export const SOCKET_CORE_URL = process.env.SOCKET_CORE_URL;
+export const SOCKET_CORE_API_KEY = process.env.SOCKET_CORE_API_KEY;
+export const SOCKET_CORE_ORIGIN = process.env.SOCKET_CORE_ORIGIN;
+export const SOCKET_CORE_WS_PUBLIC_URL = process.env.SOCKET_CORE_WS_PUBLIC_URL;
