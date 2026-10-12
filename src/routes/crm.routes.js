@@ -26,6 +26,18 @@ import {
   listarTareas,
   obtenerContacto,
 } from "../controllers/crm.nucleo.controllers.js";
+import {
+  actualizarEtapa,
+  actualizarOportunidad,
+  cerrarOportunidad,
+  crearEtapa,
+  crearOportunidad,
+  eliminarEtapa,
+  getEtapas,
+  listarOportunidades,
+  moverOportunidad,
+  obtenerOportunidad,
+} from "../controllers/crm.pipeline.controllers.js";
 
 const router = Router();
 const rateLimit = createRateLimitMiddleware(defaultLimiter);
@@ -52,5 +64,17 @@ router.get("/crm/tareas", ...conEspacio, listarTareas);
 router.post("/crm/tareas", ...conEspacio, crearTarea);
 router.patch("/crm/tareas/:id", ...conEspacio, actualizarTarea);
 router.post("/crm/tareas/:id/completar", ...conEspacio, completarTarea);
+
+// Fase 3 — pipeline
+router.get("/crm/etapas", ...conEspacio, getEtapas);
+router.post("/crm/etapas", ...conEspacio, crearEtapa);
+router.patch("/crm/etapas/:id", ...conEspacio, actualizarEtapa);
+router.delete("/crm/etapas/:id", ...conEspacio, eliminarEtapa);
+router.get("/crm/oportunidades", ...conEspacio, listarOportunidades);
+router.post("/crm/oportunidades", ...conEspacio, crearOportunidad);
+router.get("/crm/oportunidades/:id", ...conEspacio, obtenerOportunidad);
+router.patch("/crm/oportunidades/:id", ...conEspacio, actualizarOportunidad);
+router.patch("/crm/oportunidades/:id/mover", ...conEspacio, moverOportunidad);
+router.patch("/crm/oportunidades/:id/cerrar", ...conEspacio, cerrarOportunidad);
 
 export default router;
