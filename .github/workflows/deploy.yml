@@ -54,7 +54,6 @@ jobs:
             docker compose build backend
             docker compose build rust-tracking
             docker compose build rust-media
-            docker compose build rust-websocket
             docker compose up -d --remove-orphans
 
             echo "→ SSL (certbot, certificado independiente)..."
