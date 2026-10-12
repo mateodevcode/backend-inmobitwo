@@ -495,3 +495,42 @@ export const completarTarea = async (req, res) => {
     return res.status(500).json({ success: false, error: error.message });
   }
 };
+
+// ── POST /crm/reasignar (solo agency_admin en org) ─────────────────
+// Mueve contactos, oportunidades y tareas de un miembro a otro, en transacción.
+export const reasignarMasivo = async (req, res) => {
+  const client = await pool.connect();
+  try {
+    const crm = req.crm;
+    if (crm.tipo !== "org" || crm.rolEnOrg !== "agency_admin") {
+      return res.status(403).json({ success: false, error: "Solo un administrador puede reasignar." });
+    }
+    const { desde_id, hacia_id } = req.body;
+    if (!Number.isInteger(Number(desde_id)) || !Number.isInteger(Number(hacia_id))) {
+      return res.status(400).json({ success: false, error: "desde_id y hacia_id son requeridos." });
+    }
+    await client.query("BEGIN");
+    const contactos = await client.query(
+      "UPDATE crm_contactos SET asignado_a_id = $1, updated_at = now() WHERE organizacion_id = $2 AND asignado_a_id = $3 AND archivado_at IS NULL",
+      [hacia_id, crm.organizacionId, desde_id],
+    );
+    const oportunidades = await client.query(
+      "UPDATE crm_oportunidades SET asignado_a_id = $1, updated_at = now() WHERE organizacion_id = $2 AND asignado_a_id = $3",
+      [hacia_id, crm.organizacionId, desde_id],
+    );
+    const tareas = await client.query(
+      "UPDATE crm_tareas SET asignado_a_id = $1, updated_at = now() WHERE organizacion_id = $2 AND asignado_a_id = $3 AND completada_at IS NULL",
+      [hacia_id, crm.organizacionId, desde_id],
+    );
+    await client.query("COMMIT");
+    return res.status(200).json({
+      success: true,
+      data: { contactos: contactos.rowCount, oportunidades: oportunidades.rowCount, tareas: tareas.rowCount },
+    });
+  } catch (error) {
+    await client.query("ROLLBACK");
+    return res.status(500).json({ success: false, error: error.message });
+  } finally {
+    client.release();
+  }
+};
