@@ -48,3 +48,37 @@ export async function leadVisibleParaUsuario(pool, usuarioId, leadId) {
   );
   return rows.length > 0;
 }
+
+// Filtro de lectura para crm_contactos / crm_tareas (y actividades vía contacto).
+// Personal: dueño = yo. Org admin: toda la org. Org agent: asignados o creados por él.
+export function whereEspacioPropio(crm, alias = "c", startIndex = 1) {
+  if (crm.tipo === "personal") {
+    return {
+      where: `${alias}.usuario_id = $${startIndex}`,
+      params: [crm.usuarioId],
+      nextIndex: startIndex + 1,
+    };
+  }
+  if (crm.rolEnOrg === "agency_admin") {
+    return {
+      where: `${alias}.organizacion_id = $${startIndex}`,
+      params: [crm.organizacionId],
+      nextIndex: startIndex + 1,
+    };
+  }
+  return {
+    where: `${alias}.organizacion_id = $${startIndex} AND (${alias}.asignado_a_id = $${startIndex + 1} OR ${alias}.creado_por_id = $${startIndex + 1})`,
+    params: [crm.organizacionId, crm.usuarioId],
+    nextIndex: startIndex + 2,
+  };
+}
+
+// Normalización de teléfono colombiano: 10 dígitos desde 3.
+// Devuelve dígitos normalizados o null si no es un celular válido.
+export function normalizarTelefonoCO(valor) {
+  if (valor == null || valor === "") return null;
+  let d = String(valor).replace(/\D/g, "");
+  if (d.startsWith("0057")) d = d.slice(4);
+  else if (d.startsWith("57") && d.length === 12) d = d.slice(2);
+  return /^3\d{9}$/.test(d) ? d : null;
+}
