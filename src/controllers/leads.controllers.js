@@ -52,11 +52,24 @@ export const updateLeadEstado = async (req, res) => {
     }
 
     const { rows } = await pool.query(
-      "UPDATE leads SET estado = $1 WHERE id = $2 RETURNING *",
-      [estado, id],
+      `UPDATE leads SET estado = $1 WHERE id = $2
+       AND (
+         propiedad_id IN (SELECT id FROM propiedades WHERE publicado_por_id = $3 AND organizacion_id IS NULL)
+         OR propiedad_id IN (
+           SELECT p.id FROM propiedades p
+           WHERE p.organizacion_id IN (
+             SELECT om.organizacion_id FROM organizacion_miembros om
+             JOIN organizaciones o ON o.id = om.organizacion_id
+             WHERE om.usuario_id = $3 AND om.estado = 'activo' AND o.estado = 'aprobada'
+           )
+         )
+       )
+       RETURNING *`,
+      [estado, id, req.usuario.id],
     );
 
     if (!rows[0]) {
+      // Mismo 404 exista o no: no revela leads ajenos.
       return res.status(404).json({
         success: false,
         error: "Lead no encontrado.",
