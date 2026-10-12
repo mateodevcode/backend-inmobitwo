@@ -25,8 +25,8 @@ import {
   listarContactos,
   listarTareas,
   obtenerContacto,
-} from "../controllers/crm.nucleo.controllers.js";
-import {
+  reasignarMasivo,
+} from "../controllers/crm.nucleo.controllers.js";import {
   actualizarEtapa,
   actualizarOportunidad,
   cerrarOportunidad,
@@ -62,6 +62,7 @@ router.get("/crm/contactos/:id", ...conEspacio, obtenerContacto);
 router.patch("/crm/contactos/:id", ...conEspacio, actualizarContacto);
 router.delete("/crm/contactos/:id", ...conEspacio, archivarContacto);
 router.patch("/crm/contactos/:id/asignar", ...conEspacio, asignarContacto);
+router.post("/crm/reasignar", ...conEspacio, reasignarMasivo);
 router.post("/crm/leads/:id/convertir", ...conEspacio, convertirLead);
 
 // Fase 2 — actividades y tareas
