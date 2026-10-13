@@ -139,7 +139,7 @@ CREATE TABLE IF NOT EXISTS organizaciones (
     logo_url VARCHAR(500),
     logo_public_id VARCHAR(255),
     ciudad VARCHAR(100),
-    provincia VARCHAR(100),
+    departamento VARCHAR(100),
     slug VARCHAR(150) UNIQUE,
     custom_domain VARCHAR(255) UNIQUE,
     dominio_estado VARCHAR(50) DEFAULT 'sin_dominio' NOT NULL CHECK (

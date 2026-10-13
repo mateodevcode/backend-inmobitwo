@@ -125,7 +125,7 @@ export const CAMPOS_ORGANIZACION = {
     "logo_url",
     "logo_public_id",
     "ciudad",
-    "provincia",
+    "departamento",
     "slug",
     "tema",
     "estado",
@@ -135,7 +135,7 @@ export const CAMPOS_ORGANIZACION = {
     "created_at",
     "updated_at",
   ],
-  default: ["id", "nombre", "slug", "logo_url", "ciudad", "provincia", "telefono"],
+  default: ["id", "nombre", "slug", "logo_url", "ciudad", "departamento", "telefono"],
   sensitive: ["creada_por_id"],
 };
 

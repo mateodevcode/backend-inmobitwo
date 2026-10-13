@@ -79,7 +79,7 @@ export const getStates = async (req, res) => {
     console.error(error);
     res.status(500).json({
       success: false,
-      message: "Error al obtener provincias/departamentos",
+      message: "Error al obtener departamentos",
       data: null,
       error: error.message,
     });
