@@ -67,7 +67,7 @@ export function buildTipoFilter(type, { alias = "p", startIdx = 1 } = {}) {
 
 /**
  * True cuando el tipo es el filtro virtual de vacacional.
- * Útil para forzar la operación a "arriendo" en ese caso.
+ * Útil para forzar la operación a "alquiler" en ese caso.
  */
 export function esTipoVacacional(type) {
   return (type || "")

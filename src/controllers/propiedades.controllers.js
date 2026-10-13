@@ -2733,13 +2733,13 @@ export const getPropertiesBySlugs = async (req, res) => {
       ? `AND (${caractConds.join(" AND ")})`
       : "";
 
-    // Vacacional solo aplica a arriendo (por temporada).
+    // Vacacional solo aplica a alquiler (por temporada).
     if (esTipoVacacional(type)) {
-      opSlug = "arriendo";
+      opSlug = "alquiler";
     }
 
     // Fase 5: la operación filtrada sale de la oferta activa (una "ambas"
-    // aparece en venta con su precio de venta y en arriendo con su canon).
+    // aparece en venta con su precio de venta y en alquiler con su canon).
     const opIdSlugs = await operationIdPorCode(opSlug);
     if (!opIdSlugs) {
       return res.status(400).json({
@@ -3035,7 +3035,7 @@ export const searchVivienda = async (req, res) => {
     const params = [tipoLista];
     const conds = [
       // La operación la filtra el JOIN a la oferta activa (una "ambas" sale
-      // en venta y en arriendo con su precio); el espejo no se usa aquí.
+      // en venta y en alquiler con su precio); el espejo no se usa aquí.
       "LOWER(pt.code) = ANY($1::text[])",
       "p.estado = 'publicado'",
     ];
@@ -3285,7 +3285,7 @@ export const getInmueblesEnBbox = async (req, res) => {
     const filters = ["p.estado = 'publicado'", "p.geom IS NOT NULL"];
 
     if (esTipoVacacional(tipoInmueble)) {
-      operation = "arriendo";
+      operation = "alquiler";
     }
 
     // params[0] se reservaba a la operación del espejo; la operación la filtra
@@ -3419,7 +3419,7 @@ export const getPropiedadResumen = async (req, res) => {
   }
 };
 
-// GET /propiedades/:id/historial-precios[?operacion=venta|arriendo]
+// GET /propiedades/:id/historial-precios[?operacion=venta|alquiler]
 export const getHistorialPrecios = async (req, res) => {
   const { id } = req.params;
   const { operacion } = req.query;
@@ -3444,7 +3444,7 @@ export const getHistorialPrecios = async (req, res) => {
       if (opRows.length === 0) {
         return res.status(400).json({
           success: false,
-          message: "Operación no válida (venta|arriendo).",
+          message: "Operación no válida (venta|alquiler).",
           data: null,
           error: null,
         });
@@ -3572,7 +3572,7 @@ export const guardarPropiedadCaracteristicas = async (req, res) => {
       });
     }
 
-    // Fase 4: características solo-rent exigen oferta de arriendo.
+    // Fase 4: características solo-rent exigen oferta de alquiler.
     if (features.length > 0) {
       const { rows: rentRows } = await pool.query(
         `SELECT fc.code FROM feature_catalog fc
@@ -3580,16 +3580,16 @@ export const guardarPropiedadCaracteristicas = async (req, res) => {
         [features.map((f) => f.feature_id).filter(Boolean)],
       );
       if (rentRows.length > 0) {
-        const { rows: arriendo } = await pool.query(
+        const { rows: alquiler } = await pool.query(
           `SELECT 1 FROM property_listings l
            JOIN operation_types ot ON ot.id = l.operation_type_id
-           WHERE l.propiedad_id = $1 AND LOWER(ot.code) = 'arriendo'`,
+           WHERE l.propiedad_id = $1 AND LOWER(ot.code) = 'alquiler'`,
           [id],
         );
-        if (arriendo.length === 0) {
+        if (alquiler.length === 0) {
           return res.status(400).json({
             success: false,
-            message: `Estas características exigen oferta de arriendo: ${rentRows.map((r) => r.code).join(", ")}.`,
+            message: `Estas características exigen oferta de alquiler: ${rentRows.map((r) => r.code).join(", ")}.`,
             data: null,
             error: null,
           });

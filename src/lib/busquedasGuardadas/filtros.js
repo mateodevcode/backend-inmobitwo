@@ -40,7 +40,7 @@ export function normalizarFiltros(raw = {}) {
 
 export function validarFiltros(f) {
   const errores = [];
-  if (!f.operation) errores.push("Falta la operación (venta/arriendo).");
+  if (!f.operation) errores.push("Falta la operación (venta/alquiler).");
   if (!f.dept) errores.push("Falta el departamento.");
   if (!f.type && !f.tipos) errores.push("Falta el tipo de inmueble.");
   return errores;
@@ -110,9 +110,9 @@ export async function construirWhereBusqueda(f, params) {
   const where = [];
   const push = (v) => { params.push(v); return `$${params.length}`; };
 
-  // operación (vacacional fuerza arriendo, igual que el controlador)
+  // operación (vacacional fuerza alquiler, igual que el controlador)
   const tiposTxt = `${f.type || ""},${f.tipos || ""}`;
-  const opCode = esTipoVacacional(tiposTxt) ? "arriendo" : f.operation;
+  const opCode = esTipoVacacional(tiposTxt) ? "alquiler" : f.operation;
   const opId = await operationIdPorCode(opCode);
   if (!opId) throw new Error(`Operación desconocida: ${opCode}`);
   joins.unshift(joinOfertaActiva(opId));

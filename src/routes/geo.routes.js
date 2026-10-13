@@ -25,7 +25,7 @@ router.get("/states", rateLimit, getStates);
 router.get("/cities", rateLimit, getCities);
 router.get("/titulo-sugerido", rateLimit, getTituloSugerido);
 
-// Autocompletado tipo Idealista
+// Autocompletado de ciudades
 router.get("/suggest-cities", rateLimit, suggestCities);
 
 // Info de ubicación con conteos

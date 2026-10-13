@@ -69,7 +69,7 @@ FROM propiedades p
 WHERE p.operation_type_id IS NOT NULL
   AND NOT EXISTS (SELECT 1 FROM property_listings l WHERE l.propiedad_id = p.id);
 
--- 7. Espejo: propiedades refleja la oferta principal (activa primero, venta antes que arriendo)
+-- 7. Espejo: propiedades refleja la oferta principal (activa primero, venta antes que alquiler)
 CREATE OR REPLACE FUNCTION sync_property_from_listings(p_id INTEGER) RETURNS VOID AS $$
 DECLARE
     v_primary property_listings%ROWTYPE;

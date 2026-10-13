@@ -33,7 +33,7 @@ const fetchOrNull = async (...args) => {
 
 // ─────────────────────────────────────────────
 // Fase 6: operación del lead. Si el cliente envía `operation` ("venta" o
-// "arriendo") se usa su id; si no, la operación principal del espejo.
+// "alquiler") se usa su id; si no, la operación principal del espejo.
 // Si Rust escribe el lead, NO lo tocamos (solo Node aquí).
 // ─────────────────────────────────────────────
 const resolverOperationLead = async (operation, propiedadId) => {

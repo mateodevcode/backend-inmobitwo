@@ -43,7 +43,7 @@ CREATE TABLE IF NOT EXISTS operation_types (
     code VARCHAR(20) NOT NULL UNIQUE,
     label_es VARCHAR(50) NOT NULL
 );
--- Tipos de alquiler (subtipo de arriendo: residencial, temporada, vacacional)
+-- Tipos de alquiler (residencial, temporada, vacacional)
 CREATE TABLE IF NOT EXISTS rental_types (
     id SMALLSERIAL PRIMARY KEY,
     code VARCHAR(30) NOT NULL UNIQUE,
@@ -661,8 +661,8 @@ CREATE INDEX IF NOT EXISTS idx_usuarios_rol ON usuarios(rol);
 -- ============================================================================
 INSERT INTO operation_types (code, label_es)
 VALUES ('venta', 'Venta'),
-    ('arriendo', 'Arriendo'),
-    ('arriendo_venta', 'Arriendo con opción a compra');
+    ('alquiler', 'Alquiler'),
+    ('alquiler_venta', 'Alquiler con opción a compra');
 INSERT INTO rental_types (code, label_es)
 VALUES ('residencial', 'Residencial, vivienda habitual'),
     ('temporada', 'De temporada'),
@@ -928,7 +928,7 @@ VALUES (
         'rules',
         'boolean'
     ),
-    -- Features específicos de "Habitación" (arriendo de habitaciones)
+    -- Features específicos de "Habitación" (alquiler de habitaciones)
     (
         'bano_privado',
         'Baño privado',
@@ -1232,7 +1232,7 @@ FROM propiedades p
 WHERE p.operation_type_id IS NOT NULL
   AND NOT EXISTS (SELECT 1 FROM property_listings l WHERE l.propiedad_id = p.id);
 
--- 7. Espejo: propiedades refleja la oferta principal (activa primero, venta antes que arriendo)
+-- 7. Espejo: propiedades refleja la oferta principal (activa primero, venta antes que alquiler)
 CREATE OR REPLACE FUNCTION sync_property_from_listings(p_id INTEGER) RETURNS VOID AS $$
 DECLARE
     v_primary property_listings%ROWTYPE;

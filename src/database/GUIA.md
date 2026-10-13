@@ -78,12 +78,12 @@ Función wrapper `IMMUTABLE` de `unaccent()` para poder crear índices GIN sobre
 
 ## 1. operation_types
 
-**Propósito:** Normalizar los tipos de operación (venta, arriendo). Evita que en la base existan `"venta"`, `"Venta"` y `"VENTA"` como valores distintos.
+**Propósito:** Normalizar los tipos de operación (venta, alquiler). Evita que en la base existan `"venta"`, `"Venta"` y `"VENTA"` como valores distintos.
 
 | Columna | Tipo | Descripción |
 |---------|------|-------------|
 | `id` | SMALLSERIAL | PK autoincremental |
-| `code` | VARCHAR(20) | Código estable (`venta`, `arriendo`) |
+| `code` | VARCHAR(20) | Código estable (`venta`, `alquiler`) |
 | `label_es` | VARCHAR(50) | Texto visible para el usuario |
 
 **Ejemplo:**
@@ -91,8 +91,8 @@ Función wrapper `IMMUTABLE` de `unaccent()` para poder crear índices GIN sobre
 SELECT * FROM operation_types;
 -- id | code           | label_es
 -- 1  | venta          | Venta
--- 2  | arriendo       | Arriendo
--- 3  | arriendo_venta | Arriendo con opción a compra
+-- 2  | alquiler       | Alquiler
+-- 3  | alquiler_venta | Alquiler con opción a compra
 ```
 
 **Uso en propiedad:**
@@ -106,7 +106,7 @@ JOIN operation_types ot ON p.operation_type_id = ot.id;
 
 ## 2. rental_types
 
-**Propósito:** Subtipo de arriendo. Indica qué tipo de alquiler es: residencial habitual, temporada o vacacional.
+**Propósito:** Subtipo de alquiler. Indica qué tipo de alquiler es: residencial habitual, temporada o vacacional.
 
 | Columna | Tipo | Descripción |
 |---------|------|-------------|
