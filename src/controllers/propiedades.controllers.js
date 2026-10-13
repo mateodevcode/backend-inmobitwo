@@ -296,7 +296,7 @@ export const getPropiedades = async (req, res) => {
               o.logo_url,
               o.telefono,
               o.ciudad,
-              o.provincia
+              o.departamento
             FROM organizaciones o
             WHERE o.id = $1`,
                 [propiedad.organizacion_id],
@@ -2276,7 +2276,7 @@ export const getPropiedadesHome = async (req, res) => {
         let publicador = null;
         if (propiedad.es_de_organizacion) {
           const { rows } = await pool.query(
-            `SELECT id, nombre, logo_url, telefono, ciudad, provincia
+            `SELECT id, nombre, logo_url, telefono, ciudad, departamento
              FROM organizaciones WHERE id = $1`,
             [propiedad.organizacion_id],
           );
@@ -2376,7 +2376,7 @@ export const getPropiedadesMisAnuncios = async (req, res) => {
               logo_url,
               telefono,
               ciudad,
-              provincia
+              departamento
             FROM organizaciones
             WHERE id = $1`,
             [propiedad.organizacion_id],
@@ -2467,7 +2467,7 @@ export const getPropiedadesByOrganizacion = async (req, res) => {
 
     // 1. Resolver la organización por slug (solo si está aprobada)
     const { rows: orgRows } = await pool.query(
-      `SELECT id, nombre, logo_url, telefono, ciudad, provincia, slug, custom_domain
+      `SELECT id, nombre, logo_url, telefono, ciudad, departamento, slug, custom_domain
        FROM organizaciones 
        WHERE slug = $1 AND estado = 'aprobada'`,
       [slug],

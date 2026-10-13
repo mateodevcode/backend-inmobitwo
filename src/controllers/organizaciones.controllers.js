@@ -200,7 +200,7 @@ export const createOrganizacion = async (req, res) => {
 
     const { rows } = await pool.query(
       `INSERT INTO organizaciones 
-        (nombre, email, telefono, website, descripcion, logo_url, logo_public_id, ciudad, provincia, slug, creada_por_id) 
+        (nombre, email, telefono, website, descripcion, logo_url, logo_public_id, ciudad, departamento, slug, creada_por_id) 
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) 
        RETURNING *`,
       [
@@ -212,7 +212,7 @@ export const createOrganizacion = async (req, res) => {
         data.logo_url,
         data.logo_public_id,
         data.ciudad,
-        data.provincia,
+        data.departamento,
         slug,
         data.creada_por_id,
       ],
@@ -303,7 +303,7 @@ export const updateOrganizacion = async (req, res) => {
       "logo_url",
       "logo_public_id",
       "ciudad",
-      "provincia",
+      "departamento",
       "tema", // ← NUEVO
     ];
 

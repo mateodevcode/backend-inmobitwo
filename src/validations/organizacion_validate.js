@@ -61,9 +61,9 @@ export function organizacion_validate(datos) {
     errores.push("La ciudad no puede exceder los 100 caracteres.");
   }
 
-  // Validación de provincia (opcional)
-  if (datos.provincia && datos.provincia.length > 100) {
-    errores.push("La provincia no puede exceder los 100 caracteres.");
+  // Validación de departamento (opcional)
+  if (datos.departamento && datos.departamento.length > 100) {
+    errores.push("El departamento no puede exceder los 100 caracteres.");
   }
 
   // Validación de estado (opcional, con valores permitidos)
