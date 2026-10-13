@@ -1,6 +1,6 @@
 // Fuente única de verdad para el modelo de ofertas por operación.
-// arriendo_venta: solo lectura/heredado (no se crea ni se combina).
-export const OPERACIONES_SOPORTADAS = ["venta", "arriendo"]; // arriendo_venta: solo lectura/heredado
+// alquiler_venta: solo lectura/heredado (no se crea ni se combina).
+export const OPERACIONES_SOPORTADAS = ["venta", "alquiler"]; // alquiler_venta: solo lectura/heredado
 export const MATRIZ_OPERACIONES = {
   venta: {
     requeridos: ["precio"],
@@ -8,7 +8,7 @@ export const MATRIZ_OPERACIONES = {
     derivados: ["price_per_sqm"],
     estados: ["active", "inactive", "sold", "expired"],
   },
-  arriendo: {
+  alquiler: {
     requeridos: ["precio", "rental_type_id"],
     permitidos: ["precio", "rental_type_id", "parking_space_price", "listing_status", "expires_at"],
     derivados: [],

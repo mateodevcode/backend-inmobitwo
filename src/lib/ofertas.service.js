@@ -81,10 +81,10 @@ async function marcarDescripcion(client, propiedadId) {
   );
 }
 
-// Tras borrar una oferta: si ya no queda arriendo se van las 'rent';
+// Tras borrar una oferta: si ya no queda alquiler se van las 'rent';
 // si ya no queda venta, las 'sale'. Devuelve los códigos eliminados.
 async function limpiarFeaturesNoAplicables(client, propiedadId) {
-  // Al quedar sin arriendo se van las 'rent'; al quedar sin venta, las 'sale'.
+  // Al quedar sin alquiler se van las 'rent'; al quedar sin venta, las 'sale'.
   const { rows: restantes } = await client.query(
     `SELECT DISTINCT ot.code FROM property_listings l
      JOIN operation_types ot ON ot.id = l.operation_type_id
@@ -93,7 +93,7 @@ async function limpiarFeaturesNoAplicables(client, propiedadId) {
   );
   const codes = restantes.map((r) => String(r.code).toLowerCase());
   const quitar = [];
-  if (!codes.includes("arriendo")) quitar.push("rent");
+  if (!codes.includes("alquiler")) quitar.push("rent");
   if (!codes.includes("venta")) quitar.push("sale");
   if (quitar.length === 0) return [];
   const { rows: borradas } = await client.query(
@@ -226,7 +226,7 @@ export async function actualizarOferta(client, { propiedadId, operation, datos =
     }
     cambios.precio = precio;
   }
-  if (code === "arriendo" && datos.rental_type_id !== undefined && datos.rental_type_id !== null && datos.rental_type_id !== "") {
+  if (code === "alquiler" && datos.rental_type_id !== undefined && datos.rental_type_id !== null && datos.rental_type_id !== "") {
     cambios.rental_type_id = Number(datos.rental_type_id);
   }
   if (code === "venta" && datos.rental_type_id) {
@@ -290,7 +290,7 @@ export async function actualizarOferta(client, { propiedadId, operation, datos =
         [propiedadId, operationId],
       );
     }
-    // Arriendo a 'rented': la venta NO se toca (regla de negocio).
+    // Alquiler a 'rented': la venta NO se toca (regla de negocio).
   }
 
   const columnas = Object.keys(cambios);
@@ -342,7 +342,7 @@ export async function quitarOferta(client, { propiedadId, operation, usuarioId }
     [propiedadId, operationId],
   );
 
-  // Tras borrar: si ya no queda arriendo, fuera características solo-rent;
+  // Tras borrar: si ya no queda alquiler, fuera características solo-rent;
   // si ya no queda venta, fuera las solo-sale.
   const eliminadas = await limpiarFeaturesNoAplicables(client, propiedadId);
 
@@ -369,7 +369,7 @@ export async function quitarOferta(client, { propiedadId, operation, usuarioId }
   };
 }
 
-// Reemplazo atómico venta<->arriendo: el precio y rental NUNCA se heredan.
+// Reemplazo atómico venta<->alquiler: el precio y rental NUNCA se heredan.
 export async function cambiarOperacion(client, { propiedadId, desde, hacia, datos = {}, usuarioId }) {
   const desdeCode = String(desde || "").toLowerCase();
   const haciaCode = String(hacia || "").toLowerCase();

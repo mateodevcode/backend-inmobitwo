@@ -39,7 +39,7 @@ export async function validarOferta(operacionCode, datos = {}, { tipoInmuebleCod
   }
 
   if (
-    operacion === "arriendo" &&
+    operacion === "alquiler" &&
     datos.rental_type_id !== undefined &&
     datos.rental_type_id !== null &&
     datos.rental_type_id !== ""
@@ -60,8 +60,8 @@ export async function validarOferta(operacionCode, datos = {}, { tipoInmuebleCod
     );
   }
 
-  if (tipoInmuebleCode && String(tipoInmuebleCode).toLowerCase() === "habitacion" && operacion !== "arriendo") {
-    errores.push("El tipo habitación solo admite la operación arriendo.");
+  if (tipoInmuebleCode && String(tipoInmuebleCode).toLowerCase() === "habitacion" && operacion !== "alquiler") {
+    errores.push("El tipo habitación solo admite la operación alquiler.");
   }
 
   return errores;

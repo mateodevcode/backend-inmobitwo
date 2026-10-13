@@ -30,6 +30,7 @@
 -- 013_crm_nucleo.sql -> núcleo CRM (crm_contactos, crm_actividades, crm_tareas)
 -- 014_crm_pipeline.sql -> pipeline CRM (crm_etapas, crm_oportunidades + FKs fase 2)
 -- 015_organizaciones_departamento.sql -> organizaciones.provincia pasa a departamento
+-- 016_operacion_alquiler.sql -> operación arriendo pasa a alquiler (códigos + búsquedas guardadas)
 --
 -- NOTA: db.sql es la fuente de verdad única. Actualizarlo siempre al agregar
 --       catálogos, columnas o features nuevos.

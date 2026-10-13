@@ -4,11 +4,11 @@
 // Ej: "Alquiler de Casa en Calle 53, Barranquilla, Atlántico"
 import { pool } from "../db.js";
 
-// generarTitulo({ operacion: "venta"|"arriendo", ambas, tipoLabel, direccion, ciudad, departamento })
+// generarTitulo({ operacion: "venta"|"alquiler", ambas, tipoLabel, direccion, ciudad, departamento })
 export function generarTitulo({ operacion, ambas, tipoLabel, direccion, ciudad, departamento }) {
   const base =
     String(operacion || "").toLowerCase() === "venta" ? "Venta" : "Alquiler";
-  const operacionesTxt = ambas ? "Venta y arriendo" : base;
+  const operacionesTxt = ambas ? "Venta y alquiler" : base;
   const tipo = String(tipoLabel || "Propiedad");
   const lugar = [direccion, ciudad, departamento].filter(Boolean).join(", ");
   const titulo = `${operacionesTxt} de ${tipo}${lugar ? ` en ${lugar}` : ""}`;
@@ -16,7 +16,7 @@ export function generarTitulo({ operacion, ambas, tipoLabel, direccion, ciudad, 
 }
 
 // Relee ofertas + datos y hace UPDATE de propiedades.titulo.
-// Si hay oferta heredada arriendo_venta, NO regenera (se respeta el título).
+// Si hay oferta heredada alquiler_venta, NO regenera (se respeta el título).
 export async function regenerarTitulo(client, propiedadId) {
   const { rows: ofertas } = await client.query(
     `SELECT l.operation_type_id, ot.code, ot.label_es
@@ -26,12 +26,12 @@ export async function regenerarTitulo(client, propiedadId) {
     [propiedadId],
   );
   if (ofertas.length === 0) return null;
-  if (ofertas.some((o) => String(o.code).toLowerCase() === "arriendo_venta")) {
+  if (ofertas.some((o) => String(o.code).toLowerCase() === "alquiler_venta")) {
     return null;
   }
 
-  // Venta primero, luego arriendo; "ambas" une con " y ".
-  const orden = { venta: 0, arriendo: 1 };
+  // Venta primero, luego alquiler; "ambas" une con " y ".
+  const orden = { venta: 0, alquiler: 1 };
   const principal = [...ofertas].sort(
     (a, b) =>
       (orden[String(a.code).toLowerCase()] ?? 9) -
@@ -60,7 +60,7 @@ export async function regenerarTitulo(client, propiedadId) {
   }
 
   const titulo = generarTitulo({
-    operacion: String(principal.code).toLowerCase() === "venta" ? "venta" : "arriendo",
+    operacion: String(principal.code).toLowerCase() === "venta" ? "venta" : "alquiler",
     ambas: esAmbas,
     tipoLabel,
     direccion: prop.direccion,

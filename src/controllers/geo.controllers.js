@@ -149,7 +149,7 @@ export const getLocationInfo = async (req, res) => {
     const filterConditions = [];
 
     if (esTipoVacacional(type)) {
-      operation = "arriendo";
+      operation = "alquiler";
     }
 
     if (operation) {
@@ -511,7 +511,7 @@ export const getGeoCount = async (req, res) => {
     const filters = ["p.estado = 'publicado'"];
 
     if (esTipoVacacional(inmueble)) {
-      operation = "arriendo";
+      operation = "alquiler";
     }
 
     if (operation) {
@@ -728,7 +728,7 @@ export const getInmueblesEnPoligono = async (req, res) => {
     const filters = ["p.estado = 'publicado'"];
 
     if (esTipoVacacional(tipoInmueble)) {
-      operation = "arriendo";
+      operation = "alquiler";
     }
 
     if (operation) {
@@ -840,7 +840,7 @@ export const suggestCities = async (req, res) => {
     const params = [countryId, `%${q}%`, `${q}%`];
 
     if (esTipoVacacional(type)) {
-      operation = "arriendo";
+      operation = "alquiler";
     }
 
     let operacionFilter = "";
