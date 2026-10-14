@@ -117,24 +117,24 @@ export const getCrmPropiedades = async (req, res) => {
     }
     if (q) {
       params.push(`%${q}%`);
-      conds.push(`(p.titulo ILIKE $${params.length} OR p.ciudad ILIKE $${params.length} OR p.direccion ILIKE $${params.length})`);
+      conds.push(`(p.titulo ILIKE $${params.length} OR ci.name ILIKE $${params.length} OR p.direccion ILIKE $${params.length} OR p.barrio_nombre ILIKE $${params.length})`);
     }
     const where = conds.join(" AND ");
 
     const { rows } = await pool.query(
-      `SELECT p.id, p.titulo, p.ciudad, p.precio, p.estado, p.created_at,
+      `SELECT p.id, p.titulo, ci.name AS ciudad, p.precio, p.estado, p.created_at,
               ${portada("p")},
               (SELECT COALESCE(SUM(v.vistas), 0)::int FROM vistas_resumen_diario v WHERE v.propiedad_id = p.id) AS vistas,
               (SELECT COUNT(*)::int FROM usuario_favoritos f WHERE f.propiedad_id = p.id) AS favoritos,
               (SELECT COUNT(*)::int FROM leads l WHERE l.propiedad_id = p.id) AS leads
-       FROM propiedades p
+       FROM propiedades p LEFT JOIN cities ci ON ci.id = p.city_id
        WHERE ${where}
        ORDER BY p.created_at DESC
        LIMIT $${params.length + 1} OFFSET $${params.length + 2}`,
       [...params, limite, offset],
     );
     const total = await pool.query(
-      `SELECT COUNT(*)::int AS total FROM propiedades p WHERE ${where}`,
+      `SELECT COUNT(*)::int AS total FROM propiedades p LEFT JOIN cities ci ON ci.id = p.city_id WHERE ${where}`,
       params,
     );
 
