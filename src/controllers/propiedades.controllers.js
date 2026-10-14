@@ -28,6 +28,15 @@ import {
 import { regenerarTitulo } from "../lib/tituloPropiedad.js";
 import { getOperationCode } from "../lib/catalogos.js";
 import { emitirViewToken } from "../lib/viewToken.js";
+import { puedeAdministrarOrganizacion } from "../lib/organizacionPermisos.js";
+
+// Dueño o agency_admin de la org del anuncio (o superadmin).
+async function puedeGestionarPropiedad(usuario, propiedad) {
+  if (!propiedad) return false;
+  if (Number(propiedad.publicado_por_id) === Number(usuario.id)) return true;
+  if (propiedad.organizacion_id == null) return false;
+  return puedeAdministrarOrganizacion(usuario.id, propiedad.organizacion_id, usuario.rol);
+}
 
 const TAMANOS = ["thumbnail", "small", "medium", "large", "xlarge"];
 
@@ -961,7 +970,7 @@ export const updatePropiedades = async (req, res) => {
     }
 
     const propiedadResult = await pool.query(
-      "SELECT publicado_por_id FROM propiedades WHERE id = $1",
+      "SELECT publicado_por_id, organizacion_id FROM propiedades WHERE id = $1",
       [id],
     );
 
@@ -972,7 +981,7 @@ export const updatePropiedades = async (req, res) => {
       });
     }
 
-    if (propiedadResult.rows[0].publicado_por_id !== req.usuario.id) {
+    if (!(await puedeGestionarPropiedad(req.usuario, propiedadResult.rows[0]))) {
       return res.status(403).json({
         success: false,
         error: "No autorizado para editar esta propiedad.",
@@ -1791,7 +1800,7 @@ export const deletePropiedades = async (req, res) => {
     }
 
     const propiedadResult = await pool.query(
-      "SELECT id, publicado_por_id FROM propiedades WHERE id = $1",
+      "SELECT id, publicado_por_id, organizacion_id FROM propiedades WHERE id = $1",
       [id],
     );
 
@@ -1804,7 +1813,7 @@ export const deletePropiedades = async (req, res) => {
 
     const propiedad = propiedadResult.rows[0];
 
-    if (propiedad.publicado_por_id !== req.usuario.id) {
+    if (!(await puedeGestionarPropiedad(req.usuario, propiedad))) {
       return res.status(403).json({
         success: false,
         error: "No autorizado para eliminar esta propiedad",
