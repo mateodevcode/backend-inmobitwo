@@ -361,7 +361,7 @@ export const aprobarOrganizacion = async (req, res) => {
     const { id } = req.params;
 
     const { rows } = await pool.query(
-      "SELECT * FROM organizaciones WHERE id = $1 AND estado = 'aprobada'",
+      "UPDATE organizaciones SET estado = 'aprobada', updated_at = now() WHERE id = $1 RETURNING *",
       [id],
     );
 
