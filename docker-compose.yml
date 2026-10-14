@@ -10,6 +10,12 @@ services:
       - REDIS_URL=${REDIS_URL}
     ports:
       - "127.0.0.1:3001:3001"
+    # Clave SSH para el módulo Dominios (ejecución remota en el host).
+    # Fuera del repo para que `git clean` del deploy no la borre
+    # (ver docs/DOMINIOS-VPS.md); si no existe, los endpoints de
+    # ejecución responden 503 sin tumbar nada.
+    volumes:
+      - /srv/infra/inmobitwo/.ssh:/app/.ssh:ro
     # Permite alcanzar el socket-core del VPS (127.0.0.1:3005 del host)
     # vía ws://host.docker.internal:3005 sin tocar la red de monitoring.
     extra_hosts:

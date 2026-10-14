@@ -56,6 +56,11 @@ jobs:
             docker compose build rust-media
             docker compose up -d --remove-orphans
 
+            echo "→ Scripts de dominios al host (módulo Dominios del CRM)..."
+            sudo mkdir -p /srv/infra/inmobitwo/scripts-dominios
+            sudo cp scripts-dominios/agregar-dominio.sh scripts-dominios/quitar-dominio.sh /srv/infra/inmobitwo/scripts-dominios/
+            sudo chmod 755 /srv/infra/inmobitwo/scripts-dominios/*.sh
+
             echo "→ SSL (certbot, certificado independiente, con reintentos)..."
             if [ ! -f /etc/letsencrypt/live/api.inmobitwo.seventwo.tech/fullchain.pem ]; then
               echo "→ Certificado no existe — generándolo con plugin nginx (cero downtime)..."

@@ -42,6 +42,14 @@ export const INTERNO_COOKIE_SECRET = process.env.INTERNO_COOKIE_SECRET;
 export const DEEPSEEK_API_KEY = process.env.DEEPSEEK_API_KEY;
 export const DEEPSEEK_BASE_URL = process.env.DEEPSEEK_BASE_URL;
 
+// dominios — ejecución remota en el VPS (módulo Dominios del CRM, solo superadmin)
+export const DOMINIOS_SSH_HOST = process.env.DOMINIOS_SSH_HOST;
+export const DOMINIOS_SSH_USER = process.env.DOMINIOS_SSH_USER;
+export const DOMINIOS_SSH_KEY_PATH = process.env.DOMINIOS_SSH_KEY_PATH;
+export const DOMINIOS_SCRIPT_DIR =
+  process.env.DOMINIOS_SCRIPT_DIR || "/srv/infra/inmobitwo/scripts-dominios";
+export const DOMINIOS_SERVER_IP = process.env.DOMINIOS_SERVER_IP || "161.97.146.80";
+
 // chat — socket-core (transporte en tiempo real). La API key nunca sale al frontend.
 export const SOCKET_CORE_URL = process.env.SOCKET_CORE_URL;
 export const SOCKET_CORE_API_KEY = process.env.SOCKET_CORE_API_KEY;

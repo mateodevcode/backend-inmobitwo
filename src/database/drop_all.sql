@@ -58,6 +58,7 @@ DROP TABLE IF EXISTS crm_oportunidades CASCADE;
 DROP TABLE IF EXISTS crm_etapas CASCADE;
 DROP TABLE IF EXISTS crm_contactos CASCADE;
 DROP TABLE IF EXISTS portada_destacada CASCADE;
+DROP TABLE IF EXISTS dominios_jobs CASCADE;
 -- Tabla principal
 DROP TABLE IF EXISTS propiedades CASCADE;
 -- Geografía (de adentro hacia afuera)
