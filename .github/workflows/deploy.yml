@@ -56,13 +56,22 @@ jobs:
             docker compose build rust-media
             docker compose up -d --remove-orphans
 
-            echo "→ SSL (certbot, certificado independiente)..."
+            echo "→ SSL (certbot, certificado independiente, con reintentos)..."
             if [ ! -f /etc/letsencrypt/live/api.inmobitwo.seventwo.tech/fullchain.pem ]; then
               echo "→ Certificado no existe — generándolo con plugin nginx (cero downtime)..."
-              sudo certbot certonly --nginx -d api.inmobitwo.seventwo.tech --non-interactive --agree-tos -m admin@seventwo.tech
+              OK=0
+              for i in 1 2 3; do
+                if sudo certbot certonly --nginx -d api.inmobitwo.seventwo.tech --non-interactive --agree-tos -m admin@seventwo.tech; then
+                  OK=1
+                  break
+                fi
+                echo "⚠️ intento $i falló (otro certbot en curso?) — reintentando en 20s..."
+                sleep 20
+              done
+              [ "$OK" = "1" ] || { echo "❌ certbot falló 3 veces"; exit 1; }
             else
-              echo "→ Certificado ya existe — renovando si es necesario..."
-              sudo certbot renew --quiet
+              echo "→ Certificado ya existe — renovando si es necesario (tolerante: el timer de certbot lo cubre)..."
+              sudo certbot renew --quiet || echo "⚠️ renew omitido (lock ocupado o nada que renovar)"
             fi
 
             echo "→ Nginx (api.inmobitwo.seventwo.tech)..."
