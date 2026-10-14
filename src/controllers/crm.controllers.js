@@ -25,43 +25,54 @@ export const getDashboard = async (req, res) => {
     const clave = `crm:dash:${crm.tipo === "personal" ? `personal:${crm.usuarioId}` : `org:${crm.organizacionId}:${crm.usuarioId}`}`;
 
     const data = await cacheGet(clave, 60, async () => {
-      const vWhere = vis.where;
-      const vParams = vis.params;
+      // Cada repetición de vWhere necesita sus propios slots $n:
+      // se renumera cada bloque con su desplazamiento.
+      const n = vis.params.length;
+      const desplazar = (where, base) =>
+        where.replace(/\$(\d+)/g, (_, d) => `$${base + Number(d) - 1}`);
+      const bloques = [];
+      const kpiParams = [];
+      for (let k = 0; k < 6; k++) {
+        bloques.push(desplazar(vis.where, k * n + 1));
+        kpiParams.push(...vis.params);
+      }
+      const idxMsg = kpiParams.length + 1;
+      kpiParams.push(crm.usuarioId);
 
       const kpis = await pool.query(
         `SELECT
            (SELECT COUNT(*)::int FROM leads l JOIN propiedades p ON p.id = l.propiedad_id
-             WHERE ${vWhere} AND l.created_at >= NOW() - INTERVAL '7 days') AS leads_nuevos_7,
+             WHERE ${bloques[0]} AND l.created_at >= NOW() - INTERVAL '7 days') AS leads_nuevos_7,
            (SELECT COUNT(*)::int FROM leads l JOIN propiedades p ON p.id = l.propiedad_id
-             WHERE ${vWhere} AND l.created_at >= NOW() - INTERVAL '30 days') AS leads_nuevos_30,
-           (SELECT COUNT(*)::int FROM propiedades p WHERE ${vWhere}) AS anuncios_totales,
-           (SELECT COUNT(*)::int FROM propiedades p WHERE ${vWhere} AND p.estado = 'publicado') AS anuncios_publicados,
+             WHERE ${bloques[1]} AND l.created_at >= NOW() - INTERVAL '30 days') AS leads_nuevos_30,
+           (SELECT COUNT(*)::int FROM propiedades p WHERE ${bloques[2]}) AS anuncios_totales,
+           (SELECT COUNT(*)::int FROM propiedades p WHERE ${bloques[3]} AND p.estado = 'publicado') AS anuncios_publicados,
            (SELECT COALESCE(SUM(v.vistas), 0)::int FROM vistas_resumen_diario v
-             JOIN propiedades p ON p.id = v.propiedad_id WHERE ${vWhere}) AS vistas_totales,
+             JOIN propiedades p ON p.id = v.propiedad_id WHERE ${bloques[4]}) AS vistas_totales,
            (SELECT COUNT(*)::int FROM usuario_favoritos f
-             JOIN propiedades p ON p.id = f.propiedad_id WHERE ${vWhere}) AS favoritos_totales,
+             JOIN propiedades p ON p.id = f.propiedad_id WHERE ${bloques[5]}) AS favoritos_totales,
            (SELECT COALESCE(SUM(GREATEST(
-               CASE WHEN c.interesado_id = $${vis.nextIndex} THEN c.no_leidos_interesado ELSE 0 END +
-               CASE WHEN c.publicador_id = $${vis.nextIndex} THEN c.no_leidos_publicador ELSE 0 END, 0)), 0)::int
+               CASE WHEN c.interesado_id = $${idxMsg} THEN c.no_leidos_interesado ELSE 0 END +
+               CASE WHEN c.publicador_id = $${idxMsg} THEN c.no_leidos_publicador ELSE 0 END, 0)), 0)::int
              FROM chat_conversaciones c) AS mensajes_sin_leer`,
-        [...vParams, ...vParams, ...vParams, ...vParams, ...vParams, ...vParams, crm.usuarioId, crm.usuarioId],
+        kpiParams,
       );
 
       const serie = await pool.query(
         `SELECT to_char(d.dia, 'YYYY-MM-DD') AS fecha, COUNT(l.id)::int AS total
          FROM generate_series(CURRENT_DATE - INTERVAL '29 days', CURRENT_DATE, '1 day') AS d(dia)
          LEFT JOIN leads l ON l.created_at::date = d.dia::date
-           AND l.propiedad_id IN (SELECT p.id FROM propiedades p WHERE ${vWhere})
+           AND l.propiedad_id IN (SELECT p.id FROM propiedades p WHERE ${vis.where})
          GROUP BY d.dia ORDER BY d.dia`,
-        vParams,
+        vis.params,
       );
 
       const porEstado = await pool.query(
         `SELECT l.estado, COUNT(*)::int AS total
          FROM leads l JOIN propiedades p ON p.id = l.propiedad_id
-         WHERE ${vWhere}
+         WHERE ${vis.where}
          GROUP BY l.estado`,
-        vParams,
+        vis.params,
       );
 
       const ultimos = await pool.query(
@@ -69,9 +80,9 @@ export const getDashboard = async (req, res) => {
                 p.id AS propiedad_id, p.titulo AS propiedad_titulo,
                 ${portada("p")}
          FROM leads l JOIN propiedades p ON p.id = l.propiedad_id
-         WHERE ${vWhere}
+         WHERE ${vis.where}
          ORDER BY l.created_at DESC LIMIT 5`,
-        vParams,
+        vis.params,
       );
 
       return {

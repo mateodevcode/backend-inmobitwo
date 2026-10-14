@@ -30,9 +30,18 @@ DROP TABLE IF EXISTS vistas_bot_ips CASCADE;
 DROP TABLE IF EXISTS leads CASCADE;
 DROP TABLE IF EXISTS eventos_tracking CASCADE;
 DROP TABLE IF EXISTS sesiones_tracking CASCADE;
+-- Chat
+DROP TABLE IF EXISTS chat_mensajes CASCADE;
+DROP TABLE IF EXISTS chat_conversaciones CASCADE;
 -- Ofertas por operación + historial
 DROP TABLE IF EXISTS property_listing_history CASCADE;
 DROP TABLE IF EXISTS property_listings CASCADE;
+-- Búsquedas guardadas + descartados + push
+DROP TABLE IF EXISTS saved_search_notifications CASCADE;
+DROP TABLE IF EXISTS saved_searches CASCADE;
+DROP TABLE IF EXISTS property_events CASCADE;
+DROP TABLE IF EXISTS push_subscriptions CASCADE;
+DROP TABLE IF EXISTS usuario_descartados CASCADE;
 -- Tablas relacionales / N:M / historiales
 DROP TABLE IF EXISTS room_seeker_profiles CASCADE;
 DROP TABLE IF EXISTS refresh_tokens CASCADE;
@@ -42,6 +51,13 @@ DROP TABLE IF EXISTS property_features CASCADE;
 DROP TABLE IF EXISTS related_units CASCADE;
 DROP TABLE IF EXISTS propiedades_planos CASCADE;
 DROP TABLE IF EXISTS propiedades_galeria CASCADE;
+-- CRM + portada destacada
+DROP TABLE IF EXISTS crm_actividades CASCADE;
+DROP TABLE IF EXISTS crm_tareas CASCADE;
+DROP TABLE IF EXISTS crm_oportunidades CASCADE;
+DROP TABLE IF EXISTS crm_etapas CASCADE;
+DROP TABLE IF EXISTS crm_contactos CASCADE;
+DROP TABLE IF EXISTS portada_destacada CASCADE;
 -- Tabla principal
 DROP TABLE IF EXISTS propiedades CASCADE;
 -- Geografía (de adentro hacia afuera)

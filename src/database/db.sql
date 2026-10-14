@@ -1746,4 +1746,16 @@ ALTER TABLE crm_tareas
     ADD CONSTRAINT crm_tareas_oportunidad_fk
     FOREIGN KEY (oportunidad_id) REFERENCES crm_oportunidades(id) ON DELETE CASCADE;
 
+-- ============================================================================
+-- 9. PORTADA DESTACADA (un solo anuncio del hero principal, solo superadmin)
+-- ============================================================================
+CREATE TABLE IF NOT EXISTS portada_destacada (
+    id INTEGER PRIMARY KEY CHECK (id = 1),
+    propiedad_id INTEGER REFERENCES propiedades(id) ON DELETE SET NULL,
+    imagen_url VARCHAR(500),
+    actualizado_por_id INTEGER REFERENCES usuarios(id) ON DELETE SET NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
 COMMIT;

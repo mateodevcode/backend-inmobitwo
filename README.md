@@ -27,6 +27,13 @@ psql -U adminst -h <host> -d inmobitwo -f src/database/db.sql
 npm run seed:geo
 ```
 
+> **Regla de oro de BD**: todo cambio que modifique la base (tabla/columna
+> nueva, constraint, índice, enum, UPDATE de datos) se replica en **4 sitios**:
+> `src/database/migrations/NNN_*.sql` (idempotente, `IF NOT EXISTS`, `BEGIN/COMMIT`)
+> + `src/database/db.sql` (fuente de verdad) + `src/database/orden.sql` (línea
+> de la migración) + `src/database/drop_all.sql` (su `DROP TABLE IF EXISTS …
+> CASCADE`). Sin los 4, el cambio está incompleto.
+
 (O levanta todo junto con `bash dev.sh` desde la carpeta padre `inmobitwo/`.)
 
 ## Scripts
