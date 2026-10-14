@@ -55,10 +55,25 @@ export const getOrganizaciones = async (req, res) => {
     query += " ORDER BY created_at DESC";
 
     const { rows } = await pool.query(query, values);
+    const conConteos = await Promise.all(
+      rows.map(async (o) => {
+        const { rows: m } = await pool.query(
+          `SELECT COUNT(*) FILTER (WHERE estado = 'activo')::int AS activos,
+                  COUNT(*) FILTER (WHERE rol_en_org = 'agent' AND estado = 'activo')::int AS agentes
+           FROM organizacion_miembros WHERE organizacion_id = $1`,
+          [o.id],
+        );
+        const { rows: p } = await pool.query(
+          "SELECT COUNT(*)::int AS total FROM propiedades WHERE organizacion_id = $1",
+          [o.id],
+        );
+        return { ...o, miembros_activos: m[0].activos, agentes_activos: m[0].agentes, inmuebles: p[0].total };
+      }),
+    );
     res.status(200).json({
       success: true,
       message: "Organizaciones obtenidas correctamente.",
-      data: rows,
+      data: conConteos,
     });
   } catch (error) {
     res.status(500).json({
@@ -677,5 +692,55 @@ export const deleteOrganizacion = async (req, res) => {
       success: false,
       error: "Error interno del servidor: " + error.message,
     });
+  }
+};
+
+// ────────────────────────────────────────────────────────────────
+// DELETE /organizaciones/:id/baja → agency_admin de la org o superadmin.
+// Baja con candados: exige 0 agentes activos y 0 inmuebles de la org.
+// (Sin esto, el CASCADE borraría miembros y los inmuebles quedarían
+// huérfanos en personal.) Responde 409 con los conteos pendientes.
+// ────────────────────────────────────────────────────────────────
+export const darDeBajaOrganizacion = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const { rows: orgs } = await pool.query(
+      "SELECT * FROM organizaciones WHERE id = $1",
+      [id],
+    );
+    if (!orgs[0]) {
+      return res.status(404).json({ success: false, error: "Inmobiliaria no encontrada." });
+    }
+
+    const { rows: agentes } = await pool.query(
+      `SELECT COUNT(*)::int AS total FROM organizacion_miembros
+       WHERE organizacion_id = $1 AND rol_en_org = 'agent' AND estado = 'activo'`,
+      [id],
+    );
+    const { rows: inmuebles } = await pool.query(
+      "SELECT COUNT(*)::int AS total FROM propiedades WHERE organizacion_id = $1",
+      [id],
+    );
+    const pendientes = {
+      agentes: agentes[0].total,
+      inmuebles: inmuebles[0].total,
+    };
+    if (pendientes.agentes > 0 || pendientes.inmuebles > 0) {
+      return res.status(409).json({
+        success: false,
+        error: "Retire primero los agentes y borre los inmuebles.",
+        data: pendientes,
+      });
+    }
+
+    await pool.query("DELETE FROM organizaciones WHERE id = $1", [id]);
+    res.status(200).json({
+      success: true,
+      message: "Inmobiliaria dada de baja.",
+      data: orgs[0],
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
   }
 };

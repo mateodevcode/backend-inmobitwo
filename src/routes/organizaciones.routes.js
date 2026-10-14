@@ -10,6 +10,7 @@ import {
   updateOrganizacion,
   aprobarOrganizacion,
   suspenderOrganizacion,
+  darDeBajaOrganizacion,
   solicitarDominioPropio,
   activarDominioPropio,
   getEstadisticasOrganizacion,
@@ -68,6 +69,14 @@ router.delete(
   verificarToken,
   verificarRol(["superadmin"]),
   deleteOrganizacion,
+);
+
+// Baja con candados (0 agentes, 0 inmuebles) — agency_admin de la org o superadmin
+router.delete(
+  `${ruta}/:id/baja`,
+  verificarToken,
+  requiereAdminOrganizacion("id"),
+  darDeBajaOrganizacion,
 );
 
 // Estadísticas básicas — cualquier miembro activo de la organización puede verlas
