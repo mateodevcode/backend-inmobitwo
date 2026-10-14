@@ -32,6 +32,7 @@
 -- 015_organizaciones_departamento.sql -> organizaciones.provincia pasa a departamento
 -- 016_operacion_alquiler.sql -> operación arriendo pasa a alquiler (códigos + búsquedas guardadas)
 -- 017_portada.sql -> portada destacada del hero principal (un solo anuncio, solo superadmin)
+-- 018_dominios_jobs.sql -> jobs de ejecución remota de dominios en el VPS (log + auditoría)
 --
 -- NOTA: db.sql es la fuente de verdad única. Actualizarlo siempre al agregar
 --       catálogos, columnas o features nuevos.

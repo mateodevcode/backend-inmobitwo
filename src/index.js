@@ -25,6 +25,7 @@ import passwordRecoveryRoutes from "./routes/password.recovery.routes.js";
 import busquedasGuardadasRoutes from "./routes/busquedas.guardadas.routes.js";
 import crmRoutes from "./routes/crm.routes.js";
 import portadaRoutes from "./routes/portada.routes.js";
+import dominiosRoutes from "./routes/dominios.routes.js";
 import { iniciarCronBusquedas } from "./jobs/busquedasGuardadas.job.js";
 import { corsOptions } from "./cors.config.js";
 import { errorHandler } from "./middleware/error.middleware.js";
@@ -87,6 +88,7 @@ app.use(passwordRecoveryRoutes);
 app.use(busquedasGuardadasRoutes);
 app.use(crmRoutes);
 app.use(portadaRoutes);
+app.use(dominiosRoutes);
 
 // Middleware de errores (debe ir después de todas las rutas)
 app.use(errorHandler);
