@@ -8,22 +8,71 @@ import { selectFields } from "../lib/fieldSelection.helper.js";
 import { CAMPOS_USUARIO } from "../constants/api/fields.js";
 
 const CAMPOS_USUARIO_PERMITIDOS = CAMPOS_USUARIO.permitidos;
-const CAMPOS_USUARIO_DEFAULT = CAMPOS_USUARIO.default;
 
 export const getUsuarios = async (req, res) => {
   try {
-    const columnas = CAMPOS_USUARIO_DEFAULT.join(", ");
-    const { rows } = await pool.query(`SELECT ${columnas} FROM usuarios`);
+    // Solo superadmin (ver ruta): lista completa con buscador, paginación y
+    // conteos (inmuebles propios + organizaciones con rol).
+    let pagina = Math.max(1, parseInt(req.query.pagina, 10) || 1);
+    let limite = Math.min(100, Math.max(1, parseInt(req.query.limite, 10) || 20));
+    const offset = (pagina - 1) * limite;
+    const q = (req.query.q || "").trim();
+    const conds = [];
+    const params = [];
+    if (q) {
+      params.push(`%${q}%`);
+      conds.push(`(u.name ILIKE $1 OR u.email ILIKE $1 OR u.telefono ILIKE $1)`);
+    }
+    const where = conds.length ? `WHERE ${conds.join(" AND ")}` : "";
+    const { rows } = await pool.query(
+      `SELECT u.id, u.name, u.email, u.telefono, u.rol, u.provider,
+              u.email_verificado, u.bloqueado, u.intentos_fallidos,
+              u.image_url, u.ultimo_login, u.created_at,
+              (SELECT COUNT(*)::int FROM propiedades p WHERE p.publicado_por_id = u.id) AS inmuebles,
+              COALESCE((
+                SELECT json_agg(json_build_object(
+                  'id', o.id, 'nombre', o.nombre,
+                  'rol_en_org', om.rol_en_org, 'estado', o.estado
+                ))
+                FROM organizacion_miembros om JOIN organizaciones o ON o.id = om.organizacion_id
+                WHERE om.usuario_id = u.id AND om.estado = 'activo'
+              ), '[]') AS orgs
+       FROM usuarios u ${where}
+       ORDER BY u.created_at DESC LIMIT $${params.length + 1} OFFSET $${params.length + 2}`,
+      [...params, limite, offset],
+    );
+    const total = await pool.query(
+      `SELECT COUNT(*)::int AS total FROM usuarios u ${where}`,
+      params,
+    );
     res.status(200).json({
       success: true,
       message: "Usuarios obtenidos correctamente.",
       data: rows,
+      pagination: { pagina, limite, total: total.rows[0].total },
     });
   } catch (error) {
     res.status(500).json({
       success: false,
       error: "Error al obtener los usuarios",
     });
+  }
+};
+
+// ── PATCH /usuarios/:id/desbloquear (solo superadmin, ver ruta) ──
+export const desbloquearUsuario = async (req, res) => {
+  try {
+    const { rows } = await pool.query(
+      `UPDATE usuarios SET bloqueado = false, intentos_fallidos = 0, updated_at = NOW()
+       WHERE id = $1 RETURNING id, name, email, bloqueado, intentos_fallidos`,
+      [req.params.id],
+    );
+    if (!rows[0]) {
+      return res.status(404).json({ success: false, error: "Usuario no encontrado." });
+    }
+    res.status(200).json({ success: true, message: "Usuario desbloqueado.", data: rows[0] });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
   }
 };
 
@@ -118,6 +167,15 @@ export const updateUsuario = async (req, res) => {
     let file = null;
 
     const contentType = req.headers["content-type"] || "";
+
+    // Solo el propio usuario o el superadmin. Los campos sensibles
+    // (rol, bloqueo, verificación) son solo superadmin: sin esto cualquiera
+    // se hacía superadmin con un PATCH.
+    const esPropio = Number(req.usuario?.id) === Number(id);
+    const esSuper = req.usuario?.rol === "superadmin";
+    if (!esPropio && !esSuper) {
+      return res.status(403).json({ success: false, error: "No tienes permisos para esta acción." });
+    }
 
     if (contentType.includes("multipart/form-data")) {
       if (req.files?.imagenPrincipal?.[0]) {
@@ -239,6 +297,11 @@ export const updateUsuario = async (req, res) => {
     // ========================================
     // ACTUALIZAR CAMPOS
     // ========================================
+    // Campos sensibles: solo superadmin (rol, bloqueo, verificación, provider).
+    const SENSIBLES = ["rol", "bloqueado", "intentos_fallidos", "email_verificado", "provider"];
+    if (!esSuper && SENSIBLES.some((c) => formDataObj[c] !== undefined)) {
+      return res.status(403).json({ success: false, error: "No tienes permisos para esta acción." });
+    }
     const camposPermitidos = [
       "name",
       "email",
@@ -343,6 +406,13 @@ export const updateUsuario = async (req, res) => {
 export const deleteUsuario = async (req, res) => {
   try {
     const { id } = req.params;
+
+    // Solo la propia cuenta o el superadmin.
+    const esPropio = Number(req.usuario?.id) === Number(id);
+    const esSuper = req.usuario?.rol === "superadmin";
+    if (!esPropio && !esSuper) {
+      return res.status(403).json({ success: false, error: "No tienes permisos para esta acción." });
+    }
 
     const { rows } = await pool.query(
       "SELECT id, name, email FROM usuarios WHERE id = $1",

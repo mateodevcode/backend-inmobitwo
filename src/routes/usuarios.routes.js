@@ -3,6 +3,7 @@ import {
   getUsuarios,
   createUsuario,
   deleteUsuario,
+  desbloquearUsuario,
   getUsuarioById,
   updateUsuario,
   updatePassword,
@@ -34,10 +35,18 @@ const uploadFields = upload.fields([
 
 const ruta = "/usuarios";
 
-// 🔒 Todas estas rutas ahora necesitan token de forma obligatoria
-router.get(ruta, verificarToken, getUsuarios);
+// 🔒 Lista completa: solo superadmin (módulo Usuarios del CRM)
+router.get(ruta, verificarToken, verificarRol(["superadmin"]), getUsuarios);
 router.get(`${ruta}/:id`, verificarToken, getUsuarioById);
 router.patch(`${ruta}/:id`, verificarToken, uploadFields, updateUsuario);
+
+// Desbloqueo por el superadmin (módulo Usuarios del CRM)
+router.patch(
+  `${ruta}/:id/desbloquear`,
+  verificarToken,
+  verificarRol(["superadmin"]),
+  desbloquearUsuario,
+);
 
 router.patch(`${ruta}/:id/password`, verificarToken, updatePassword);
 
