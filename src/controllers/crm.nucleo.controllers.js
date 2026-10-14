@@ -243,7 +243,7 @@ export const asignarContacto = async (req, res) => {
     if (crm.tipo !== "org" || crm.rolEnOrg !== "agency_admin") {
       return res.status(403).json({ success: false, error: "Solo un administrador puede reasignar." });
     }
-    const base = whereEspacioPropio(crm, "c");
+    const base = whereEspacioPropio(crm, "c", 3);
     const { rows } = await pool.query(
       `UPDATE crm_contactos c SET asignado_a_id = $1, updated_at = now()
        WHERE c.id = $2 AND ${base.where} AND c.archivado_at IS NULL RETURNING c.*`,
