@@ -104,6 +104,50 @@ const emitirSesion = async (res, usuario, message = "Login correcto.") => {
   });
 };
 
+// Crea la sesión (tokens + cookie + limpieza) y devuelve los datos SIN
+// responder: lo usa el callback OAuth, que redirige en vez de dar JSON.
+export const crearSesion = async (res, usuario) => {
+  const accessToken = generarAccessToken(usuario);
+  const refreshToken = generarRefreshToken(usuario);
+
+  await pool.query(
+    `INSERT INTO refresh_tokens (usuario_id, token, expira_en)
+     VALUES ($1, $2, NOW() + INTERVAL '7 days')`,
+    [usuario.id, refreshToken],
+  );
+
+  await pool.query(
+    `UPDATE usuarios
+     SET intentos_fallidos = 0,
+         ultimo_login = NOW(),
+         otp_login = NULL,
+         otp_login_expira = NULL,
+         otp_login_intentos = 0
+     WHERE id = $1`,
+    [usuario.id],
+  );
+
+  res.cookie("refresh_token", refreshToken, cookieOpciones);
+
+  try {
+    await setCookieInternoSiCorresponde(res, usuario);
+  } catch (e) {
+    console.error("⚠️ No se pudo setear cookie de interno:", e.message);
+  }
+
+  return {
+    accessToken,
+    usuario: {
+      id: usuario.id,
+      name: usuario.name,
+      email: usuario.email,
+      rol: usuario.rol,
+      image_url: usuario.image_url,
+      email_verificado: !!usuario.email_verificado,
+    },
+  };
+};
+
 // ─────────────────────────────────────────────
 // Helpers para generar tokens
 // ─────────────────────────────────────────────
@@ -282,6 +326,14 @@ export const login = async (req, res) => {
       return res.status(403).json({
         success: false,
         error: "Cuenta bloqueada. Contacta con soporte.",
+      });
+    }
+
+    // Cuentas OAuth (sin password): el login local no aplica y no suma intentos.
+    if (!usuario.password) {
+      return res.status(401).json({
+        success: false,
+        error: "Esta cuenta usa ingreso con Google.",
       });
     }
 
