@@ -55,3 +55,10 @@ export const SOCKET_CORE_URL = process.env.SOCKET_CORE_URL;
 export const SOCKET_CORE_API_KEY = process.env.SOCKET_CORE_API_KEY;
 export const SOCKET_CORE_ORIGIN = process.env.SOCKET_CORE_ORIGIN;
 export const SOCKET_CORE_WS_PUBLIC_URL = process.env.SOCKET_CORE_WS_PUBLIC_URL;
+
+// Google OAuth (Authorization Code). REDIRECT_URI debe coincidir exacta con
+// la registrada en Cloud Console (una por entorno).
+export const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID;
+export const GOOGLE_CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET;
+export const GOOGLE_REDIRECT_URI = process.env.GOOGLE_REDIRECT_URI;
+export const GOOGLE_PORTAL_URL = process.env.GOOGLE_PORTAL_URL;

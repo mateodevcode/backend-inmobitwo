@@ -12,6 +12,11 @@ import {
 } from "../controllers/auth.controllers.js";
 import { verificarToken } from "../middleware/auth.middleware.js";
 import {
+  callbackGoogle,
+  canjearCodigo,
+  iniciarGoogle,
+} from "../controllers/oauth.controllers.js";
+import {
   createRateLimitMiddleware,
   registerLimiter,
   loginLimiter,
@@ -37,6 +42,11 @@ router.post("/auth/reenviar-otp-login", sLimiterOtp, reenviarOtpLogin);
 
 router.post("/auth/refresh", refresh); // usa cookie httpOnly
 router.post("/auth/logout", logout); // usa cookie httpOnly
+
+// Ingreso con Google (Authorization Code): públicas, con límite de login
+router.get("/auth/oauth/google", sLimiterLogin, iniciarGoogle);
+router.get("/auth/oauth/google/callback", sLimiterLogin, callbackGoogle);
+router.post("/auth/oauth/google/canjear", sLimiterLogin, canjearCodigo);
 
 // Ruta protegida — devuelve el usuario actual
 router.get("/auth/me", verificarToken, me);
