@@ -9,6 +9,7 @@ import { pool } from "../db.js";
 import {
   GOOGLE_CLIENT_ID,
   GOOGLE_CLIENT_SECRET,
+  GOOGLE_CRM_URL,
   GOOGLE_PORTAL_URL,
   GOOGLE_REDIRECT_URI,
   JWT_SECRET,
@@ -22,20 +23,22 @@ const GOOGLE_USERINFO_URL = "https://openidconnect.googleapis.com/v1/userinfo";
 
 const oauthListo = () => GOOGLE_CLIENT_ID && GOOGLE_CLIENT_SECRET && GOOGLE_REDIRECT_URI;
 
-const portalBase = () => String(GOOGLE_PORTAL_URL || "").trim().replace(/\/$/, "");
+const baseDestino = (app) =>
+  String(app === "crm" ? GOOGLE_CRM_URL : GOOGLE_PORTAL_URL).trim().replace(/\/$/, "");
 
 // next debe ser ruta relativa interna (/...), nunca URL absoluta.
 const sanearNext = (next) =>
   typeof next === "string" && next.startsWith("/") && !next.startsWith("//") ? next : "/";
 
-// ── GET /auth/oauth/google?next=/ruta → redirige a Google ──────
+// ── GET /auth/oauth/google?next=/ruta&app=crm → redirige a Google ──────
 export const iniciarGoogle = async (req, res) => {
   try {
     if (!oauthListo()) {
       return res.status(503).json({ success: false, error: "Ingreso con Google no configurado." });
     }
+    const app = req.query.app === "crm" ? "crm" : "portal";
     const state = jwt.sign(
-      { next: sanearNext(req.query.next), nonce: crypto.randomUUID() },
+      { next: sanearNext(req.query.next), app, nonce: crypto.randomUUID() },
       JWT_SECRET,
       { expiresIn: "10m" },
     );
@@ -56,14 +59,15 @@ export const iniciarGoogle = async (req, res) => {
 
 // ── GET /auth/oauth/google/callback?code=...&state=... ──────────
 export const callbackGoogle = async (req, res) => {
-  const portal = portalBase();
-  const volver = (ruta) => res.redirect(302, `${portal}${ruta}`);
+  let destino = baseDestino("portal");
+  const volver = (ruta) => res.redirect(302, `${destino}${ruta}`);
   try {
     if (!oauthListo()) return volver("/login?error=google_no_configurado");
     let next = "/";
     try {
       const dec = jwt.verify(req.query.state, JWT_SECRET);
       next = sanearNext(dec.next);
+      destino = baseDestino(dec.app);
     } catch {
       return volver("/login?error=google_estado_invalido");
     }
