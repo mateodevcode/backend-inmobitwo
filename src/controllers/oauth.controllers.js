@@ -60,10 +60,12 @@ export const iniciarGoogle = async (req, res) => {
 // ── GET /auth/oauth/google/callback?code=...&state=... ──────────
 export const callbackGoogle = async (req, res) => {
   let destino = baseDestino("portal");
+  let etapa = "inicio";
   const volver = (ruta) => res.redirect(302, `${destino}${ruta}`);
   try {
     if (!oauthListo()) return volver("/login?error=google_no_configurado");
     let next = "/";
+    etapa = "state";
     try {
       const dec = jwt.verify(req.query.state, JWT_SECRET);
       next = sanearNext(dec.next);
@@ -75,6 +77,7 @@ export const callbackGoogle = async (req, res) => {
     if (!code) return volver("/login?error=google_sin_codigo");
 
     // Intercambio código → access token (solo servidor a servidor).
+    etapa = "intercambio";
     const tr = await fetch(GOOGLE_TOKEN_URL, {
       method: "POST",
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
@@ -88,9 +91,13 @@ export const callbackGoogle = async (req, res) => {
     });
     const tokens = await tr.json();
     if (!tr.ok || !tokens.access_token) {
-      return volver("/login?error=google_codigo_invalido");
+      // Se expone solo el código de error de Google (invalid_grant,
+      // redirect_uri_mismatch...), sin secretos: es lo que diagnostica.
+      const detalle = String(tokens.error || "desconocido").slice(0, 40);
+      return volver(`/login?error=google_codigo_invalido&detalle=${encodeURIComponent(detalle)}`);
     }
 
+    etapa = "userinfo";
     const ur = await fetch(GOOGLE_USERINFO_URL, {
       headers: { Authorization: `Bearer ${tokens.access_token}` },
     });
@@ -101,6 +108,7 @@ export const callbackGoogle = async (req, res) => {
     const email = String(perfil.email).toLowerCase();
     const nombre = perfil.name || email.split("@")[0];
 
+    etapa = "bd";
     let { rows } = await pool.query("SELECT * FROM usuarios WHERE email = $1", [email]);
     let usuario = rows[0];
     if (!usuario) {
@@ -126,8 +134,10 @@ export const callbackGoogle = async (req, res) => {
       usuario = { ...usuario, email_verificado: true };
     }
 
+    etapa = "sesion";
     const sesion = await crearSesion(res, usuario);
     const codigo = crypto.randomUUID();
+    etapa = "redis";
     try {
       await redis.setex(`oauth:google:${codigo}`, 300, JSON.stringify(sesion));
     } catch {
@@ -135,7 +145,8 @@ export const callbackGoogle = async (req, res) => {
     }
     return volver(`/auth/google/callback?code=${codigo}&next=${encodeURIComponent(next)}`);
   } catch (error) {
-    return volver("/login?error=google_error");
+    console.error(`❌ OAuth Google falló en etapa ${etapa}:`, error.message);
+    return volver(`/login?error=google_error&etapa=${etapa}`);
   }
 };
 
