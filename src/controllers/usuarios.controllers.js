@@ -121,7 +121,7 @@ export const getUsuarioById = async (req, res) => {
     const { columnas, error } = selectFields(
       req.query.fields,
       CAMPOS_USUARIO_PERMITIDOS,
-      CAMPOS_USUARIO_DEFAULT,
+      CAMPOS_USUARIO.default,
     );
 
     if (error) {
