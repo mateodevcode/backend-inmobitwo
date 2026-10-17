@@ -493,9 +493,39 @@ export const getBarrios = async (req, res) => {
   }
 };
 
+// Filtros compartidos de anuncios publicados (estado + operación + tipo).
+// Usados por getGeoCount y getGeoCountBatch. Devuelve params/filters SQL con
+// placeholders $n consecutivos; el parámetro de zona se agrega después.
+function filtrosAnuncios({ operation, inmueble }) {
+  const params = [];
+  const filters = ["p.estado = 'publicado'"];
+
+  let op = operation;
+  if (esTipoVacacional(inmueble)) {
+    op = "alquiler";
+  }
+
+  if (op) {
+    params.push(op);
+    filters.push(
+      `p.operation_type_id IN (SELECT id FROM operation_types WHERE LOWER(code) = LOWER($${params.length}))`,
+    );
+  }
+
+  if (inmueble) {
+    const { sql, params: tipoParams } = buildTipoFilter(inmueble, {
+      alias: "p",
+      startIdx: params.length + 1,
+    });
+    tipoParams.forEach((t) => params.push(t));
+    if (sql) filters.push(sql);
+  }
+
+  return { params, filters };
+}
+
 export const getGeoCount = async (req, res) => {
-  const { type, daneCode, inmueble } = req.query;
-  let { operation } = req.query;
+  const { type, daneCode, operation, inmueble } = req.query;
 
   if (!type || !daneCode) {
     return res.status(400).json({
@@ -507,29 +537,7 @@ export const getGeoCount = async (req, res) => {
   }
 
   try {
-    const params = [];
-    const filters = ["p.estado = 'publicado'"];
-
-    if (esTipoVacacional(inmueble)) {
-      operation = "alquiler";
-    }
-
-    if (operation) {
-      params.push(operation);
-      filters.push(
-        `p.operation_type_id IN (SELECT id FROM operation_types WHERE LOWER(code) = LOWER($${params.length}))`,
-      );
-    }
-
-    if (inmueble) {
-      const { sql, params: tipoParams } = buildTipoFilter(inmueble, {
-        alias: "p",
-        startIdx: params.length + 1,
-      });
-      tipoParams.forEach((t) => params.push(t));
-      if (sql) filters.push(sql);
-    }
-
+    const { params, filters } = filtrosAnuncios({ operation, inmueble });
     const filterSQL = filters.join(" AND ");
     let query;
 
@@ -583,6 +591,115 @@ export const getGeoCount = async (req, res) => {
     res.status(500).json({
       success: false,
       message: "Error al obtener conteo de propiedades",
+      data: null,
+      error: error.message,
+    });
+  }
+};
+
+// ============================================================================
+// Conteo de anuncios por lote (card del hover en el mapa SeleccionarZona).
+// Una sola consulta por nivel con GROUP BY: devuelve TODAS las zonas del
+// nivel (LEFT JOIN, total 0 si no tienen anuncios) + cantidad de subzonas.
+// Clave del objeto counts: dane_code (slug para regiones).
+// ============================================================================
+const TIPOS_ZONA = new Set(["region", "departamento", "municipio", "barrio"]);
+
+export const getGeoCountBatch = async (req, res) => {
+  const { type, inmueble, parentDaneCode } = req.query;
+  const { operation } = req.query;
+
+  if (!type || !TIPOS_ZONA.has(type)) {
+    return res.status(400).json({
+      success: false,
+      message: "type debe ser region, departamento, municipio o barrio",
+      data: null,
+      error: null,
+    });
+  }
+
+  if ((type === "municipio" || type === "barrio") && !parentDaneCode) {
+    return res.status(400).json({
+      success: false,
+      message: `parentDaneCode es requerido para type=${type}`,
+      data: null,
+      error: null,
+    });
+  }
+
+  try {
+    const { params, filters } = filtrosAnuncios({ operation, inmueble });
+    const filterSQL = filters.join(" AND ");
+    let query;
+
+    if (type === "region") {
+      query = `
+        SELECT r.slug AS code,
+               COUNT(p.id)::int AS total,
+               (SELECT COUNT(*)::int FROM states s2 WHERE s2.region_id = r.id) AS children
+        FROM regions r
+        LEFT JOIN states s ON s.region_id = r.id
+        LEFT JOIN cities c ON c.state_id = s.id
+        LEFT JOIN propiedades p ON p.city_id = c.id AND ${filterSQL}
+        GROUP BY r.id, r.slug
+      `;
+    } else if (type === "departamento") {
+      query = `
+        SELECT s.dane_code AS code,
+               COUNT(p.id)::int AS total,
+               (SELECT COUNT(*)::int FROM cities c2 WHERE c2.state_id = s.id) AS children
+        FROM states s
+        LEFT JOIN cities c ON c.state_id = s.id
+        LEFT JOIN propiedades p ON p.city_id = c.id AND ${filterSQL}
+        GROUP BY s.id, s.dane_code
+      `;
+    } else if (type === "municipio") {
+      params.push(parentDaneCode);
+      query = `
+        SELECT c.dane_code AS code,
+               COUNT(p.id)::int AS total,
+               (SELECT COUNT(*)::int FROM barrios b2 WHERE b2.city_id = c.id) AS children
+        FROM cities c
+        INNER JOIN states s ON c.state_id = s.id
+        LEFT JOIN propiedades p ON p.city_id = c.id AND ${filterSQL}
+        WHERE s.dane_code = $${params.length}
+        GROUP BY c.id, c.dane_code
+      `;
+    } else {
+      params.push(parentDaneCode);
+      query = `
+        SELECT b.dane_code AS code,
+               COUNT(p.id)::int AS total
+        FROM barrios b
+        INNER JOIN cities cc ON b.city_id = cc.id
+        LEFT JOIN propiedades p ON p.barrio_id = b.id AND ${filterSQL}
+        WHERE cc.dane_code = $${params.length}
+        GROUP BY b.id, b.dane_code
+      `;
+    }
+
+    const { rows } = await pool.query(query, params);
+    const counts = {};
+    for (const r of rows) {
+      if (r.code == null) continue;
+      counts[r.code] =
+        type === "barrio"
+          ? { total: r.total || 0 }
+          : { total: r.total || 0, children: r.children || 0 };
+    }
+
+    res.set("Cache-Control", "public, max-age=60");
+    res.json({
+      success: true,
+      message: null,
+      data: { counts },
+      error: null,
+    });
+  } catch (error) {
+    console.error("Error en getGeoCountBatch:", error);
+    res.status(500).json({
+      success: false,
+      message: "Error al obtener conteos por lote",
       data: null,
       error: error.message,
     });

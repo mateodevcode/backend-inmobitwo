@@ -10,6 +10,7 @@ import {
   getRegionsGeoJSON,
   getBarrios,
   getGeoCount,
+  getGeoCountBatch,
   getLocationGeoJSON,
   getInmueblesEnPoligono,
   getTituloSugerido,
@@ -39,6 +40,9 @@ router.get("/barrios", rateLimit, getBarrios);
 
 // Conteo de propiedades por zona geográfica
 router.get("/geo-count", rateLimit, getGeoCount);
+
+// Conteo de anuncios + subzonas por lote (card del hover en SeleccionarZona)
+router.get("/geo-count/batch", rateLimit, getGeoCountBatch);
 
 // GeoJSON de una zona específica (mini-mapa en ListaPropiedades)
 router.get("/location-geojson", rateLimit, getLocationGeoJSON);
