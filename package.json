@@ -8,7 +8,8 @@
     "start": "node --env-file .env src/index.js",
     "dev": "node --env-file .env --watch src/index.js",
     "seed:geo": "node --env-file .env src/database/seed-geo.js",
-    "job:busquedas": "node --env-file .env src/jobs/run-once.js"
+    "job:busquedas": "node --env-file .env src/jobs/run-once.js",
+    "db:check": "node scripts/verificar-esquema.mjs"
   },
   "keywords": [],
   "author": "",

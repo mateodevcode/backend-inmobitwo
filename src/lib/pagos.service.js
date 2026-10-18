@@ -115,8 +115,19 @@ export async function crearPagoUbicacionOculta({ propiedad, usuario, datos }) {
         : {}),
     },
     external_reference: externalReference,
-    notification_url: `${MP_NOTIFICATION_URL}/pagos/mp/webhook`,
   };
+  // notification_url: MP exige HTTPS público y aborta el cobro si no lo es
+  // (un http://localhost manda el cobro entero a la basura). En local no se
+  // manda: el estado se resuelve con la reconciliación perezosa GET estado +
+  // webhook cuando el backend del VPS tenga MP_NOTIFICATION_URL configurada.
+  const notifBase = process.env.MP_NOTIFICATION_URL || MP_NOTIFICATION_URL || "";
+  // https + dominio/hostname público (fuera de localhost y rangos privados)
+  const notifValida =
+    /^https:\/\/([\w-]+\.)+[a-z]{2,}(\/|$)/i.test(notifBase) &&
+    !/localhost|127\.0\.0\.1|^10\.|^192\.168\.|^172\.(1[6-9]|2\d|3[01])\./.test(
+      new URL(notifBase).hostname,
+    );
+  if (notifValida) payload.notification_url = `${notifBase}/pagos/mp/webhook`;
   if (datos.issuer_id) payload.issuer_id = String(datos.issuer_id);
   const idempotencyKey = `pocu-${pago.id}-${externalReference}`;
 

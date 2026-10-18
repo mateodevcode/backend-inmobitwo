@@ -61,6 +61,14 @@ DROP TABLE IF EXISTS portada_destacada CASCADE;
 DROP TABLE IF EXISTS dominios_jobs CASCADE;
 -- Tabla principal
 DROP TABLE IF EXISTS propiedades CASCADE;
+-- Pagos (019) — referencia a propiedades y usuarios, misma familia
+DROP TABLE IF EXISTS pagos CASCADE;
+DROP FUNCTION IF EXISTS f_pagos_touch_updated_at();
+-- Sincronización de listings / eventos de propiedad (001 y 009)
+DROP FUNCTION IF EXISTS sync_property_from_listings(INTEGER);
+DROP FUNCTION IF EXISTS trg_listings_sync();
+DROP FUNCTION IF EXISTS fn_property_events_from_listings();
+DROP FUNCTION IF EXISTS fn_property_events_from_propiedades();
 -- Geografía (de adentro hacia afuera)
 DROP TABLE IF EXISTS barrios CASCADE;
 DROP TABLE IF EXISTS cities CASCADE;

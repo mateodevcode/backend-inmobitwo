@@ -626,6 +626,18 @@ export const createPropiedades = async (req, res) => {
     const campos = parseCamposPropiedad(req.body);
     const price_per_sqm = calcularPricePerSqm(campos.precio, campos.constructed_area);
 
+    // Igual que en publicarAnuncios: parking_space_price es INTEGER en BD.
+    const topeParking = 199_999_999;
+    if (
+      campos.parking_space_price != null &&
+      (campos.parking_space_price > topeParking || campos.parking_space_price < 0)
+    ) {
+      return res.status(400).json({
+        success: false,
+        error: `La tarifa del parqueadero excede el tope de $${topeParking.toLocaleString("es-CO")} COP.`,
+      });
+    }
+
     const query = `
       INSERT INTO propiedades (
         operation_type_id, property_type_id, condition_type_id, heating_type_id,
@@ -1553,6 +1565,20 @@ export const updatePropiedades = async (req, res) => {
 
     // --- CAMPOS NUEVOS (schema v5.0 Colombia)
     const campos = parseCamposPropiedad(formDataObj);
+
+    // parking_space_price es INTEGER en BD: 400 legible en vez de 500 pg.
+    const topeParkingEdicion = 199_999_999;
+    if (
+      campos.parking_space_price != null &&
+      (campos.parking_space_price > topeParkingEdicion ||
+        campos.parking_space_price < 0)
+    ) {
+      return res.status(400).json({
+        success: false,
+        error: `La tarifa del parqueadero excede el tope de $${topeParkingEdicion.toLocaleString("es-CO")} COP.`,
+      });
+    }
+
     const camposActualizables = [
       "operation_type_id",
       "property_type_id",
@@ -2099,6 +2125,19 @@ export const publicarAnuncios = async (req, res) => {
     const listingStatusFinal = raw.listing_status || "active";
     // how_to_contact es NOT NULL en BD: default al canal completo.
     const contactoFinal = how_to_contact || "telefono_chat";
+
+    // parking_space_price es INTEGER en BD (precio del anuncio hoy es BIGINT):
+    // si el valor se pasa de rango, responders 400 legible en vez de 500 pg.
+    const topeParking = 199_999_999;
+    if (
+      parking_space_price != null &&
+      (parking_space_price > topeParking || parking_space_price < 0)
+    ) {
+      return res.status(400).json({
+        success: false,
+        error: `La tarifa del parqueadero excede el tope de $${topeParking.toLocaleString("es-CO")} COP. Revisa el paso 2 (tarifa mensual).`,
+      });
+    }
 
     // ========================================
     // INSERTAR EN BD
