@@ -28,15 +28,15 @@ import {
 import { regenerarTitulo } from "../lib/tituloPropiedad.js";
 import { getOperationCode } from "../lib/catalogos.js";
 import { emitirViewToken } from "../lib/viewToken.js";
-import { puedeAdministrarOrganizacion } from "../lib/organizacionPermisos.js";
-
-// Dueño o agency_admin de la org del anuncio (o superadmin).
-async function puedeGestionarPropiedad(usuario, propiedad) {
-  if (!propiedad) return false;
-  if (Number(propiedad.publicado_por_id) === Number(usuario.id)) return true;
-  if (propiedad.organizacion_id == null) return false;
-  return puedeAdministrarOrganizacion(usuario.id, propiedad.organizacion_id, usuario.rol);
-}
+import { puedeGestionarPropiedad } from "../lib/propiedadPermisos.js";
+import {
+  aplicarPrivacidadUbicacion,
+  geomFiltroSQL,
+} from "../lib/ubicacion.service.js";
+import {
+  calcularPuntoPublico,
+  distanciaMetros,
+} from "../lib/pagos.service.js";
 
 const TAMANOS = ["thumbnail", "small", "medium", "large", "xlarge"];
 
@@ -106,6 +106,9 @@ function parseCamposPropiedad(raw) {
     zona: raw.zona || null,
     how_to_contact: raw.how_to_contact || null,
     telefono_contacto: raw.telefono_contacto || null,
+    // Informativo (intención de pagar para ocultar). NUNCA activa nada:
+    // la ocultación real solo la aplica pagos.service tras verificar el pago.
+    ubicacion_oculta_solicitada: toBool(raw.ubicacion_oculta_solicitada),
   };
 }
 
@@ -339,6 +342,9 @@ export const getPropiedades = async (req, res) => {
         );
       },
     );
+
+    // PRIVACIDAD DE UBICACIÓN: por request, fuera de la caché (30s).
+    await aplicarPrivacidadUbicacion(propiedadesConDatos, req.usuario);
 
     res.status(200).json({
       success: true,
@@ -640,6 +646,7 @@ export const createPropiedades = async (req, res) => {
         es_de_organizacion, organizacion_id, publicado_por_id, rental_type_id,
         how_to_contact, telefono_contacto,
         barrio_nombre,
+        ubicacion_oculta_solicitada,
         created_at, updated_at
       ) VALUES (
         $1, $2, $3, $4,
@@ -660,6 +667,7 @@ export const createPropiedades = async (req, res) => {
         $52, $53, $54, $55,
         $56, $57,
         $58,
+        $59,
         CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
       )
       RETURNING *;
@@ -724,6 +732,8 @@ export const createPropiedades = async (req, res) => {
       campos.how_to_contact,
       campos.telefono_contacto,
       campos.barrio_nombre,
+      // Informativo: no oculta nada (la ocultación la aplica pagos.service).
+      campos.ubicacion_oculta_solicitada,
     ];
 
     const result = await pool.query(query, values);
@@ -945,6 +955,10 @@ export const getPropiedadesById = async (req, res) => {
       });
     }
 
+    // PRIVACIDAD DE UBICACIÓN: se aplica FUERA de la caché (la caché guarda el
+    // dato real solo en Redis; por request se decide según el usuario).
+    await aplicarPrivacidadUbicacion([data], req.usuario);
+
     res.status(200).json({
       success: true,
       message: "Propiedad obtenida.",
@@ -970,7 +984,10 @@ export const updatePropiedades = async (req, res) => {
     }
 
     const propiedadResult = await pool.query(
-      "SELECT publicado_por_id, organizacion_id FROM propiedades WHERE id = $1",
+      `SELECT publicado_por_id, organizacion_id, ubicacion_oculta,
+              ubicacion_oculta_at, latitude, longitude,
+              latitude_publica, longitude_publica
+       FROM propiedades WHERE id = $1`,
       [id],
     );
 
@@ -987,6 +1004,8 @@ export const updatePropiedades = async (req, res) => {
         error: "No autorizado para editar esta propiedad.",
       });
     }
+
+    const propiedadAntes = propiedadResult.rows[0];
 
     let formDataObj = {};
     let file = null;
@@ -1009,6 +1028,14 @@ export const updatePropiedades = async (req, res) => {
     } else {
       formDataObj = req.body;
     }
+
+    // Campos protegidos del sistema de pagos: nunca se aceptan del cliente
+    // (la ocultación real solo la aplica pagos.service tras verificar el pago).
+    delete formDataObj.ubicacion_oculta;
+    delete formDataObj.ubicacion_oculta_at;
+    delete formDataObj.latitude_publica;
+    delete formDataObj.longitude_publica;
+    delete formDataObj.geom_publica;
 
     const { titulo, estado } = formDataObj;
 
@@ -1577,6 +1604,8 @@ export const updatePropiedades = async (req, res) => {
       "zona",
       "how_to_contact",
       "telefono_contacto",
+      // Solo informativo (intención). NUNCA: ubicacion_oculta, *_at, *_publica.
+      "ubicacion_oculta_solicitada",
     ];
     for (const campo of camposActualizables) {
       if (
@@ -1686,6 +1715,42 @@ export const updatePropiedades = async (req, res) => {
           "UPDATE propiedades SET description_needs_review = FALSE WHERE id = $1",
           [id],
         );
+      }
+
+      // ANTI-TRIANGULACIÓN: si el anuncio está oculto y el usuario cambia las
+      // coordenadas reales, el punto público SOLO se regenera si el salto es
+      // grande (> ~1 km). Ediciones pequeñas NO mueven el punto público
+      // (si cambiara en cada edición, se podría triangular la ubicación real).
+      const nuevoLat =
+        formDataObj.latitude !== undefined ? campos.latitude : propiedadAntes?.latitude;
+      const nuevoLng =
+        formDataObj.longitude !== undefined
+          ? campos.longitude
+          : propiedadAntes?.longitude;
+      if (
+        propiedadAntes?.ubicacion_oculta === true &&
+        (formDataObj.latitude !== undefined || formDataObj.longitude !== undefined) &&
+        Number.isFinite(Number(nuevoLat)) &&
+        Number.isFinite(Number(nuevoLng))
+      ) {
+        const salto = distanciaMetros(
+          Number(nuevoLat),
+          Number(nuevoLng),
+          Number(propiedadAntes.latitude),
+          Number(propiedadAntes.longitude),
+        );
+        if (salto > 1000) {
+          const punto = calcularPuntoPublico(Number(nuevoLat), Number(nuevoLng));
+          await pool.query(
+            `UPDATE propiedades SET
+               latitude_publica = $2,
+               longitude_publica = $3,
+               geom_publica = ST_SetSRID(
+                 ST_MakePoint($3::double precision, $2::double precision), 4326)
+             WHERE id = $1`,
+            [id, punto.lat, punto.lng],
+          );
+        }
       }
     }
 
@@ -2058,6 +2123,7 @@ export const publicarAnuncios = async (req, res) => {
         es_de_organizacion, organizacion_id, publicado_por_id, rental_type_id,
         how_to_contact, telefono_contacto,
         barrio_nombre,
+        ubicacion_oculta_solicitada,
         created_at, updated_at
       ) VALUES (
         $1, $2, $3, $4,
@@ -2078,6 +2144,7 @@ export const publicarAnuncios = async (req, res) => {
         $52, $53, $54, $55,
         $56, $57,
         $58,
+        $59,
         CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
       )
       RETURNING *;
@@ -2141,6 +2208,8 @@ export const publicarAnuncios = async (req, res) => {
       contactoFinal,
       telefono_contacto,
       barrio_nombre,
+      // Informativo: no oculta nada (la ocultación la aplica pagos.service).
+      toBool(raw.ubicacion_oculta_solicitada),
     ];
 
     const result = await pool.query(query, values);
@@ -2313,6 +2382,9 @@ export const getPropiedadesHome = async (req, res) => {
     const ultimaPropiedad = propiedades[propiedades.length - 1];
     const nextCursor = ultimaPropiedad ? ultimaPropiedad.created_at : null;
 
+    // PRIVACIDAD DE UBICACIÓN (feed público)
+    await aplicarPrivacidadUbicacion(propiedadesConDatos, req.usuario);
+
     res.status(200).json({
       success: true,
       message: "propiedades obtenidas.",
@@ -2401,7 +2473,7 @@ export const getPropiedadesMisAnuncios = async (req, res) => {
               telefono
             FROM usuarios
             WHERE id = $1`,
-            [propiedad.publicado_por_id],
+                [propiedad.publicado_por_id],
           );
 
           publicador = rows[0] ? { tipo: "usuario", ...rows[0] } : null;
@@ -2416,6 +2488,10 @@ export const getPropiedadesMisAnuncios = async (req, res) => {
         };
       }),
     );
+
+    // PRIVACIDAD DE UBICACIÓN (mis anuncios: el dueño casi siempre verá
+    // las reales; si el usuario es agency_admin de otra org no aplica).
+    await aplicarPrivacidadUbicacion(propiedadesConDatos, req.usuario);
 
     res.status(200).json({
       success: true,
@@ -2547,6 +2623,9 @@ export const getPropiedadesByOrganizacion = async (req, res) => {
 
     const ultimaPropiedad = propiedades[propiedades.length - 1];
     const nextCursor = ultimaPropiedad ? ultimaPropiedad.created_at : null;
+
+    // PRIVACIDAD DE UBICACIÓN (escaparate público de la organización)
+    await aplicarPrivacidadUbicacion(propiedadesConDatos, req.usuario);
 
     res.status(200).json({
       success: true,
@@ -2976,6 +3055,9 @@ export const getPropertiesBySlugs = async (req, res) => {
 
     const { rows } = await pool.query(query, params);
 
+    // PRIVACIDAD DE UBICACIÓN (listado por ciudad/departamento)
+    await aplicarPrivacidadUbicacion(rows, req.usuario);
+
     // Enviamos la respuesta estructurada respetando tu firma estándar del apiBackend
     return res.json({
       success: true,
@@ -3257,6 +3339,9 @@ export const searchVivienda = async (req, res) => {
 
     const { rows } = await pool.query(query, params);
 
+    // PRIVACIDAD DE UBICACIÓN (búsqueda por tipos de vivienda)
+    await aplicarPrivacidadUbicacion(rows, req.usuario);
+
     return res.json({
       success: true,
       message:
@@ -3289,9 +3374,15 @@ export const getInmueblesEnBbox = async (req, res) => {
     });
   }
 
-  try {
-    const params = [];
-    const filters = ["p.estado = 'publicado'", "p.geom IS NOT NULL"];
+    try {
+      const params = [];
+      // UBICACIÓN OCULTA: el filtro espacial usa geom_publica para las propiedades
+      // ocultas (y geom real para el resto). Si geom_publica aún no existe
+      // (pago recién aprobado sin aplicar), no se muestra.
+      const filters = [
+        "p.estado = 'publicado'",
+        `${geomFiltroSQL("p")} IS NOT NULL`,
+      ];
 
     if (esTipoVacacional(tipoInmueble)) {
       operation = "alquiler";
@@ -3341,13 +3432,13 @@ export const getInmueblesEnBbox = async (req, res) => {
              pt.label_es as tipo_inmueble, pt.code as tipo_slug,
              ${portadaSubquery("p")},
              ${ofertasSubquery("p")},
-             ST_Y(p.geom) AS lat, ST_X(p.geom) AS lng
+             ST_Y(${geomFiltroSQL("p")}) AS lat, ST_X(${geomFiltroSQL("p")}) AS lng
       FROM propiedades p
       LEFT JOIN operation_types ot ON p.operation_type_id = ot.id
       LEFT JOIN property_types pt ON p.property_type_id = pt.id
       ${listingsJoinBbox}
       WHERE ST_Intersects(
-        p.geom,
+        ${geomFiltroSQL("p")},
         ST_MakeEnvelope(
           $${bboxParamIdx}::float,
           $${bboxParamIdx + 1}::float,
@@ -3398,7 +3489,9 @@ export const getPropiedadResumen = async (req, res) => {
   try {
       const { rows } = await pool.query(
         `SELECT
-          p.latitude, p.longitude, p.description_needs_review,
+          p.latitude, p.longitude,
+          p.ubicacion_oculta, p.publicado_por_id, p.organizacion_id,
+          p.description_needs_review,
           ${ofertasSubquery("p")},
           (SELECT COUNT(DISTINCT pg.orden) FROM propiedades_galeria pg WHERE pg.propiedad_id = p.id AND pg.es_portada = false)::int AS galeria_count,
           (SELECT COUNT(DISTINCT pp.orden) FROM propiedades_planos pp WHERE pp.propiedad_id = p.id)::int AS planos_count
@@ -3415,6 +3508,9 @@ export const getPropiedadResumen = async (req, res) => {
         error: null,
       });
     }
+
+    // PRIVACIDAD DE UBICACIÓN (resumen ligero usado por PropertyCard)
+    await aplicarPrivacidadUbicacion(rows, req.usuario);
 
     res.json({ success: true, message: null, data: rows[0], error: null });
   } catch (error) {

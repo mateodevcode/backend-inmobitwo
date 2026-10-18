@@ -1780,4 +1780,72 @@ CREATE INDEX IF NOT EXISTS idx_dominios_jobs_org
 CREATE INDEX IF NOT EXISTS idx_dominios_jobs_estado
     ON dominios_jobs (estado) WHERE estado IN ('pendiente', 'ejecutando');
 
+-- ============================================================================
+-- 11. PAGOS Y UBICACIÓN OCULTA (réplica de migrations/019)
+--     Pago único (Mercado Pago Colombia, COP) que activa "ocultar ubicación".
+-- ============================================================================
+ALTER TABLE propiedades
+  ADD COLUMN IF NOT EXISTS ubicacion_oculta BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE propiedades
+  ADD COLUMN IF NOT EXISTS ubicacion_oculta_at TIMESTAMPTZ;
+ALTER TABLE propiedades
+  ADD COLUMN IF NOT EXISTS ubicacion_oculta_solicitada BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE propiedades
+  ADD COLUMN IF NOT EXISTS latitude_publica DECIMAL(10, 8);
+ALTER TABLE propiedades
+  ADD COLUMN IF NOT EXISTS longitude_publica DECIMAL(11, 8);
+ALTER TABLE propiedades
+  ADD COLUMN IF NOT EXISTS geom_publica GEOMETRY(Point, 4326);
+
+CREATE INDEX IF NOT EXISTS idx_propiedades_geom_publica
+  ON propiedades USING GIST (geom_publica);
+CREATE INDEX IF NOT EXISTS idx_propiedades_ubicacion_oculta
+  ON propiedades (ubicacion_oculta)
+  WHERE ubicacion_oculta = TRUE;
+
+CREATE TABLE IF NOT EXISTS pagos (
+    id BIGSERIAL PRIMARY KEY,
+    tipo VARCHAR(50) NOT NULL CHECK (tipo IN ('ubicacion_oculta')),
+    usuario_id INTEGER REFERENCES usuarios(id) ON DELETE SET NULL,
+    propiedad_id INTEGER REFERENCES propiedades(id) ON DELETE SET NULL,
+    monto INTEGER NOT NULL CHECK (monto > 0),
+    moneda VARCHAR(3) NOT NULL DEFAULT 'COP',
+    external_reference VARCHAR(64) NOT NULL,
+    mp_payment_id BIGINT UNIQUE,
+    estado VARCHAR(30) NOT NULL DEFAULT 'iniciado'
+        CHECK (estado IN ('iniciado', 'pending', 'in_process', 'approved', 'rejected', 'cancelled')),
+    estado_detalle VARCHAR(255),
+    verificado_at TIMESTAMPTZ,
+    aplicado_at TIMESTAMPTZ,
+    requiere_reembolso BOOLEAN NOT NULL DEFAULT FALSE,
+    nota TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_pagos_usuario ON pagos(usuario_id);
+CREATE INDEX IF NOT EXISTS idx_pagos_propiedad ON pagos(propiedad_id);
+CREATE INDEX IF NOT EXISTS idx_pagos_estado_pendientes
+  ON pagos (estado, created_at)
+  WHERE estado IN ('pending', 'in_process', 'iniciado');
+CREATE UNIQUE INDEX IF NOT EXISTS idx_pagos_un_pago_en_curso
+  ON pagos (propiedad_id, tipo)
+  WHERE propiedad_id IS NOT NULL
+    AND (
+      estado IN ('iniciado', 'pending', 'in_process')
+      OR (estado = 'approved' AND aplicado_at IS NULL)
+    );
+
+CREATE OR REPLACE FUNCTION f_pagos_touch_updated_at() RETURNS trigger AS $$
+BEGIN
+  NEW.updated_at = NOW();
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS tg_pagos_updated_at ON pagos;
+CREATE TRIGGER tg_pagos_updated_at
+  BEFORE UPDATE ON pagos
+  FOR EACH ROW EXECUTE FUNCTION f_pagos_touch_updated_at();
+
 COMMIT;

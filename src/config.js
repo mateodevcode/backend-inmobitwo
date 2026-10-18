@@ -56,6 +56,27 @@ export const SOCKET_CORE_API_KEY = process.env.SOCKET_CORE_API_KEY;
 export const SOCKET_CORE_ORIGIN = process.env.SOCKET_CORE_ORIGIN;
 export const SOCKET_CORE_WS_PUBLIC_URL = process.env.SOCKET_CORE_WS_PUBLIC_URL;
 
+// ─── PAGOS — Mercado Pago Colombia (solo backend; el frontend usa NEXT_PUBLIC_MP_PUBLIC_KEY) ───
+// El módulo de pagos se considera apagado (habilitado=false en /pagos/config)
+// si falta el access token: el resto de la API sigue funcionando.
+export const MP_ACCESS_TOKEN = process.env.MP_ACCESS_TOKEN;
+export const MP_WEBHOOK_SECRET = process.env.MP_WEBHOOK_SECRET;
+// URL pública del backend para montar el notification_url: p. ej. https://api.inmobitwo.seventwo.tech
+export const MP_NOTIFICATION_URL = process.env.MP_NOTIFICATION_URL;
+// Precio del pago único por anuncio (COP). Default 22000.
+export const PRECIO_UBICACION_OCULTA_COP = (() => {
+  const n = parseInt(process.env.PRECIO_UBICACION_OCULTA_COP ?? "22000");
+  return Number.isInteger(n) && n > 0 ? n : 22000;
+})();
+// Cuotas máxima permitida en servidor (1 = un solo pago).
+export const MP_MAX_INSTALLMENTS = (() => {
+  const n = parseInt(process.env.MP_MAX_INSTALLMENTS ?? "1");
+  return Number.isInteger(n) && n > 0 ? n : 1;
+})();
+
+// El módulo de pagos está habilitado solo con access token.
+export const pagosHabilitados = () => Boolean(MP_ACCESS_TOKEN);
+
 // Google OAuth (Authorization Code). REDIRECT_URI debe coincidir exacta con
 // la registrada en Cloud Console (una por entorno).
 export const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID;

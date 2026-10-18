@@ -1,5 +1,6 @@
 import { pool } from "../db.js";
 import { buildTipoFilter, esTipoVacacional } from "../lib/propertyFilters.js";
+import { aplicarPrivacidadUbicacion } from "../lib/ubicacion.service.js";
 
 // GET /geo/titulo-sugerido?propertyTypeId=&cityId=&stateId=&direccion=&operacion=
 // Genera el título con el mismo formato que publicarAnuncios.
@@ -873,8 +874,13 @@ export const getInmueblesEnPoligono = async (req, res) => {
          p.bedroom_count, p.bathroom_count,
          ot.label_es as operacion, ot.code as operacion_slug,
          pt.label_es as tipo_inmueble, pt.code as tipo_slug,
-         p.longitude::float as longitude,
-         p.latitude::float as latitude,
+         p.ubicacion_oculta, p.publicado_por_id, p.organizacion_id,
+         (CASE WHEN p.ubicacion_oculta
+               THEN COALESCE(p.longitude_publica, p.longitude)
+               ELSE p.longitude END)::float as longitude,
+         (CASE WHEN p.ubicacion_oculta
+               THEN COALESCE(p.latitude_publica, p.latitude)
+               ELSE p.latitude END)::float as latitude,
          p.es_de_organizacion,
          COALESCE(
            (SELECT pg.url FROM propiedades_galeria pg 
@@ -916,16 +922,19 @@ export const getInmueblesEnPoligono = async (req, res) => {
        LEFT JOIN cities c ON p.city_id = c.id
        LEFT JOIN states s ON c.state_id = s.id
        LEFT JOIN organizaciones o ON p.organizacion_id = o.id
-       WHERE ${filterSQL}
-         AND p.geom IS NOT NULL
-         AND ST_Contains(
-           ST_SetSRID(ST_GeomFromGeoJSON($1::jsonb), 4326),
-           p.geom
-         )
-       ORDER BY p.id DESC
-       LIMIT 200`,
+        WHERE ${filterSQL}
+          AND p.geom IS NOT NULL
+          AND ST_Contains(
+            ST_SetSRID(ST_GeomFromGeoJSON($1::jsonb), 4326),
+            COALESCE(CASE WHEN p.ubicacion_oculta THEN p.geom_publica END, p.geom)
+          )
+        ORDER BY p.id DESC
+        LIMIT 200`,
       params,
     );
+
+    // PRIVACIDAD DE UBICACIÓN
+    await aplicarPrivacidadUbicacion(rows, req?.usuario ?? null);
 
     res.json({
       success: true,

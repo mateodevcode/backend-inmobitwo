@@ -16,6 +16,7 @@ import {
   getTituloSugerido,
 } from "../controllers/geo.controllers.js";
 import { createRateLimitMiddleware, defaultLimiter } from "../lib/rateLimit.js";
+import { verificarTokenOpcional } from "../middleware/auth.middleware.js";
 
 const router = Router();
 
@@ -48,6 +49,6 @@ router.get("/geo-count/batch", rateLimit, getGeoCountBatch);
 router.get("/location-geojson", rateLimit, getLocationGeoJSON);
 
 // Filtrado de inmuebles dentro de un polígono dibujado por el usuario
-router.post("/inmuebles-en-poligono", rateLimit, getInmueblesEnPoligono);
+router.post("/inmuebles-en-poligono", verificarTokenOpcional, rateLimit, getInmueblesEnPoligono);
 
 export default router;

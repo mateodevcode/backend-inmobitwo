@@ -128,7 +128,9 @@ export const crearObtenerConversacion = async (req, res) => {
       });
     }
 
-    const tituloRespaldo = prop.titulo || prop.direccion || "Anuncio";
+    // PRIVACIDAD: para anuncios con ubicación oculta el título de respaldo
+    // no puede ser la dirección (delataría la ubicación exacta).
+    const tituloRespaldo = prop.titulo || "Anuncio";
     const { rows: ins } = await pool.query(
       `INSERT INTO chat_conversaciones
          (propiedad_id, propiedad_titulo, interesado_id, publicador_id)

@@ -77,7 +77,7 @@ router.get(`${ruta}/search-vivienda`, verificarTokenOpcional, rateLimit, searchV
 router.get(`${ruta}/inmuebles-en-bbox`, verificarTokenOpcional, rateLimit, getInmueblesEnBbox);
 
 // Resumen ligero de propiedad para PropertyCard
-router.get(`${ruta}/:id/resumen`, rateLimit, getPropiedadResumen);
+router.get(`${ruta}/:id/resumen`, verificarTokenOpcional, rateLimit, getPropiedadResumen);
 
 // Historial de precios (price_history)
 router.get(`${ruta}/:id/historial-precios`, rateLimit, getHistorialPrecios);
@@ -143,7 +143,9 @@ router.post(
 router.post(`${ruta}/:id/view-token`, requiereVistas, rateLimitViewToken, emitirTokenVista);
 
 // 5. PARÁMETROS DINÁMICOS GENERALES (Siempre abajo del todo para evitar colisiones de tipos)
-router.get(`${ruta}/:id`, rateLimit, getPropiedadesById);
+// verificarTokenOpcional: permite saber quién consulta para la privacidad de
+// ubicación (dueño ve sus coordenadas reales; público ve solo la aproximada).
+router.get(`${ruta}/:id`, verificarTokenOpcional, rateLimit, getPropiedadesById);
 
 // 6. MÉTODOS DE ESCRITURA Y ACCIONES
 router.post(ruta, verificarToken, uploadFields, createPropiedades);

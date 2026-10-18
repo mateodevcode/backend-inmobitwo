@@ -26,7 +26,9 @@ import busquedasGuardadasRoutes from "./routes/busquedas.guardadas.routes.js";
 import crmRoutes from "./routes/crm.routes.js";
 import portadaRoutes from "./routes/portada.routes.js";
 import dominiosRoutes from "./routes/dominios.routes.js";
+import pagosRoutes from "./routes/pagos.routes.js";
 import { iniciarCronBusquedas } from "./jobs/busquedasGuardadas.job.js";
+import { iniciarCronPagos } from "./jobs/pagos.job.js";
 import { corsOptions } from "./cors.config.js";
 import { errorHandler } from "./middleware/error.middleware.js";
 import { validarSecretosArranque, vistasHabilitadas } from "./lib/validarSecretos.js";
@@ -89,6 +91,7 @@ app.use(busquedasGuardadasRoutes);
 app.use(crmRoutes);
 app.use(portadaRoutes);
 app.use(dominiosRoutes);
+app.use(pagosRoutes);
 
 // Middleware de errores (debe ir después de todas las rutas)
 app.use(errorHandler);
@@ -98,3 +101,6 @@ console.log("Server running on port", PORT);
 
 // Cron de búsquedas guardadas (solo si CRON_BUSQUEDAS_ENABLED=true)
 iniciarCronBusquedas();
+
+// Cron de reconciliación de pagos MP (cada 10 min; PAGOS_CRON_ENABLED=false para apagar)
+iniciarCronPagos();

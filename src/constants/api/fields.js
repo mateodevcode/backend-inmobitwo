@@ -95,6 +95,14 @@ export const CAMPOS_PROPIEDAD = {
     "barrio_nombre",
     "cedula_catastral",
     "matricula_inmobiliaria",
+    // Ubicación oculta (sistema de pagos). La privacidad por usuario la aplica
+    // lib/ubicacion.service.js al responder: los no propietarios nunca reciben
+    // *_publica ni la dirección real de un anuncio oculto.
+    "ubicacion_oculta",
+    "ubicacion_oculta_at",
+    "ubicacion_oculta_solicitada",
+    "latitude_publica",
+    "longitude_publica",
     "created_at",
     "updated_at",
   ],
