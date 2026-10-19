@@ -4,7 +4,7 @@
 // Cubre webhooks perdidos (p.ej. local sin túnel) y pagos PSE/efectivo.
 
 import cron from "node-cron";
-import { reconciliarPagosPendientes } from "../lib/pagos.service.js";
+import { reconciliarPagosPendientes } from "../lib/pagos/pago.service.js";
 
 export function iniciarCronPagos() {
   if (process.env.PAGOS_CRON_ENABLED === "false") {
@@ -14,8 +14,9 @@ export function iniciarCronPagos() {
   // Sin gate gordo: es un GET de reconsulta, barato; MP nunca cobra de nuevo.
   cron.schedule("*/10 * * * *", async () => {
     try {
-      const { revisados } = await reconciliarPagosPendientes();
+      const { revisados, expirados } = await reconciliarPagosPendientes();
       if (revisados > 0) console.log(`[pagos] reconciliados: ${revisados}`);
+      if (expirados > 0) console.log(`[pagos] intentos expirados: ${expirados}`);
     } catch (e) {
       console.error("[pagos] cron:", e?.message ?? e);
     }

@@ -31,12 +31,10 @@ import { emitirViewToken } from "../lib/viewToken.js";
 import { puedeGestionarPropiedad } from "../lib/propiedadPermisos.js";
 import {
   aplicarPrivacidadUbicacion,
-  geomFiltroSQL,
-} from "../lib/ubicacion.service.js";
-import {
   calcularPuntoPublico,
   distanciaMetros,
-} from "../lib/pagos.service.js";
+  geomFiltroSQL,
+} from "../lib/ubicacion.service.js";
 
 const TAMANOS = ["thumbnail", "small", "medium", "large", "xlarge"];
 

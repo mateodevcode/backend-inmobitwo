@@ -8,10 +8,49 @@
 //   (ver expresiones SQL al final) para que no se pueda triangular
 //   achicando el bbox o el radio.
 
-import { pool } from "../db.js";
+import crypto from "crypto";
 import { puedeAdministrarOrganizacion } from "./organizacionPermisos.js";
 
 export const RADIO_ZONA_UBICACION_M = 500;
+
+const DESPLAZAMIENTO_MIN_M = 150;
+const DESPLAZAMIENTO_MAX_M = 400; // zona aproximada ~radio 500m
+
+// ────────────────────────────────────────────────────────────────
+// Punto público: desplazamiento aleatorio 150–400 m, rumbo aleatorio,
+// criptográficamente aleatorio (crypto), calculado UNA sola vez.
+// ────────────────────────────────────────────────────────────────
+export function calcularPuntoPublico(latReal, lngReal) {
+  if (!Number.isFinite(latReal) || !Number.isFinite(lngReal)) {
+    throw new Error("Coordenadas reales inválidas para generar punto público");
+  }
+  const distancia =
+    DESPLAZAMIENTO_MIN_M +
+    crypto.randomInt(0, DESPLAZAMIENTO_MAX_M - DESPLAZAMIENTO_MIN_M + 1);
+  const rumbo = crypto.randomInt(0, 360) * (Math.PI / 180);
+
+  const deltaLat = (distancia * Math.cos(rumbo)) / 111320;
+  const deltaLng =
+    (distancia * Math.sin(rumbo)) /
+    (111320 * Math.cos((latReal * Math.PI) / 180));
+
+  return {
+    lat: Number((latReal + deltaLat).toFixed(8)),
+    lng: Number((lngReal + deltaLng).toFixed(8)),
+  };
+}
+
+// Distancia aproximada en metros entre dos puntos (para anti-triangulación).
+export function distanciaMetros(lat1, lng1, lat2, lng2) {
+  const R = 6371000;
+  const rad = Math.PI / 180;
+  const dLat = (lat2 - lat1) * rad;
+  const dLng = (lng2 - lng1) * rad;
+  const a =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(lat1 * rad) * Math.cos(lat2 * rad) * Math.sin(dLng / 2) ** 2;
+  return 2 * R * Math.asin(Math.min(1, Math.sqrt(a)));
+}
 
 // ────────────────────────────────────────────────────────────────
 // ¿Este usuario puede ver la ubicación REAL de esta propiedad?
@@ -69,11 +108,14 @@ export async function aplicarPrivacidadUbicacion(filas, usuario) {
 
 // Ocultar: sustituye coordenadas reales por públicas y borra datos exactos.
 function ocultarFila(fila) {
-  const latPub = fila.latitude_publica ?? fila.latitude;
-  const lngPub = fila.longitude_publica ?? fila.longitude;
-  if (latPub != null) fila.ubicacion_aproximada = true;
-  fila.latitude = latPub;
-  fila.longitude = lngPub;
+  // NUNCA caer a la coordenada real: si una fila oculta no tiene punto público
+  // (legacy/corrupción), se devuelve sin coordenadas en lugar de filtrar la
+  // ubicación exacta.
+  const tienePublica =
+    fila.latitude_publica != null && fila.longitude_publica != null;
+  fila.ubicacion_aproximada = true; // oculta = aproximada (haya o no punto)
+  fila.latitude = tienePublica ? fila.latitude_publica : null;
+  fila.longitude = tienePublica ? fila.longitude_publica : null;
   delete fila.latitude_publica;
   delete fila.longitude_publica;
   delete fila.geom; // defensa extra: algunos SELECT legacy pueden traerla
@@ -99,14 +141,15 @@ function protegerFilaInterna(fila) {
 // ────────────────────────────────────────────────────────────────
 // SELECT de latitud/lng: devuelve la pública si está oculta, sino la real.
 export function coordenadaSelectSQL(alias = "p") {
-  return `(CASE WHEN ${alias}.ubicacion_oculta THEN COALESCE(${alias}.latitude_publica, ${alias}.latitude) ELSE ${alias}.latitude END)`;
+  return `(CASE WHEN ${alias}.ubicacion_oculta THEN ${alias}.latitude_publica ELSE ${alias}.latitude END)`;
 }
 
 const lngSelectSQL = (alias) =>
-  `(CASE WHEN ${alias}.ubicacion_oculta THEN COALESCE(${alias}.longitude_publica, ${alias}.longitude) ELSE ${alias}.longitude END)`;
+  `(CASE WHEN ${alias}.ubicacion_oculta THEN ${alias}.longitude_publica ELSE ${alias}.longitude END)`;
 
 // Filtro espacial: usa geom_publica para ocultas y geom real para el resto.
-// Maneja el caso en que geom_publica sea NULL (aún sin activar).
+// Si una oculta no tiene geom_publica, queda fuera del filtro (NULL): nunca se
+// usa la geom real como fallback.
 export function geomFiltroSQL(alias = "p") {
-  return `COALESCE(CASE WHEN ${alias}.ubicacion_oculta THEN ${alias}.geom_publica END, ${alias}.geom)`;
+  return `(CASE WHEN ${alias}.ubicacion_oculta THEN ${alias}.geom_publica ELSE ${alias}.geom END)`;
 }

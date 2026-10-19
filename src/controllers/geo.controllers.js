@@ -876,10 +876,10 @@ export const getInmueblesEnPoligono = async (req, res) => {
          pt.label_es as tipo_inmueble, pt.code as tipo_slug,
          p.ubicacion_oculta, p.publicado_por_id, p.organizacion_id,
          (CASE WHEN p.ubicacion_oculta
-               THEN COALESCE(p.longitude_publica, p.longitude)
+               THEN p.longitude_publica
                ELSE p.longitude END)::float as longitude,
          (CASE WHEN p.ubicacion_oculta
-               THEN COALESCE(p.latitude_publica, p.latitude)
+               THEN p.latitude_publica
                ELSE p.latitude END)::float as latitude,
          p.es_de_organizacion,
          COALESCE(
@@ -926,7 +926,7 @@ export const getInmueblesEnPoligono = async (req, res) => {
           AND p.geom IS NOT NULL
           AND ST_Contains(
             ST_SetSRID(ST_GeomFromGeoJSON($1::jsonb), 4326),
-            COALESCE(CASE WHEN p.ubicacion_oculta THEN p.geom_publica END, p.geom)
+            (CASE WHEN p.ubicacion_oculta THEN p.geom_publica ELSE p.geom END)
           )
         ORDER BY p.id DESC
         LIMIT 200`,

@@ -9,7 +9,10 @@
     "dev": "node --env-file .env --watch src/index.js",
     "seed:geo": "node --env-file .env src/database/seed-geo.js",
     "job:busquedas": "node --env-file .env src/jobs/run-once.js",
-    "db:check": "node scripts/verificar-esquema.mjs"
+    "db:check": "node scripts/verificar-esquema.mjs",
+    "test": "node --test \"test/**/*.test.js\"",
+    "test:unit": "node --test test/pagos.core.test.js test/ubicacion.test.js",
+    "test:integration": "node --test test/pagos.integration.test.js"
   },
   "keywords": [],
   "author": "",

@@ -1816,8 +1816,14 @@ CREATE TABLE IF NOT EXISTS pagos (
     moneda VARCHAR(3) NOT NULL DEFAULT 'COP',
     external_reference VARCHAR(64) NOT NULL,
     mp_payment_id BIGINT UNIQUE,
+    -- Orders API (migración 022): X-Idempotency-Key del intento y id PAY…
+    mp_idempotency_key TEXT,
+    mp_transaction_id TEXT,
     estado VARCHAR(30) NOT NULL DEFAULT 'iniciado'
-        CHECK (estado IN ('iniciado', 'pending', 'in_process', 'approved', 'rejected', 'cancelled')),
+        CHECK (estado IN (
+          'iniciado', 'pending', 'in_process', 'approved',
+          'rejected', 'cancelled', 'expirado', 'refunded', 'charged_back'
+        )),
     estado_detalle VARCHAR(255),
     verificado_at TIMESTAMPTZ,
     aplicado_at TIMESTAMPTZ,
@@ -1829,6 +1835,9 @@ CREATE TABLE IF NOT EXISTS pagos (
 
 CREATE INDEX IF NOT EXISTS idx_pagos_usuario ON pagos(usuario_id);
 CREATE INDEX IF NOT EXISTS idx_pagos_propiedad ON pagos(propiedad_id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_pagos_mp_idempotency_key
+  ON pagos (mp_idempotency_key)
+  WHERE mp_idempotency_key IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_pagos_estado_pendientes
   ON pagos (estado, created_at)
   WHERE estado IN ('pending', 'in_process', 'iniciado');
@@ -1910,6 +1919,67 @@ BEGIN
         WHERE ph.detected_at >= NOW() - INTERVAL '30 days'
         ORDER BY ph.detected_at DESC;
     END IF;
+END
+$$;
+
+-- 42. MP_PAYMENT_ID TEXT — ids de Orders API ("ORD…"/"PAY…") no caben en
+-- BIGINT (migración 021)
+BEGIN;
+
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_name = 'pagos'
+      AND column_name = 'mp_payment_id'
+      AND data_type = 'bigint'
+  ) THEN
+    ALTER TABLE pagos
+      ALTER COLUMN mp_payment_id TYPE TEXT
+      USING mp_payment_id::TEXT;
+  END IF;
+END
+$$;
+
+COMMIT;
+
+-- 43. ORDERS API — idempotencia persistida y estados nuevos (migración 022)
+BEGIN;
+
+ALTER TABLE pagos
+  ADD COLUMN IF NOT EXISTS mp_idempotency_key TEXT;
+ALTER TABLE pagos
+  ADD COLUMN IF NOT EXISTS mp_transaction_id TEXT;
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_pagos_mp_idempotency_key
+  ON pagos (mp_idempotency_key)
+  WHERE mp_idempotency_key IS NOT NULL;
+
+DO $$
+DECLARE
+  con RECORD;
+BEGIN
+  FOR con IN
+    SELECT conname
+    FROM pg_constraint
+    WHERE conrelid = 'pagos'::regclass
+      AND contype = 'c'
+      AND pg_get_constraintdef(oid) LIKE '%iniciado%'
+  LOOP
+    EXECUTE format('ALTER TABLE pagos DROP CONSTRAINT %I', con.conname);
+  END LOOP;
+
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint
+    WHERE conrelid = 'pagos'::regclass
+      AND conname = 'pagos_estado_check'
+  ) THEN
+    ALTER TABLE pagos ADD CONSTRAINT pagos_estado_check
+      CHECK (estado IN (
+        'iniciado', 'pending', 'in_process', 'approved',
+        'rejected', 'cancelled', 'expirado', 'refunded', 'charged_back'
+      ));
+  END IF;
 END
 $$;
 
