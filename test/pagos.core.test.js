@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import crypto from "node:crypto";
 import {
   construirOrdenMp,
   extraerIdOrdenDeError,
@@ -12,7 +13,11 @@ import {
   normalizarOrdenMp,
   normalizarEstado,
 } from "../src/lib/pagos/mp.estados.js";
-import { manifiestoFirma } from "../src/lib/pagos/firma.js";
+import {
+  TOLERANCIA_TS_MS,
+  firmaValida,
+  manifiestoFirma,
+} from "../src/lib/pagos/firma.js";
 
 test("construirOrdenMp arma el payload de Orders API (montos string)", () => {
   const orden = construirOrdenMp({
@@ -186,6 +191,125 @@ test("manifiestoFirma usa data.id en minúsculas (Orders API)", () => {
   assert.equal(
     manifiestoFirma("ORD01ABCXYZ", "req-123", "1690000000"),
     "id:ord01abcxyz;request-id:req-123;ts:1690000000;",
+  );
+});
+
+test("manifiestoFirma omite valores ausentes (doc MP)", () => {
+  assert.equal(
+    manifiestoFirma(null, "req-123", "1690000000"),
+    "request-id:req-123;ts:1690000000;",
+  );
+  assert.equal(
+    manifiestoFirma("ORD01ABCXYZ", null, "1690000000"),
+    "id:ord01abcxyz;ts:1690000000;",
+  );
+});
+
+const SECRETO_TEST = "secreto-webhook-de-prueba";
+const ahoraTest = 1_760_000_000_000;
+
+function firmarWebhook({
+  dataId = "ORD01ABCXYZ",
+  requestId = "req-123",
+  ts = ahoraTest,
+  secret = SECRETO_TEST,
+} = {}) {
+  const manifiesto = manifiestoFirma(dataId, requestId, ts);
+  const v1 = crypto
+    .createHmac("sha256", secret)
+    .update(manifiesto)
+    .digest("hex");
+  return `ts=${ts},v1=${v1}`;
+}
+
+test("firmaValida acepta una firma HMAC correcta", () => {
+  const headers = {
+    "x-signature": firmarWebhook(),
+    "x-request-id": "req-123",
+  };
+  assert.equal(
+    firmaValida({
+      headers,
+      dataId: "ORD01ABCXYZ",
+      secret: SECRETO_TEST,
+      ahora: ahoraTest,
+    }),
+    true,
+  );
+});
+
+test("firmaValida rechaza firma incorrecta y falta de headers", () => {
+  const base = {
+    headers: {
+      "x-signature": firmarWebhook(),
+      "x-request-id": "req-123",
+    },
+    dataId: "ORD01ABCXYZ",
+    secret: SECRETO_TEST,
+    ahora: ahoraTest,
+  };
+  assert.equal(firmaValida({ ...base, secret: "otro-secreto" }), false);
+  assert.equal(
+    firmaValida({ ...base, headers: { "x-request-id": "req-123" } }),
+    false,
+  );
+  assert.equal(
+    firmaValida({ ...base, headers: { "x-signature": "ts=1,v1=abc" } }),
+    false,
+  );
+  assert.equal(firmaValida({ ...base, secret: "" }), false);
+});
+
+test("firmaValida rechaza ts demasiado viejo o futuro", () => {
+  const viejo = ahoraTest - TOLERANCIA_TS_MS - 60_000;
+  const futuro = ahoraTest + TOLERANCIA_TS_MS + 60_000;
+  for (const ts of [viejo, futuro]) {
+    assert.equal(
+      firmaValida({
+        headers: {
+          "x-signature": firmarWebhook({ ts }),
+          "x-request-id": "req-123",
+        },
+        dataId: "ORD01ABCXYZ",
+        secret: SECRETO_TEST,
+        ahora: ahoraTest,
+      }),
+      false,
+      String(ts),
+    );
+  }
+});
+
+test("firmaValida acepta ts en segundos (compatibilidad)", () => {
+  const tsSegundos = Math.floor(ahoraTest / 1000);
+  assert.equal(
+    firmaValida({
+      headers: {
+        "x-signature": firmarWebhook({ ts: tsSegundos }),
+        "x-request-id": "req-123",
+      },
+      dataId: "ORD01ABCXYZ",
+      secret: SECRETO_TEST,
+      ahora: ahoraTest,
+    }),
+    true,
+  );
+});
+
+test("firmaValida sin x-request-id usa el manifest sin ese campo", () => {
+  const ts = ahoraTest;
+  const v1 = crypto
+    .createHmac("sha256", SECRETO_TEST)
+    .update(manifiestoFirma("ORD01ABCXYZ", null, ts))
+    .digest("hex");
+  assert.equal(
+    firmaValida({
+      headers: { "x-signature": `ts=${ts},v1=${v1}` },
+      dataId: "ORD01ABCXYZ",
+      secret: SECRETO_TEST,
+      ahora: ahoraTest,
+    }),
+    true,
   );
 });
 

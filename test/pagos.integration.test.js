@@ -9,7 +9,14 @@
 
 import test, { before, beforeEach, after } from "node:test";
 import assert from "node:assert/strict";
+import crypto from "node:crypto";
+import express from "express";
 import pg from "pg";
+import {
+  TOLERANCIA_TS_MS,
+  manifiestoFirma,
+} from "../src/lib/pagos/firma.js";
+import { errorHandler } from "../src/middleware/error.middleware.js";
 
 process.env.DB_HOST ??= "localhost";
 process.env.DB_PORT ??= "5433";
@@ -527,6 +534,45 @@ function mockRes() {
 const handlerInicio = () => ctrl.iniciarPagoUbicacionOculta[1];
 const handlerWebhook = () => ctrl.webhookMercadoPago[1];
 
+const SECRETO_WEBHOOK = process.env.MP_WEBHOOK_SECRET;
+
+function firmaWebhook({
+  dataId = "ORD01WEBHOOK",
+  requestId = "req-webhook",
+  ts = Date.now(),
+  secret = SECRETO_WEBHOOK,
+} = {}) {
+  const manifiesto = manifiestoFirma(dataId, requestId, ts);
+  const v1 = crypto
+    .createHmac("sha256", secret)
+    .update(manifiesto)
+    .digest("hex");
+  return `ts=${ts},v1=${v1}`;
+}
+
+function reqWebhook({
+  dataId = "ORD01WEBHOOK",
+  requestId = "req-webhook",
+  ts = Date.now(),
+  secret = SECRETO_WEBHOOK,
+  bodyType = "order",
+  conFirma = true,
+} = {}) {
+  const req = {
+    body:
+      bodyType === null
+        ? undefined
+        : { type: bodyType, data: { id: dataId } },
+    query: { "data.id": dataId, type: bodyType ?? undefined },
+    headers: {},
+  };
+  if (conFirma) {
+    req.headers["x-request-id"] = requestId;
+    req.headers["x-signature"] = firmaWebhook({ dataId, requestId, ts, secret });
+  }
+  return req;
+}
+
 test("pendiente: action_required → pending y no activa", async () => {
   await pool.query(
     `INSERT INTO pagos (tipo, usuario_id, propiedad_id, monto, moneda,
@@ -682,6 +728,232 @@ test("webhook: firma inválida → 401 y no procesa", async () => {
   await handlerWebhook()(req, res);
   assert.equal(res.statusCode, 401);
   assert.equal(res.body.success, false);
+  // La respuesta no filtra firma, secreto ni token.
+  const texto = JSON.stringify(res.body);
+  assert.doesNotMatch(texto, /deadbeef|secret|token/i);
+});
+
+test("webhook: sin headers de firma → 401 sin llamar a MP", async () => {
+  const mock = mockFetch(() => {
+    throw new Error("no debería llamar a MP");
+  });
+  try {
+    const res = mockRes();
+    await handlerWebhook()(reqWebhook({ conFirma: false }), res);
+    assert.equal(res.statusCode, 401);
+    assert.equal(mock.llamadas.length, 0);
+  } finally {
+    mock.restaurar();
+  }
+});
+
+test("webhook: ts demasiado viejo → 401 sin llamar a MP", async () => {
+  const mock = mockFetch(() => {
+    throw new Error("no debería llamar a MP");
+  });
+  try {
+    const res = mockRes();
+    await handlerWebhook()(
+      reqWebhook({ ts: Date.now() - TOLERANCIA_TS_MS - 60_000 }),
+      res,
+    );
+    assert.equal(res.statusCode, 401);
+    assert.equal(mock.llamadas.length, 0);
+  } finally {
+    mock.restaurar();
+  }
+});
+
+test("webhook: evento no manejado → 200 sin procesar", async () => {
+  const mock = mockFetch(() => {
+    throw new Error("no debería llamar a MP");
+  });
+  try {
+    const req = {
+      body: { type: "claim", data: { id: "123456" } },
+      query: { type: "claim" },
+      headers: {},
+    };
+    const res = mockRes();
+    await handlerWebhook()(req, res);
+    assert.equal(res.statusCode, 200);
+    assert.equal(mock.llamadas.length, 0);
+  } finally {
+    mock.restaurar();
+  }
+});
+
+test("webhook: firma válida → 200, activa una sola vez y no duplica", async () => {
+  await pool.query(
+    `INSERT INTO pagos (tipo, usuario_id, propiedad_id, monto, moneda,
+       external_reference, mp_payment_id, estado)
+     VALUES ('ubicacion_oculta', 1, 25, 22000, 'COP',
+       'pocu-25-webhook', 'ORD01WEBHOOK', 'iniciado')`,
+  );
+  const mock = mockFetch(({ url }) => {
+    assert.match(url, /\/v1\/orders\/ORD01WEBHOOK$/);
+    return {
+      status: 200,
+      body: ordenMp({
+        id: "ORD01WEBHOOK",
+        externalReference: "pocu-25-webhook",
+      }),
+    };
+  });
+  try {
+    const res1 = mockRes();
+    await handlerWebhook()(reqWebhook(), res1);
+    assert.equal(res1.statusCode, 200);
+    assert.equal(res1.body, undefined);
+
+    const { rows: p1 } = await pool.query(
+      `SELECT estado, verificado_at, aplicado_at
+       FROM pagos WHERE mp_payment_id = 'ORD01WEBHOOK'`,
+    );
+    assert.equal(p1[0].estado, "approved");
+    assert.ok(p1[0].verificado_at);
+    assert.ok(p1[0].aplicado_at);
+    const aplicado1 = p1[0].aplicado_at.getTime();
+
+    const { rows: prop1 } = await pool.query(
+      "SELECT ubicacion_oculta FROM propiedades WHERE id = 25",
+    );
+    assert.equal(prop1[0].ubicacion_oculta, true);
+
+    // Reintento de MP: mismo efecto, sin volver a aplicar.
+    const res2 = mockRes();
+    await handlerWebhook()(
+      reqWebhook({ requestId: "req-webhook-reintento" }),
+      res2,
+    );
+    assert.equal(res2.statusCode, 200);
+    const { rows: p2 } = await pool.query(
+      `SELECT estado, verificado_at, aplicado_at
+       FROM pagos WHERE mp_payment_id = 'ORD01WEBHOOK'`,
+    );
+    assert.equal(p2[0].estado, "approved");
+    assert.equal(p2[0].aplicado_at.getTime(), aplicado1);
+    assert.equal(mock.llamadas.length, 2);
+  } finally {
+    mock.restaurar();
+  }
+});
+
+test("webhook: data.id desconocido → 200 y sin efectos", async () => {
+  const mock = mockFetch(() => ({
+    status: 404,
+    body: { message: "Order not found" },
+  }));
+  try {
+    const res = mockRes();
+    await handlerWebhook()(
+      reqWebhook({ dataId: "ORD01NOEXISTE" }),
+      res,
+    );
+    assert.equal(res.statusCode, 200);
+    const { rows } = await pool.query("SELECT COUNT(*)::int AS n FROM pagos");
+    assert.equal(rows[0].n, 0);
+    const prop = await pool.query(
+      "SELECT ubicacion_oculta FROM propiedades WHERE id = 25",
+    );
+    assert.equal(prop.rows[0].ubicacion_oculta, false);
+  } finally {
+    mock.restaurar();
+  }
+});
+
+test("webhook: order rechazada → 200, registra y no activa", async () => {
+  await pool.query(
+    `INSERT INTO pagos (tipo, usuario_id, propiedad_id, monto, moneda,
+       external_reference, mp_payment_id, estado)
+     VALUES ('ubicacion_oculta', 1, 25, 22000, 'COP',
+       'pocu-25-rech', 'ORD01RECH', 'iniciado')`,
+  );
+  const mock = mockFetch(() => ({
+    status: 200,
+    body: ordenMp({
+      id: "ORD01RECH",
+      status: "failed",
+      statusDetail: "insufficient_amount",
+      externalReference: "pocu-25-rech",
+    }),
+  }));
+  try {
+    const res = mockRes();
+    await handlerWebhook()(
+      reqWebhook({ dataId: "ORD01RECH" }),
+      res,
+    );
+    assert.equal(res.statusCode, 200);
+    const { rows } = await pool.query(
+      "SELECT estado FROM pagos WHERE mp_payment_id = 'ORD01RECH'",
+    );
+    assert.equal(rows[0].estado, "rejected");
+    const prop = await pool.query(
+      "SELECT ubicacion_oculta FROM propiedades WHERE id = 25",
+    );
+    assert.equal(prop.rows[0].ubicacion_oculta, false);
+  } finally {
+    mock.restaurar();
+  }
+});
+
+test("webhook: order pendiente → 200, registra y no activa", async () => {
+  await pool.query(
+    `INSERT INTO pagos (tipo, usuario_id, propiedad_id, monto, moneda,
+       external_reference, mp_payment_id, estado)
+     VALUES ('ubicacion_oculta', 1, 25, 22000, 'COP',
+       'pocu-25-pendw', 'ORD01PENDW', 'iniciado')`,
+  );
+  const mock = mockFetch(() => ({
+    status: 200,
+    body: ordenMp({
+      id: "ORD01PENDW",
+      status: "action_required",
+      statusDetail: "waiting_payment",
+      externalReference: "pocu-25-pendw",
+    }),
+  }));
+  try {
+    const res = mockRes();
+    await handlerWebhook()(
+      reqWebhook({ dataId: "ORD01PENDW" }),
+      res,
+    );
+    assert.equal(res.statusCode, 200);
+    const { rows } = await pool.query(
+      "SELECT estado FROM pagos WHERE mp_payment_id = 'ORD01PENDW'",
+    );
+    assert.equal(rows[0].estado, "pending");
+    const prop = await pool.query(
+      "SELECT ubicacion_oculta FROM propiedades WHERE id = 25",
+    );
+    assert.equal(prop.rows[0].ubicacion_oculta, false);
+  } finally {
+    mock.restaurar();
+  }
+});
+
+test("webhook: body JSON malformado → 400 y no procesa", async () => {
+  const app = express();
+  app.use(express.json({ limit: "5mb" }));
+  app.use(ctrl.webhookMercadoPago);
+  app.use(errorHandler);
+  const server = app.listen(0, "127.0.0.1");
+  try {
+    await new Promise((resolve) => server.once("listening", resolve));
+    const { port } = server.address();
+    const r = await fetch(`http://127.0.0.1:${port}/`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: "{no-es-json",
+    });
+    assert.equal(r.status, 400);
+    const { rows } = await pool.query("SELECT COUNT(*)::int AS n FROM pagos");
+    assert.equal(rows[0].n, 0);
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+  }
 });
 
 test("409: ya hay un pago en curso para la propiedad", async () => {

@@ -312,24 +312,31 @@ const webhookLimiter = createRateLimitMiddleware(
 export const webhookMercadoPago = [
   webhookLimiter,
   async (req, res) => {
-    try {
-      // data.id puede venir en el body (formato nuevo) o en la query (formato viejo).
-      const dataId =
-        req.body?.data?.id ?? req.query?.["data.id"] ?? req.query?.id ?? null;
-      const tipo = req.body?.type ?? req.query?.topic ?? null;
+    // Doc: la firma se calcula con el data.id de los query params. El body
+    // solo se usa como respaldo para localizar la orden a sincronizar.
+    const dataIdQuery = req.query?.["data.id"] ?? null;
+    const dataIdBody = req.body?.data?.id ?? null;
+    const dataId = dataIdQuery ?? dataIdBody;
+    const tipo =
+      req.body?.type ?? req.query?.type ?? req.query?.topic ?? null;
+    const requestId = req.headers?.["x-request-id"] ?? "n/a";
+    const logBase = `tipo=${tipo ?? "n/a"} data.id=${dataId ?? "n/a"} x-request-id=${requestId}`;
 
+    try {
       if (!dataId || (tipo && tipo !== "payment" && tipo !== "order")) {
         // Evento no reconocido: 200 para que MP no reintente, no procesamos nada.
+        console.log(`[pagos] webhook 200 ignorado ${logBase}`);
         return res.sendStatus(200);
       }
 
       if (
         !firmaValida({
           headers: req.headers,
-          dataId: String(dataId),
+          dataId: dataIdQuery,
           secret: MP_WEBHOOK_SECRET,
         })
       ) {
+        console.warn(`[pagos] webhook 401 firma_invalida ${logBase}`);
         return res
           .status(401)
           .json({ success: false, error: "Firma inválida." });
@@ -338,13 +345,21 @@ export const webhookMercadoPago = [
       // Responder rápido y procesar: MP reintenta si respondemos distinto de 2xx.
       res.sendStatus(200);
       try {
-        await sincronizarPago(dataId);
+        // Fuente de verdad: GET /v1/orders/{id}. No se confía en el body.
+        const resultado = await sincronizarPago(dataId);
+        console.log(
+          `[pagos] webhook 200 ${logBase} accion=${resultado?.accion ?? "sin_resultado"}`,
+        );
       } catch (e) {
         // devolvimos 200, MP no reintenta; el job de reconciliación pasa igual.
-        console.error(`[pagos] webhook sync ${dataId}:`, e?.message ?? e);
+        console.error(
+          `[pagos] webhook 200 sync_error ${logBase} error=${e?.message ?? e}`,
+        );
       }
     } catch (error) {
-      console.error("Error en webhookMercadoPago:", error.message);
+      console.error(
+        `[pagos] webhook error ${logBase} error=${error?.message ?? error}`,
+      );
       // si aún no respondimos, devolver 500 hace que MP reintente más adelante.
       if (!res.headersSent) {
         return res.status(500).json({ success: false });

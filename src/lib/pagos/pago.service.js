@@ -392,8 +392,9 @@ export async function sincronizarPago(mpPaymentId) {
 
   const orden = await mpGetOrderRaw(idStr);
   if (orden.status >= 400 || !orden.body?.id) {
+    // Sin cuerpo crudo (puede traer datos del pagador): solo el detalle.
     console.error(
-      `[pagos] GET orden ${idStr} HTTP ${orden.status} x-request-id=${orden.x_request_id ?? "n/a"} body=${JSON.stringify(orden.body)}`,
+      `[pagos] GET orden ${idStr} HTTP ${orden.status} x-request-id=${orden.x_request_id ?? "n/a"} detalle=${detalleErrorMp(orden.body, 180)}`,
     );
     return null;
   }
