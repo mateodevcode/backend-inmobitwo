@@ -296,6 +296,26 @@ test("firmaValida acepta ts en segundos (compatibilidad)", () => {
   );
 });
 
+test("firmaValida acepta también el manifest con id en minúsculas", () => {
+  const ts = ahoraTest;
+  const v1 = crypto
+    .createHmac("sha256", SECRETO_TEST)
+    .update(manifiestoFirma("ord01abcxyz", "req-123", ts))
+    .digest("hex");
+  assert.equal(
+    firmaValida({
+      headers: {
+        "x-signature": `ts=${ts},v1=${v1}`,
+        "x-request-id": "req-123",
+      },
+      dataId: "ORD01ABCXYZ",
+      secret: SECRETO_TEST,
+      ahora: ahoraTest,
+    }),
+    true,
+  );
+});
+
 test("firmaValida sin x-request-id usa el manifest sin ese campo", () => {
   const ts = ahoraTest;
   const v1 = crypto

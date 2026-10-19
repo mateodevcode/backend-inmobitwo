@@ -332,7 +332,9 @@ export const webhookMercadoPago = [
       if (
         !firmaValida({
           headers: req.headers,
-          dataId: dataIdQuery,
+          // La doc manda el query, pero si el emisor solo manda el body,
+          // el manifest debe usar el mismo id que se va a sincronizar.
+          dataId,
           secret: MP_WEBHOOK_SECRET,
         })
       ) {
