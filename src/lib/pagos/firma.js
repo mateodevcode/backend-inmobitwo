@@ -2,7 +2,8 @@
 // Firma de webhooks de Orders API (HMAC-SHA256).
 // Docs: https://www.mercadopago.com.co/developers/es/docs/checkout-api-orders/notifications
 //   manifiesto = "id:<data.id>;request-id:<x-request-id>;ts:<ts>;"
-// El id va en MINÚSCULAS (crítico en Orders API: "ORD01…" → "ord01…").
+// El id se usa TAL CUAL llega. El SDK oficial (mercadopago 3.6.1) no lo
+// normaliza a minúsculas; hacerlo rompe la HMAC de Orders.
 // Comparación en tiempo constante. Nunca loguea el secreto.
 
 import crypto from "crypto";
@@ -18,7 +19,7 @@ export const TOLERANCIA_TS_MS = 7 * 24 * 60 * 60 * 1000;
 export function manifiestoFirma(dataId, requestId, ts) {
   const partes = [];
   if (dataId !== null && dataId !== undefined && String(dataId) !== "") {
-    partes.push(`id:${String(dataId).toLowerCase()}`);
+    partes.push(`id:${String(dataId)}`);
   }
   if (
     requestId !== null &&

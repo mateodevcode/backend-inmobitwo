@@ -187,10 +187,10 @@ test("generarExternalReference cabe en VARCHAR(64)", () => {
   assert.ok(ref.length <= 64);
 });
 
-test("manifiestoFirma usa data.id en minúsculas (Orders API)", () => {
+test("manifiestoFirma usa data.id tal cual (SDK oficial)", () => {
   assert.equal(
     manifiestoFirma("ORD01ABCXYZ", "req-123", "1690000000"),
-    "id:ord01abcxyz;request-id:req-123;ts:1690000000;",
+    "id:ORD01ABCXYZ;request-id:req-123;ts:1690000000;",
   );
 });
 
@@ -201,7 +201,7 @@ test("manifiestoFirma omite valores ausentes (doc MP)", () => {
   );
   assert.equal(
     manifiestoFirma("ORD01ABCXYZ", null, "1690000000"),
-    "id:ord01abcxyz;ts:1690000000;",
+    "id:ORD01ABCXYZ;ts:1690000000;",
   );
 });
 
