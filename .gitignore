@@ -15,3 +15,5 @@ docker-compose.override.yml
 dev-up.sh
 dev-down.sh
 .feature
+# graphify (local, no versionar)
+graphify-out/
