@@ -26,9 +26,10 @@ const rateLimitEnvio = createRateLimitMiddleware(
 const rateLimitCrear = createRateLimitMiddleware(
   createRateLimiter(20, 3600000, 20, null, "chat-crear"),
 );
-// ~20 tokens/hora por usuario
+// ~60 tokens/hora por usuario. El cliente cachea el token y lo reutiliza,
+// así que este cupo cubre renovaciones + reconexiones (varias pestañas).
 const rateLimitToken = createRateLimitMiddleware(
-  createRateLimiter(20, 3600000, 20, null, "chat-token"),
+  createRateLimiter(60, 3600000, 60, null, "chat-token"),
 );
 const ruta = "/chat";
 

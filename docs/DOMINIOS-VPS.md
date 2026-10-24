@@ -46,8 +46,4 @@ probar lectura: `/dominios/solicitudes` y `/dominios/jobs` funcionan igual.
 - Todo queda en `dominios_jobs` (log + quién + cuándo): auditoría.
 
 
------BEGIN OPENSSH PRIVATE KEY-----
-b3BlbnNzaC1rZXktdjEAAAAABG5vbmUAAAAEbm9uZQAAAAAAAAABAAAAMwAAAAtzc2gtZW
-AAAEBTNBVAD4jYP65DUF7e97M96+tv6zl2asF7o/SDh4IAkzvTzXXSkuyAT45dgp0qFqzd
-5p3esKmpOYPeaw49Qay4AAAADEFTVVNAUk9DS0lUTwE=
------END OPENSSH PRIVATE KEY-----
+

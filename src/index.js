@@ -54,6 +54,10 @@ const app = express();
 // que llegara directo al puerto (lote 6 punto 6a + paso2).
 app.set("trust proxy", 1);
 
+// CORS antes de /health: el frontend consulta /health con fetch desde otro
+// origen y necesita el header Access-Control-Allow-Origin.
+app.use(cors(corsOptions));
+
 // Salud: incluye si las vistas están habilitadas (punto 1).
 app.get("/health", (req, res) => {
   res.json({
@@ -62,8 +66,6 @@ app.get("/health", (req, res) => {
     vistas_habilitado: vistasHabilitadas(),
   });
 });
-
-app.use(cors(corsOptions));
 app.use(cookieParser()); // ← necesario para leer req.cookies
 if (process.env.NODE_ENV !== "production") {
   app.use(morgan("dev"));

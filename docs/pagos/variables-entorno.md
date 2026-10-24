@@ -4,12 +4,20 @@
 
 | Variable | Requerida | Descripción |
 |---|---|---|
-| `MP_ACCESS_TOKEN` | sí (para cobrar) | Access token de la app (Orders API). Sin él, `pagosHabilitados()` es `false`, `/pagos/config` devuelve `habilitado:false` y el Brick se oculta. Nunca se loguea. |
-| `MP_WEBHOOK_SECRET` | sí (webhook) | Secreto de firma (panel MP > Webhooks > Configurar notificaciones). Sin él, `POST /pagos/mp/webhook` responde **401**. |
+| `MP_ACCESS_TOKEN` | sí (para cobrar) | Access token de la app del vendedor/plataforma (Orders API). Debe ser la **misma app** que `MP_WEBHOOK_SECRET` y la public key. Sin él, `pagosHabilitados()` es `false`, `/pagos/config` devuelve `habilitado:false` y el Brick se oculta. Nunca se loguea. |
+| `MP_WEBHOOK_SECRET` | sí (webhook) | **Clave secreta de Webhooks** de la misma app y ambiente que `MP_ACCESS_TOKEN` (panel MP > Webhooks > Configurar notificaciones). No es del comprador ni el Client Secret. Sin él, `POST /pagos/mp/webhook` responde **401**. |
 | `MP_NOTIFICATION_URL` | no | URL pública del backend para configurar notificaciones en el panel. Orders API **no** acepta `notification_url` en el body. |
 | `PRECIO_UBICACION_OCULTA_COP` | no (default 22000) | Precio único del producto "ocultar ubicación", en COP entero. El servidor lo ignora si el cliente lo envía. |
 | `MP_MAX_INSTALLMENTS` | no (default 1) | Tope de cuotas que el servidor impone en el payload (`Math.min`). El Brick pide el mismo tope en `initialization.maxInstallments`. |
 | `PAGOS_CRON_ENABLED` | no (default true) | `false` apaga el cron de reconciliación (útil en local). |
+
+`MP_ACCESS_TOKEN`, `NEXT_PUBLIC_MP_PUBLIC_KEY` y `MP_WEBHOOK_SECRET` deben
+ser de la **misma aplicación** y del **mismo ambiente**. En prueba, si la
+order la genera el usuario vendedor de prueba, el secreto sale de la app de
+ese usuario; en producción, de la app de producción del vendedor/plataforma.
+El comprador nunca provee la clave. Si se soportan varias cuentas/apps, hay
+que guardar el secreto por organización y elegirlo según `application_id` o
+`user_id` del webhook.
 
 `MP_ACCESS_TOKEN` de prueba empieza por `APP_USR-` o `TEST-`, según el
 producto de la app. No cambiar el prefijo: lo define Mercado Pago.

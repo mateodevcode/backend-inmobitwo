@@ -35,7 +35,41 @@ Authorization: Bearer $MP_ACCESS_TOKEN
 2. Esperar el cron (`*/10 min`) o ejecutarlo a mano:
    `import { reconciliarPagosPendientes } from "./src/lib/pagos/pago.service.js"`
 3. Si `MP_WEBHOOK_SECRET` está vacío, el webhook responde 401: configurarlo en
-   el panel y reiniciar.
+   el panel y **recrear** el backend (`docker compose up -d --force-recreate
+   backend`); un `restart` no recarga el `.env`.
+
+## Webhook 401 `firma_invalida`
+
+Síntoma: MP muestra "Falla en entrega - 401" y el backend registra:
+
+```text
+[pagos] firma mismatch id=ORD... rid=... ts=...
+[pagos] webhook 401 firma_invalida tipo=order data.id=ORD... x-request-id=...
+```
+
+La petición **sí llegó** al backend; esto **no es CORS** (MP llama servidor a
+servidor, sin `Origin`). El 401 lo genera la validación HMAC.
+
+Pasos:
+
+1. Copiar el `application_id` y el `user_id` del body de la notificación.
+2. Verificar que `MP_ACCESS_TOKEN`, `NEXT_PUBLIC_MP_PUBLIC_KEY` y
+   `MP_WEBHOOK_SECRET` sean de la **misma app** y ambiente.
+3. Si la order es de un usuario de prueba, el secreto debe salir de la app
+   de ese usuario de prueba, no de la cuenta real.
+4. Entrar al panel de MP con la app correcta:
+   **Webhooks > Configurar notificaciones > Clave secreta**. Copiarla (no el
+   Client Secret).
+5. Actualizar `.env` y recrear el backend:
+   `docker compose up -d --force-recreate backend`. Un `restart` no recarga
+   el `.env`.
+6. Esperar el reintento de MP (cada 15 min) o hacer un pago nuevo.
+7. Confirmar en logs `[pagos] firma ok variante=...` y
+   `webhook 200 ... accion=activado|repetido`.
+
+Si `firma ok` no aparece, el problema es el secreto/app, no el manifiesto: el
+código ya prueba `id` tal cual y en minúsculas. No agregar el dominio de MP al
+CORS: no participa.
 
 ## Pago aprobado pero el derecho no se aplicó
 
