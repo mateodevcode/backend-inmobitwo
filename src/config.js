@@ -84,3 +84,10 @@ export const GOOGLE_CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET;
 export const GOOGLE_REDIRECT_URI = process.env.GOOGLE_REDIRECT_URI;
 export const GOOGLE_PORTAL_URL = process.env.GOOGLE_PORTAL_URL;
 export const GOOGLE_CRM_URL = process.env.GOOGLE_CRM_URL;
+
+// URL pública del CRM (enlaces en correos, p. ej. recordatorios de visitas).
+// Si no se define, se toma el origen de GOOGLE_CRM_URL.
+const origenDe = (url) => {
+  try { return new URL(url).origin; } catch { return null; }
+};
+export const CRM_URL = process.env.CRM_URL || origenDe(process.env.GOOGLE_CRM_URL);

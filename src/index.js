@@ -30,6 +30,7 @@ import dominiosRoutes from "./routes/dominios.routes.js";
 import pagosRoutes from "./routes/pagos.routes.js";
 import { iniciarCronBusquedas } from "./jobs/busquedasGuardadas.job.js";
 import { iniciarCronPagos } from "./jobs/pagos.job.js";
+import { iniciarCronVisitas } from "./jobs/visitas.job.js";
 import { corsOptions } from "./cors.config.js";
 import { errorHandler } from "./middleware/error.middleware.js";
 import { ocultarErrores5xx } from "./middleware/ocultarErrores.middleware.js";
@@ -114,3 +115,6 @@ iniciarCronBusquedas();
 
 // Cron de reconciliación de pagos MP (cada 10 min; PAGOS_CRON_ENABLED=false para apagar)
 iniciarCronPagos();
+
+// Recordatorios de visitas del CRM (cada 5 min; VISITAS_CRON_ENABLED=false para apagar)
+iniciarCronVisitas();
