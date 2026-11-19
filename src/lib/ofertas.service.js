@@ -14,13 +14,9 @@ import {
 } from "./catalogos.js";
 import { regenerarTitulo } from "./tituloPropiedad.js";
 
-export class HttpError extends Error {
-  constructor(status, error) {
-    super(Array.isArray(error) ? error[0] : error);
-    this.status = status;
-    this.error = error;
-  }
-}
+// HttpError vive en lib/errores.js; se reexporta aquí por compatibilidad.
+import { HttpError } from "./errores.js";
+export { HttpError };
 
 // Misma fórmula que calcularPricePerSqm del controlador (no se importa el
 // controlador desde lib para no invertir dependencias).
