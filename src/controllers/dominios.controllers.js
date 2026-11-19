@@ -6,6 +6,7 @@
 import dns from "node:dns/promises";
 import { pool } from "../db.js";
 import { ejecutarRemoto } from "../lib/sshDominios.js";
+import { asegurarDominio, esDominioValido, normalizarDominio } from "../lib/dominio.js";
 import {
   DOMINIOS_SCRIPT_DIR,
   DOMINIOS_SERVER_IP,
@@ -14,8 +15,6 @@ import {
   DOMINIOS_SSH_USER,
 } from "../config.js";
 
-const DOMINIO_RE =
-  /^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)+$/;
 
 const sshListo = () => DOMINIOS_SSH_HOST && DOMINIOS_SSH_USER && DOMINIOS_SSH_KEY_PATH;
 
@@ -107,8 +106,8 @@ async function crearJob({ tipo, organizacionId, dominio, conWww, creadoPor }) {
 export const agregarDominio = async (req, res) => {
   try {
     const { organizacion_id, dominio, con_www = true } = req.body;
-    const base = String(dominio || "").toLowerCase().trim().replace(/^www\./, "");
-    if (!DOMINIO_RE.test(base) || base.length > 253) {
+    const base = normalizarDominio(dominio);
+    if (!esDominioValido(base)) {
       return res.status(400).json({ success: false, error: "Dominio inválido." });
     }
     const { rows: orgs } = await pool.query(
@@ -165,7 +164,7 @@ async function ejecutarAgregar(jobId, organizacionId, dominio, conWww) {
     await marcarJob(jobId, "fallo");
     return;
   }
-  const comando = `sudo ${DOMINIOS_SCRIPT_DIR}/agregar-dominio.sh ${dominio} ${conWww ? "--www" : "--sin-www"}`;
+  const comando = `sudo ${DOMINIOS_SCRIPT_DIR}/agregar-dominio.sh ${asegurarDominio(dominio)} ${conWww ? "--www" : "--sin-www"}`;
   await anexarLog(jobId, `Ejecutando en el VPS: ${comando}`);
   const { codigo } = await ejecutarRemoto({
     host: DOMINIOS_SSH_HOST,
@@ -198,7 +197,12 @@ export const quitarDominio = async (req, res) => {
     if (!orgs[0]?.custom_domain) {
       return res.status(400).json({ success: false, error: "La inmobiliaria no tiene dominio." });
     }
-    const base = orgs[0].custom_domain.toLowerCase().replace(/^www\./, "");
+    // custom_domain lo escribe el admin de la inmobiliaria: se revalida
+    // antes de que llegue a un comando remoto.
+    const base = normalizarDominio(orgs[0].custom_domain);
+    if (!esDominioValido(base)) {
+      return res.status(400).json({ success: false, error: "El dominio guardado no es válido." });
+    }
     if (await hayEjecucionEnCurso()) {
       return res.status(409).json({ success: false, error: "Ya hay una ejecución en curso. Espere a que termine." });
     }
@@ -223,7 +227,7 @@ export const quitarDominio = async (req, res) => {
 
 async function ejecutarQuitar(jobId, organizacionId, dominio) {
   await marcarJob(jobId, "ejecutando");
-  const comando = `sudo ${DOMINIOS_SCRIPT_DIR}/quitar-dominio.sh ${dominio}`;
+  const comando = `sudo ${DOMINIOS_SCRIPT_DIR}/quitar-dominio.sh ${asegurarDominio(dominio)}`;
   await anexarLog(jobId, `Ejecutando en el VPS: ${comando}`);
   const { codigo } = await ejecutarRemoto({
     host: DOMINIOS_SSH_HOST,

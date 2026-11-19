@@ -1,4 +1,5 @@
 import { pool } from "../db.js";
+import { esDominioValido, normalizarDominio } from "../lib/dominio.js";
 import { organizacion_validate } from "../validations/organizacion_validate.js";
 import { selectFields } from "../lib/fieldSelection.helper.js";
 import { CAMPOS_ORGANIZACION } from "../constants/api/fields.js";
@@ -439,12 +440,18 @@ export const suspenderOrganizacion = async (req, res) => {
 export const solicitarDominioPropio = async (req, res) => {
   try {
     const { id } = req.params;
-    const { custom_domain } = req.body;
+    const dominio = normalizarDominio(req.body.custom_domain);
 
-    if (!custom_domain) {
+    if (!dominio) {
       return res.status(400).json({
         success: false,
         error: "custom_domain es requerido.",
+      });
+    }
+    if (!esDominioValido(dominio)) {
+      return res.status(400).json({
+        success: false,
+        error: "Dominio no válido. Usa un formato como miinmobiliaria.com.co",
       });
     }
 
@@ -453,7 +460,7 @@ export const solicitarDominioPropio = async (req, res) => {
        SET custom_domain = $1, dominio_estado = 'pendiente_dns' 
        WHERE id = $2 
        RETURNING *`,
-      [custom_domain.toLowerCase().trim(), id],
+      [dominio, id],
     );
 
     if (rows.length === 0) {
