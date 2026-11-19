@@ -20,6 +20,7 @@ import {
   createRateLimitMiddleware,
   registerLimiter,
   loginLimiter,
+  checkEmailLimiter,
   verificacionCodigoLimiter,
 } from "../lib/rateLimit.js";
 
@@ -29,13 +30,15 @@ const sLimiterRegistro = createRateLimitMiddleware(registerLimiter);
 const sLimiterLogin = createRateLimitMiddleware(loginLimiter);
 // OTP del segundo factor: 5 intentos cada 10 min (igual que verificación por email)
 const sLimiterOtp = createRateLimitMiddleware(verificacionCodigoLimiter);
+// check-email: limitado por IP para frenar la enumeración de cuentas
+const sLimiterCheckEmail = createRateLimitMiddleware(checkEmailLimiter);
 
 // Rutas públicas
 // router.post("/auth/registro", registro);
 // router.post("/auth/login", login);
 
 router.post("/auth/registro", sLimiterRegistro, registro);
-router.post("/auth/check-email", checkEmail); // ← Agregar esto
+router.post("/auth/check-email", sLimiterCheckEmail, checkEmail);
 router.post("/auth/login", sLimiterLogin, login);
 router.post("/auth/verificar-otp-login", sLimiterOtp, verificarOtpLogin);
 router.post("/auth/reenviar-otp-login", sLimiterOtp, reenviarOtpLogin);

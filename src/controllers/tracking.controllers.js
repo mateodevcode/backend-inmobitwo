@@ -583,7 +583,7 @@ export const actualizarContactoLead = async (req, res) => {
 // ─────────────────────────────────────────────
 export const getLogsTracking = async (req, res) => {
   try {
-    const limite = parseInt(req.query.limit) || 100;
+    const limite = Math.min(500, Math.max(1, parseInt(req.query.limit, 10) || 100));
 
     // 1. Eventos (vista, favorito, clic, etc.)
     const { rows: eventos } = await pool.query(

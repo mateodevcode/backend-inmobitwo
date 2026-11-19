@@ -43,7 +43,14 @@ router.get(
   verificarRol(["superadmin"]),
   getVistasAgregados,
 );
-router.get(`${ruta}/logs`, verificarToken, rateLimit, getLogsTracking);
+// 🔒 Logs globales de tráfico (PII de sesiones): solo superadmin
+router.get(
+  `${ruta}/logs`,
+  verificarToken,
+  verificarRol(["superadmin"]),
+  rateLimit,
+  getLogsTracking,
+);
 
 // Nueva ruta, agregar después de router.post(`${ruta}/lead`, ...)
 router.patch(`${ruta}/lead/:id/contacto`, rateLimit, actualizarContactoLead);
