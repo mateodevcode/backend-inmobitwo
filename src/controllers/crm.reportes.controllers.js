@@ -1,6 +1,10 @@
 // src/controllers/crm.reportes.controllers.js — reportes del CRM
 import { pool } from "../db.js";
-import { whereEspacioPropio, wherePropiedadesVisibles } from "../lib/crmPermisos.js";
+import {
+  identificadorSql,
+  whereEspacioPropio,
+  wherePropiedadesVisibles,
+} from "../lib/crmPermisos.js";
 
 const duenoFiltro = (crm, alias) => whereEspacioPropio(crm, alias);
 
@@ -10,6 +14,7 @@ function alcanceAgente(crm) {
 }
 
 function rangoFechas(query, params, columna = "created_at") {
+  identificadorSql(columna);
   const conds = [];
   if (query.desde) {
     params.push(query.desde);

@@ -1,6 +1,10 @@
 // src/controllers/crm.nucleo.controllers.js — contactos, actividades, tareas
 import { pool } from "../db.js";
-import { normalizarTelefonoCO, whereEspacioPropio } from "../lib/crmPermisos.js";
+import {
+  duenoEspacio as duenoCols,
+  normalizarTelefonoCO,
+  whereEspacioPropio,
+} from "../lib/crmPermisos.js";
 import {
   validarActividad,
   validarContacto,
@@ -8,10 +12,6 @@ import {
   validarTarea,
 } from "../validations/crm.js";
 
-const duenoCols = (crm) =>
-  crm.tipo === "personal"
-    ? { cols: "usuario_id", vals: [crm.usuarioId] }
-    : { cols: "organizacion_id", vals: [crm.organizacionId] };
 
 // Resuelve un contacto dentro del espacio (404 si no).
 async function contactoEnEspacio(crm, id) {
@@ -26,7 +26,7 @@ async function contactoEnEspacio(crm, id) {
 
 async function buscarDuplicado(crm, email, telefono, excluirId = null) {
   const dueno = duenoCols(crm);
-  const col = crm.tipo === "personal" ? "usuario_id" : "organizacion_id";
+  const col = dueno.col;
   const conds = [];
   const params = [...dueno.vals];
   if (email) {
@@ -274,7 +274,7 @@ export const convertirLead = async (req, res) => {
     if (!lead) return res.status(404).json({ success: false, error: "Lead no encontrado." });
 
     const dueno = duenoCols(crm);
-    const col = crm.tipo === "personal" ? "usuario_id" : "organizacion_id";
+    const col = dueno.col;
     const { rows: existentes } = await pool.query(
       `SELECT * FROM crm_contactos WHERE ${col} = $1 AND lead_id = $2 AND archivado_at IS NULL LIMIT 1`,
       [...dueno.vals, lead.id],

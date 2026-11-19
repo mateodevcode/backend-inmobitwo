@@ -1,6 +1,6 @@
 // src/controllers/crm.pipeline.controllers.js — etapas y oportunidades
 import { pool } from "../db.js";
-import { whereEspacioPropio } from "../lib/crmPermisos.js";
+import { duenoEspacio as duenoCols, whereEspacioPropio } from "../lib/crmPermisos.js";
 
 const ETAPAS_SEED = [
   { nombre: "Prospecto", color: "#64748b", probabilidad_default: 10, tipo: "abierta" },
@@ -13,10 +13,6 @@ const ETAPAS_SEED = [
   { nombre: "Perdido", color: "#525252", probabilidad_default: 0, tipo: "perdida" },
 ];
 
-const duenoCols = (crm) =>
-  crm.tipo === "personal"
-    ? { col: "usuario_id", val: crm.usuarioId }
-    : { col: "organizacion_id", val: crm.organizacionId };
 
 function puedeEditarEtapas(crm) {
   return crm.tipo === "personal" || crm.rolEnOrg === "agency_admin";
