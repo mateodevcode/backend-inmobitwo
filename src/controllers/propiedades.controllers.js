@@ -1,4 +1,5 @@
 import { AWS_BUCKET_SUBFOLDER, RUST_MEDIA_URL } from "../config.js";
+import { sanitizarHtml } from "../lib/sanitizarHtml.js";
 import { pool } from "../db.js";
 import { cacheGet, cacheInvalidate } from "../lib/redis.js";
 import { deleteFromS3, uploadToS3 } from "../lib/s3AWS.js";
@@ -73,7 +74,7 @@ function parseCamposPropiedad(raw) {
     estrato: toInt(raw.estrato),
     cedula_catastral: raw.cedula_catastral || null,
     matricula_inmobiliaria: raw.matricula_inmobiliaria || null,
-    description: raw.description || null,
+    description: raw.description ? sanitizarHtml(raw.description) : null,
     precio: toInt(raw.precio),
     administracion: toInt(raw.administracion),
     constructed_area: toInt(raw.constructed_area),
