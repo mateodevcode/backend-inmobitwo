@@ -11,7 +11,7 @@
     "job:busquedas": "node --env-file .env src/jobs/run-once.js",
     "db:check": "node scripts/verificar-esquema.mjs",
     "test": "node --test \"test/**/*.test.js\"",
-    "test:unit": "node --test test/pagos.core.test.js test/ubicacion.test.js test/seguridad.test.js test/base.test.js",
+    "test:unit": "node --test test/pagos.core.test.js test/ubicacion.test.js test/seguridad.test.js test/base.test.js test/visitas.test.js",
     "test:integration": "node --test test/pagos.integration.test.js"
   },
   "keywords": [],
@@ -35,6 +35,7 @@
     "nodemailer": "^9.0.1",
     "openai": "^7.4.0",
     "pg": "^8.16.3",
-    "sanitize-html": "^2.17.0"
+    "sanitize-html": "^2.17.0",
+    "zod": "^4.1.12"
   }
 }

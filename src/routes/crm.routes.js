@@ -26,7 +26,8 @@ import {
   listarTareas,
   obtenerContacto,
   reasignarMasivo,
-} from "../controllers/crm.nucleo.controllers.js";import {
+} from "../controllers/crm.nucleo.controllers.js";
+import {
   actualizarEtapa,
   actualizarOportunidad,
   cerrarOportunidad,
@@ -45,6 +46,14 @@ import {
   leadsOrigen,
   valorGanado,
 } from "../controllers/crm.reportes.controllers.js";
+import {
+  actualizarVisita,
+  cambiarEstadoVisita,
+  crearVisita,
+  eliminarVisita,
+  listarVisitas,
+  obtenerVisita,
+} from "../controllers/crm.visitas.controllers.js";
 
 const router = Router();
 const rateLimit = createRateLimitMiddleware(defaultLimiter);
@@ -91,5 +100,13 @@ router.get("/crm/reportes/conversion", ...conEspacio, conversion);
 router.get("/crm/reportes/valor-ganado", ...conEspacio, valorGanado);
 router.get("/crm/reportes/actividad", ...conEspacio, actividad);
 router.get("/crm/reportes/leads-origen", ...conEspacio, leadsOrigen);
+
+// Agenda y visitas
+router.get("/crm/visitas", ...conEspacio, listarVisitas);
+router.post("/crm/visitas", ...conEspacio, crearVisita);
+router.get("/crm/visitas/:id", ...conEspacio, obtenerVisita);
+router.patch("/crm/visitas/:id", ...conEspacio, actualizarVisita);
+router.post("/crm/visitas/:id/estado", ...conEspacio, cambiarEstadoVisita);
+router.delete("/crm/visitas/:id", ...conEspacio, eliminarVisita);
 
 export default router;

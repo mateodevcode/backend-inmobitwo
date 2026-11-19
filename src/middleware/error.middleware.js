@@ -20,7 +20,8 @@ export function errorHandler(err, req, res, next) {
 
   res.status(status).json({
     success: false,
-    error: status >= 500 ? "Error interno del servidor." : err.message || "Error",
+    // HttpError puede traer un array de mensajes de validación en err.error.
+    error: status >= 500 ? "Error interno del servidor." : (err.error ?? err.message) || "Error",
     ...(process.env.NODE_ENV !== "production" && status >= 500 && { details: err.message }),
   });
 }
