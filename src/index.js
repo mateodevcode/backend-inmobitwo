@@ -5,6 +5,7 @@ import express from "express";
 import cors from "cors";
 import cookieParser from "cookie-parser";
 import morgan from "morgan";
+import helmet from "helmet";
 import { FRONTEND_URL, PORT } from "./config.js";
 import authRoutes from "./routes/auth.routes.js";
 import usuariosRoutes from "./routes/usuarios.routes.js";
@@ -31,6 +32,7 @@ import { iniciarCronBusquedas } from "./jobs/busquedasGuardadas.job.js";
 import { iniciarCronPagos } from "./jobs/pagos.job.js";
 import { corsOptions } from "./cors.config.js";
 import { errorHandler } from "./middleware/error.middleware.js";
+import { ocultarErrores5xx } from "./middleware/ocultarErrores.middleware.js";
 import { validarSecretosArranque, vistasHabilitadas } from "./lib/validarSecretos.js";
 
 // Secretos de vistas: si faltan, error MUY visible pero el resto arranca
@@ -54,6 +56,10 @@ const app = express();
 // que llegara directo al puerto (lote 6 punto 6a + paso2).
 app.set("trust proxy", 1);
 
+// Cabeceras de seguridad. API JSON pura: CORP cross-origin para no bloquear
+// a los frontends (portal, CRM y dominios propios) que la consumen.
+app.use(helmet({ crossOriginResourcePolicy: { policy: "cross-origin" } }));
+
 // CORS antes de /health: el frontend consulta /health con fetch desde otro
 // origen y necesita el header Access-Control-Allow-Origin.
 app.use(cors(corsOptions));
@@ -71,6 +77,8 @@ if (process.env.NODE_ENV !== "production") {
   app.use(morgan("dev"));
 }
 app.use(express.json({ limit: "5mb" }));
+// Ninguna respuesta 5xx expone el error interno (ver middleware).
+app.use(ocultarErrores5xx);
 
 // Rutas
 app.use(authRoutes);

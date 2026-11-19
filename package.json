@@ -11,7 +11,7 @@
     "job:busquedas": "node --env-file .env src/jobs/run-once.js",
     "db:check": "node scripts/verificar-esquema.mjs",
     "test": "node --test \"test/**/*.test.js\"",
-    "test:unit": "node --test test/pagos.core.test.js test/ubicacion.test.js",
+    "test:unit": "node --test test/pagos.core.test.js test/ubicacion.test.js test/seguridad.test.js",
     "test:integration": "node --test test/pagos.integration.test.js"
   },
   "keywords": [],
@@ -25,6 +25,7 @@
     "cors": "^2.8.6",
     "express": "^5.2.1",
     "form-data": "^4.0.6",
+    "helmet": "^8.1.0",
     "ioredis": "^5.11.1",
     "jsonwebtoken": "^9.0.3",
     "mercadopago": "^3.6.1",
@@ -33,6 +34,7 @@
     "node-cron": "^4.6.0",
     "nodemailer": "^9.0.1",
     "openai": "^7.4.0",
-    "pg": "^8.16.3"
+    "pg": "^8.16.3",
+    "sanitize-html": "^2.17.0"
   }
 }
