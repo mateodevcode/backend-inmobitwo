@@ -16,6 +16,9 @@ import {
 export const getPropiedadesById = async (req, res) => {
   try {
     const { id } = req.params;
+    if (!/^\d+$/.test(id)) {
+      return res.status(400).json({ success: false, error: "ID de propiedad inválido." });
+    }
 
     const { selectBase, error } = resolverColumnasPropiedad(req.query.fields);
     if (error) {
