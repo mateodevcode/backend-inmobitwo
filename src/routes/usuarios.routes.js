@@ -11,9 +11,14 @@ import {
 import {
   createRateLimitMiddleware,
   defaultLimiter,
+  passwordLimiter,
   verificacionCodigoLimiter,
 } from "../lib/rateLimit.js";
-import { verificarToken, verificarRol } from "../middleware/auth.middleware.js";
+import {
+  soloPropioOSuperadmin,
+  verificarToken,
+  verificarRol,
+} from "../middleware/auth.middleware.js";
 import { upload } from "../lib/multer.js";
 import {
   enviarCodigoVerificacion,
@@ -34,11 +39,24 @@ const uploadFields = upload.fields([
 ]);
 
 const ruta = "/usuarios";
+const propio = soloPropioOSuperadmin("id");
+const rateLimitPassword = createRateLimitMiddleware(passwordLimiter);
 
-// 🔒 Lista completa: solo superadmin (módulo Usuarios del CRM)
+// 🔒 Lista completa y alta/baja administrativa: solo superadmin (módulo Usuarios del CRM)
 router.get(ruta, verificarToken, verificarRol(["superadmin"]), getUsuarios);
-router.get(`${ruta}/:id`, verificarToken, getUsuarioById);
-router.patch(`${ruta}/:id`, verificarToken, uploadFields, updateUsuario);
+router.post(ruta, verificarToken, verificarRol(["superadmin"]), createUsuario);
+
+// 🔒 Datos de una cuenta: solo la propia cuenta o el superadmin
+router.get(`${ruta}/:id`, verificarToken, propio, getUsuarioById);
+router.patch(`${ruta}/:id`, verificarToken, propio, uploadFields, updateUsuario);
+router.delete(`${ruta}/:id`, verificarToken, propio, deleteUsuario);
+router.patch(
+  `${ruta}/:id/password`,
+  verificarToken,
+  propio,
+  rateLimitPassword,
+  updatePassword,
+);
 
 // Desbloqueo por el superadmin (módulo Usuarios del CRM)
 router.patch(
@@ -48,22 +66,10 @@ router.patch(
   desbloquearUsuario,
 );
 
-router.patch(`${ruta}/:id/password`, verificarToken, updatePassword);
-
-// Solo el superadmin puede crear o eliminar otros usuarios del sistema
-// router.post(ruta, verificarToken, verificarRol(["superadmin"]), createUsuario);
-router.post(ruta, verificarToken, createUsuario);
-// router.delete(
-//   `${ruta}/:id`,
-//   verificarToken,
-//   verificarRol(["superadmin"]),
-//   deleteUsuario,
-// );
-router.delete(`${ruta}/:id`, verificarToken, deleteUsuario);
-
 router.post(
   `${ruta}/:id/enviar-codigo`,
   verificarToken,
+  propio,
   rateLimit,
   enviarCodigoVerificacion,
 );
@@ -71,6 +77,7 @@ router.post(
 router.post(
   `${ruta}/:id/confirmar-codigo`,
   verificarToken,
+  propio,
   rateLimitVerificacionCodigo,
   confirmarCodigoVerificacion,
 );
@@ -78,6 +85,7 @@ router.post(
 router.patch(
   `${ruta}/:id/desactivar-verificacion`,
   verificarToken,
+  propio,
   rateLimit,
   desactivarVerificacionEmail,
 );

@@ -55,7 +55,27 @@ export const verificarRol = (rolesPermitidos) => {
   };
 };
 
-// src/middleware/auth.middleware.js — agrega esta función nueva
+// ─────────────────────────────────────────────
+// Solo el dueño del recurso (req.params[param] === req.usuario.id) o el superadmin.
+// Uso: router.patch("/usuarios/:id", verificarToken, soloPropioOSuperadmin("id"), ctrl)
+// ─────────────────────────────────────────────
+export const soloPropioOSuperadmin = (param = "id") => {
+  return (req, res, next) => {
+    if (!req.usuario) {
+      return res.status(401).json({ success: false, error: "No autenticado." });
+    }
+    const esPropio = Number(req.usuario.id) === Number(req.params[param]);
+    if (!esPropio && req.usuario.rol !== "superadmin") {
+      return res.status(403).json({
+        success: false,
+        error: "No tienes permisos para esta acción.",
+      });
+    }
+    next();
+  };
+};
+
+// Como verificarToken, pero sin token sigue como visitante anónimo.
 export const verificarTokenOpcional = (req, res, next) => {
   const authHeader = req.headers["authorization"];
   const token = authHeader?.split(" ")[1];

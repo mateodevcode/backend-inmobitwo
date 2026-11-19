@@ -60,3 +60,8 @@ export const loginLimiter = createRateLimiter(20, 60000);
 // Anónimos: 50/min por IP (como hasta ahora). Autenticados: 500/min por usuario.
 export const defaultLimiter = createRateLimiter(50, 60000, 500);
 export const verificacionCodigoLimiter = createRateLimiter(5, 10 * 60000);
+// Cambio de contraseña: 5 intentos / 15 min, también para autenticados
+// (evita adivinar passwordActual por fuerza bruta).
+export const passwordLimiter = createRateLimiter(5, 15 * 60000, 5, null, "password");
+// check-email: 20/min por IP (evita enumerar cuentas).
+export const checkEmailLimiter = createRateLimiter(20, 60000, 20, null, "check-email");
