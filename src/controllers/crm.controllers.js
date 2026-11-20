@@ -106,7 +106,7 @@ export const getCrmPropiedades = async (req, res) => {
   try {
     const crm = req.crm;
     const { pagina, limite, offset } = validarPaginacion(req.query);
-    const { estado, q } = validarFiltrosPropiedades(req.query);
+    const { estado, oferta, q } = validarFiltrosPropiedades(req.query);
     const vis = wherePropiedadesVisibles(crm, "p");
 
     const conds = [vis.where];
@@ -114,6 +114,13 @@ export const getCrmPropiedades = async (req, res) => {
     if (estado) {
       params.push(estado);
       conds.push(`p.estado = $${params.length}`);
+    }
+    // Estado comercial: alguna oferta en ese estado (o ninguna oferta).
+    if (oferta === "sin_oferta") {
+      conds.push("NOT EXISTS (SELECT 1 FROM property_listings l0 WHERE l0.propiedad_id = p.id)");
+    } else if (oferta) {
+      params.push(oferta);
+      conds.push(`EXISTS (SELECT 1 FROM property_listings l0 WHERE l0.propiedad_id = p.id AND l0.listing_status = $${params.length})`);
     }
     if (q) {
       params.push(`%${q}%`);
@@ -126,7 +133,19 @@ export const getCrmPropiedades = async (req, res) => {
               ${portada("p")},
               (SELECT COALESCE(SUM(v.vistas), 0)::int FROM vistas_resumen_diario v WHERE v.propiedad_id = p.id) AS vistas,
               (SELECT COUNT(*)::int FROM usuario_favoritos f WHERE f.propiedad_id = p.id) AS favoritos,
-              (SELECT COUNT(*)::int FROM leads l WHERE l.propiedad_id = p.id) AS leads
+              (SELECT COUNT(*)::int FROM leads l WHERE l.propiedad_id = p.id) AS leads,
+              -- Ofertas por operación con su estado comercial (activa, vendida, arrendada…).
+              COALESCE((SELECT json_agg(json_build_object(
+                          'operacion', ot.code, 'precio', lo.precio, 'estado', lo.listing_status)
+                          ORDER BY ot.id)
+                        FROM property_listings lo JOIN operation_types ot ON ot.id = lo.operation_type_id
+                        WHERE lo.propiedad_id = p.id), '[]') AS ofertas,
+              -- Captación (mandato) del inmueble, si la hay.
+              (SELECT json_build_object(
+                        'id', k.id, 'tipo_mandato', k.tipo_mandato, 'estado', k.estado,
+                        'vence_el', to_char(k.vence_el, 'YYYY-MM-DD'),
+                        'dias_para_vencer', (k.vence_el - (now() AT TIME ZONE 'America/Bogota')::date))
+               FROM crm_captaciones k WHERE k.propiedad_id = p.id) AS captacion
        FROM propiedades p LEFT JOIN cities ci ON ci.id = p.city_id
        WHERE ${where}
        ORDER BY p.created_at DESC

@@ -79,6 +79,11 @@ import {
   obtenerCaptacion,
   subirDocumento,
 } from "../controllers/crm.captaciones.controllers.js";
+import {
+  accionesMasivas,
+  duplicarPropiedad,
+  rendimientoPropiedad,
+} from "../controllers/crm.cartera.controllers.js";
 import { uploadDocumento } from "../lib/multer.js";
 
 // Documento de captación: un archivo en el campo "archivo" (máx. 10 MB).
@@ -168,5 +173,10 @@ router.post("/crm/captaciones/:id/documentos", ...conEspacio, unDocumento, subir
 router.get("/crm/captaciones/:id/documentos/:docId", ...conEspacio, descargarDocumento);
 router.delete("/crm/captaciones/:id/documentos/:docId", ...conEspacio, eliminarDocumento);
 router.get("/crm/propiedades/:id/captacion", ...conEspacio, captacionDePropiedad);
+
+// Cartera avanzada
+router.post("/crm/propiedades/acciones", ...conEspacio, accionesMasivas);
+router.post("/crm/propiedades/:id/duplicar", ...conEspacio, duplicarPropiedad);
+router.get("/crm/propiedades/:id/rendimiento", ...conEspacio, rendimientoPropiedad);
 
 export default router;

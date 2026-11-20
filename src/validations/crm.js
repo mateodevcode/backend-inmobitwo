@@ -29,9 +29,14 @@ export function validarFiltrosLeads(query) {
   return { errores, filtros: { estado, origen, desde, hasta, propiedadId: propId, q } };
 }
 
+// Filtros del listado de cartera. Valores fuera de lista se ignoran.
+export const ESTADOS_PUBLICACION = ["publicado", "no_publicado"];
+export const FILTROS_OFERTA = ["active", "sold", "rented", "inactive", "sin_oferta"];
 export function validarFiltrosPropiedades(query) {
-  const { estado, q } = query;
-  return { estado, q };
+  const estado = ESTADOS_PUBLICACION.includes(query.estado) ? query.estado : undefined;
+  const oferta = FILTROS_OFERTA.includes(query.oferta) ? query.oferta : undefined;
+  const q = typeof query.q === "string" ? query.q.trim().slice(0, 100) || undefined : undefined;
+  return { estado, oferta, q };
 }
 
 export const TIPOS_CONTACTO = ["comprador", "vendedor", "arrendatario", "inversor", "otro"];
