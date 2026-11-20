@@ -1,5 +1,6 @@
 // src/controllers/propiedades/detalle.controllers.js — ficha de un inmueble, historial de precios, características, stats y token de vista.
 import { pool } from "../../db.js";
+import { puedeGestionarPropiedad } from "../../lib/propiedadPermisos.js";
 import { cacheGet, cacheInvalidate } from "../../lib/redis.js";
 import { emitirViewToken } from "../../lib/viewToken.js";
 import { aplicarPrivacidadUbicacion } from "../../lib/ubicacion.service.js";
@@ -31,6 +32,9 @@ export const getPropiedadesById = async (req, res) => {
         `SELECT 
           ${selectBase},
           p.description_needs_review,
+          p.estado AS estado_publicacion,
+          p.publicado_por_id AS gestor_usuario_id,
+          p.organizacion_id AS gestor_organizacion_id,
           ${ofertasSubquery("p")},
           ${portadaSubquery("p")},
           ${portadaPublicIdSubquery("p")},
@@ -92,7 +96,10 @@ export const getPropiedadesById = async (req, res) => {
       };
     });
 
-    if (!data) {
+    // Un borrador solo lo ve quien puede gestionarlo (antes cualquiera con el id).
+    const esBorrador = data && data.estado_publicacion !== "publicado";
+    const gestor = data && { publicado_por_id: data.gestor_usuario_id, organizacion_id: data.gestor_organizacion_id };
+    if (!data || (esBorrador && !(await puedeGestionarPropiedad(req.usuario, gestor)))) {
       return res.status(404).json({
         success: false,
         error: "Propiedad no encontrada",

@@ -138,6 +138,15 @@ export function joinOfertaActiva(opId) {
   return `INNER JOIN property_listings l ON l.propiedad_id = p.id AND l.operation_type_id = ${id} AND l.listing_status = 'active'`;
 }
 
+// Lo que puede ver el público en listados: publicado y con al menos una oferta
+// activa (lo vendido, arrendado, pausado o vencido sale de los listados; el
+// detalle por id sigue mostrándolo con su estado).
+export function filtroPublicoSQL(alias = "p") {
+  return `${alias}.estado = 'publicado' AND EXISTS (
+    SELECT 1 FROM property_listings lpub
+    WHERE lpub.propiedad_id = ${alias}.id AND lpub.listing_status = 'active')`;
+}
+
 // Resuelve el id de operation_types por code (para los filtros de búsqueda).
 export async function operationIdPorCode(code) {
   const { rows } = await pool.query(

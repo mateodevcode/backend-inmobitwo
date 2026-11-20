@@ -14,6 +14,7 @@ import {
   camposCatalogoSelect,
   joinsCatalogo,
   resolverColumnasPropiedad,
+  filtroPublicoSQL,
 } from "./_comun.js";
 
 // ok
@@ -24,7 +25,7 @@ export const getPropiedades = async (req, res) => {
       return res.status(400).json({ success: false, error });
     }
 
-    const cacheKey = `propiedades:all:${req.query.fields || "default"}`;
+    const cacheKey = `propiedades:publicas:${req.query.fields || "default"}`;
     const propiedadesConDatos = await cacheGet(
       cacheKey,
       30,
@@ -35,6 +36,7 @@ export const getPropiedades = async (req, res) => {
                   ${camposCatalogoSelect("p")}
          FROM propiedades p
          ${joinsCatalogo("p")}
+         WHERE ${filtroPublicoSQL("p")}
          ORDER BY p.created_at DESC`,
         );
 
@@ -137,7 +139,7 @@ export const getPropiedadesHome = async (req, res) => {
 
     // Armamos la query dinámicamente según si hay cursor o no
     const params = [limit];
-    let whereClause = "WHERE TRUE";
+    let whereClause = `WHERE ${filtroPublicoSQL("p")}`;
 
     if (cursor) {
       whereClause += " AND p.created_at < $2";
@@ -395,7 +397,7 @@ export const getPropiedadesByOrganizacion = async (req, res) => {
     // 2. Traer sus propiedades con paginación por cursor
     const params = [organizacion.id, limit];
     let whereClause =
-      "WHERE p.organizacion_id = $1 AND p.es_de_organizacion = true";
+      `WHERE p.organizacion_id = $1 AND p.es_de_organizacion = true AND ${filtroPublicoSQL("p")}`;
 
     if (cursor) {
       whereClause += " AND p.created_at < $3";
@@ -1206,7 +1208,7 @@ export const getInmueblesEnBbox = async (req, res) => {
       // ocultas (y geom real para el resto). Si geom_publica aún no existe
       // (pago recién aprobado sin aplicar), no se muestra.
       const filters = [
-        "p.estado = 'publicado'",
+        filtroPublicoSQL("p"),
         `${geomFiltroSQL("p")} IS NOT NULL`,
       ];
 
