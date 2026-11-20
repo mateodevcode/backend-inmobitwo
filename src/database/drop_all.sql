@@ -52,6 +52,7 @@ DROP TABLE IF EXISTS related_units CASCADE;
 DROP TABLE IF EXISTS propiedades_planos CASCADE;
 DROP TABLE IF EXISTS propiedades_galeria CASCADE;
 -- CRM + portada destacada
+DROP TABLE IF EXISTS crm_plantillas CASCADE;
 DROP TABLE IF EXISTS crm_captacion_documentos CASCADE;
 DROP TABLE IF EXISTS crm_captaciones CASCADE;
 DROP TABLE IF EXISTS crm_demanda_propiedades CASCADE;

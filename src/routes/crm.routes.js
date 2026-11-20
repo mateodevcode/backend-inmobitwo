@@ -84,6 +84,15 @@ import {
   duplicarPropiedad,
   rendimientoPropiedad,
 } from "../controllers/crm.cartera.controllers.js";
+import {
+  actualizarPlantilla,
+  contactoDesdeChat,
+  crearPlantilla,
+  eliminarPlantilla,
+  listarBandeja,
+  listarPlantillas,
+  usarPlantilla,
+} from "../controllers/crm.bandeja.controllers.js";
 import { uploadDocumento } from "../lib/multer.js";
 
 // Documento de captación: un archivo en el campo "archivo" (máx. 10 MB).
@@ -178,5 +187,14 @@ router.get("/crm/propiedades/:id/captacion", ...conEspacio, captacionDePropiedad
 router.post("/crm/propiedades/acciones", ...conEspacio, accionesMasivas);
 router.post("/crm/propiedades/:id/duplicar", ...conEspacio, duplicarPropiedad);
 router.get("/crm/propiedades/:id/rendimiento", ...conEspacio, rendimientoPropiedad);
+
+// Bandeja unificada y plantillas de respuesta
+router.get("/crm/bandeja", ...conEspacio, listarBandeja);
+router.post("/crm/bandeja/chat/:id/contacto", ...conEspacio, contactoDesdeChat);
+router.get("/crm/plantillas", ...conEspacio, listarPlantillas);
+router.post("/crm/plantillas", ...conEspacio, crearPlantilla);
+router.patch("/crm/plantillas/:id", ...conEspacio, actualizarPlantilla);
+router.delete("/crm/plantillas/:id", ...conEspacio, eliminarPlantilla);
+router.post("/crm/plantillas/:id/uso", ...conEspacio, usarPlantilla);
 
 export default router;
