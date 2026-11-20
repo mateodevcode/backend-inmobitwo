@@ -44,6 +44,9 @@ import {
   conversion,
   embudo,
   leadsOrigen,
+  reporteAgentes,
+  reporteInmuebles,
+  reporteRespuesta,
   valorGanado,
 } from "../controllers/crm.reportes.controllers.js";
 import {
@@ -156,6 +159,9 @@ router.get("/crm/reportes/conversion", ...conEspacio, conversion);
 router.get("/crm/reportes/valor-ganado", ...conEspacio, valorGanado);
 router.get("/crm/reportes/actividad", ...conEspacio, actividad);
 router.get("/crm/reportes/leads-origen", ...conEspacio, leadsOrigen);
+router.get("/crm/reportes/agentes", ...conEspacio, reporteAgentes);
+router.get("/crm/reportes/inmuebles", ...conEspacio, reporteInmuebles);
+router.get("/crm/reportes/respuesta", ...conEspacio, reporteRespuesta);
 
 // Agenda y visitas
 router.get("/crm/visitas", ...conEspacio, listarVisitas);
