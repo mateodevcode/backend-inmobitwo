@@ -2290,3 +2290,26 @@ CREATE INDEX IF NOT EXISTS idx_crm_notificaciones_usuario
     ON crm_notificaciones (usuario_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_crm_notificaciones_no_leidas
     ON crm_notificaciones (usuario_id, organizacion_id) WHERE leida_at IS NULL;
+
+-- ============================================================================
+-- 029 — Habeas Data: registro de auditoría (crm_auditoria_datos)
+-- ============================================================================
+CREATE TABLE IF NOT EXISTS crm_auditoria_datos (
+    id BIGSERIAL PRIMARY KEY,
+    organizacion_id INTEGER REFERENCES organizaciones(id) ON DELETE CASCADE,
+    usuario_id INTEGER REFERENCES usuarios(id) ON DELETE CASCADE,
+    CONSTRAINT crm_auditoria_datos_dueno CHECK (num_nonnulls(organizacion_id, usuario_id) = 1),
+    contacto_id BIGINT NOT NULL,
+    accion VARCHAR(30) NOT NULL CHECK (accion IN (
+        'exportacion', 'rectificacion', 'supresion', 'autorizacion_registrada', 'autorizacion_retirada')),
+    actor_id INTEGER REFERENCES usuarios(id) ON DELETE SET NULL,
+    detalle JSONB NOT NULL DEFAULT '{}',
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_crm_auditoria_datos_org
+    ON crm_auditoria_datos (organizacion_id, created_at DESC) WHERE organizacion_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_crm_auditoria_datos_user
+    ON crm_auditoria_datos (usuario_id, created_at DESC) WHERE usuario_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_crm_auditoria_datos_contacto
+    ON crm_auditoria_datos (contacto_id);

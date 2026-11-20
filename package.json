@@ -11,7 +11,7 @@
     "job:busquedas": "node --env-file .env src/jobs/run-once.js",
     "db:check": "node scripts/verificar-esquema.mjs",
     "test": "node --test \"test/**/*.test.js\"",
-    "test:unit": "node --test test/pagos.core.test.js test/ubicacion.test.js test/seguridad.test.js test/base.test.js test/visitas.test.js test/demandas.test.js test/captaciones.test.js test/importacion.test.js test/notificaciones.test.js",
+    "test:unit": "node --test test/pagos.core.test.js test/ubicacion.test.js test/seguridad.test.js test/base.test.js test/visitas.test.js test/demandas.test.js test/captaciones.test.js test/importacion.test.js test/notificaciones.test.js test/habeas.test.js",
     "test:integration": "node --test test/pagos.integration.test.js"
   },
   "keywords": [],

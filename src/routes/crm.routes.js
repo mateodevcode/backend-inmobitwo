@@ -105,6 +105,12 @@ import {
 } from "../controllers/crm.equipo.controllers.js";
 import { importarContactos, importarInmuebles } from "../controllers/crm.importacion.controllers.js";
 import {
+  actualizarAutorizacion,
+  exportarDatosContacto,
+  registroAuditoria,
+  suprimirContacto,
+} from "../controllers/crm.habeas.controllers.js";
+import {
   contadorNotificaciones,
   listarNotificaciones,
   marcarLeida,
@@ -233,5 +239,11 @@ router.get("/crm/notificaciones", ...conEspacio, listarNotificaciones);
 router.get("/crm/notificaciones/contador", ...conEspacio, contadorNotificaciones);
 router.post("/crm/notificaciones/leer-todas", ...conEspacio, marcarTodasLeidas);
 router.post("/crm/notificaciones/:id/leida", ...conEspacio, marcarLeida);
+
+// Habeas Data (Ley 1581): acceso, autorización, supresión y registro
+router.get("/crm/contactos/:id/datos-personales", ...conEspacio, exportarDatosContacto);
+router.put("/crm/contactos/:id/autorizacion", ...conEspacio, actualizarAutorizacion);
+router.post("/crm/contactos/:id/suprimir", ...conEspacio, suprimirContacto);
+router.get("/crm/habeas-data/registro", ...conEspacio, registroAuditoria);
 
 export default router;

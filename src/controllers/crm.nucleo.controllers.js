@@ -8,6 +8,7 @@ import {
 } from "../lib/crmPermisos.js";
 import { siguienteAgente } from "../lib/equipo/reparto.js";
 import { notificar } from "../lib/notificaciones.js";
+import { camposRectificados, registrarAuditoria } from "../lib/habeasData.js";
 import {
   validarActividad,
   validarContacto,
@@ -216,6 +217,12 @@ export const actualizarContacto = async (req, res) => {
       `UPDATE crm_contactos SET ${sets.join(", ")} WHERE id = $${params.length} RETURNING *`,
       params,
     );
+    // Habeas Data: constancia de rectificación (qué campos, nunca los valores).
+    const campos = camposRectificados(actual, rows[0]);
+    if (campos.length) await registrarAuditoria(crm, actual.id, "rectificacion", { campos });
+    if (valores.autorizacion_datos_at && !actual.autorizacion_datos_at) {
+      await registrarAuditoria(crm, actual.id, "autorizacion_registrada", { origen: valores.autorizacion_origen });
+    }
     return res.status(200).json({ success: true, data: rows[0] });
   } catch (error) {
     if (error.code === "23505") {
