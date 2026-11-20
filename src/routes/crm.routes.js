@@ -68,6 +68,27 @@ import {
   obtenerDemanda,
   quitarSeguimiento,
 } from "../controllers/crm.demandas.controllers.js";
+import {
+  actualizarCaptacion,
+  captacionDePropiedad,
+  crearCaptacion,
+  descargarDocumento,
+  eliminarCaptacion,
+  eliminarDocumento,
+  listarCaptaciones,
+  obtenerCaptacion,
+  subirDocumento,
+} from "../controllers/crm.captaciones.controllers.js";
+import { uploadDocumento } from "../lib/multer.js";
+
+// Documento de captación: un archivo en el campo "archivo" (máx. 10 MB).
+const unDocumento = (req, res, next) =>
+  uploadDocumento.single("archivo")(req, res, (err) => {
+    if (err?.code === "LIMIT_FILE_SIZE") {
+      return res.status(413).json({ success: false, error: "El archivo pesa demasiado (máx. 10 MB)." });
+    }
+    next(err);
+  });
 
 const router = Router();
 const rateLimit = createRateLimitMiddleware(defaultLimiter);
@@ -136,5 +157,16 @@ router.delete("/crm/demandas/:id/propiedades/:propiedadId", ...conEspacio, quita
 router.get("/crm/propiedades/:id/demandas", ...conEspacio, demandasDePropiedad);
 router.get("/crm/catalogos/ciudades", ...conEspacio, buscarCiudades);
 router.get("/crm/catalogos/barrios", ...conEspacio, listarBarrios);
+
+// Captación y propietarios
+router.get("/crm/captaciones", ...conEspacio, listarCaptaciones);
+router.post("/crm/captaciones", ...conEspacio, crearCaptacion);
+router.get("/crm/captaciones/:id", ...conEspacio, obtenerCaptacion);
+router.patch("/crm/captaciones/:id", ...conEspacio, actualizarCaptacion);
+router.delete("/crm/captaciones/:id", ...conEspacio, eliminarCaptacion);
+router.post("/crm/captaciones/:id/documentos", ...conEspacio, unDocumento, subirDocumento);
+router.get("/crm/captaciones/:id/documentos/:docId", ...conEspacio, descargarDocumento);
+router.delete("/crm/captaciones/:id/documentos/:docId", ...conEspacio, eliminarDocumento);
+router.get("/crm/propiedades/:id/captacion", ...conEspacio, captacionDePropiedad);
 
 export default router;

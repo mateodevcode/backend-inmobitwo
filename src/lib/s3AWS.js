@@ -1,6 +1,7 @@
 import {
   PutObjectCommand,
   DeleteObjectCommand,
+  GetObjectCommand,
   S3Client,
 } from "@aws-sdk/client-s3";
 import {
@@ -55,4 +56,19 @@ export async function deleteFromS3(key) {
     Key: key,
   });
   await s3.send(command);
+}
+
+// Subir un archivo PRIVADO: no se devuelve URL (no debe exponerse nunca).
+// Se descarga solo vía getFromS3 a través de un endpoint con permisos.
+export async function uploadPrivadoToS3(buffer, key, contentType) {
+  await s3.send(
+    new PutObjectCommand({ Bucket: bucketName, Key: key, Body: buffer, ContentType: contentType }),
+  );
+  return key;
+}
+
+// Leer un objeto (stream) para servirlo desde el backend.
+export async function getFromS3(key) {
+  const r = await s3.send(new GetObjectCommand({ Bucket: bucketName, Key: key }));
+  return { body: r.Body, contentType: r.ContentType, contentLength: r.ContentLength };
 }

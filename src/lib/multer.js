@@ -13,3 +13,14 @@ export const upload = multer({
     cb(null, true);
   },
 });
+
+// Documentos privados (captaciones): un archivo, máximo 10 MB. El tipo real se
+// valida después por sus bytes (lib/archivos.js); aquí solo un primer filtro.
+export const uploadDocumento = multer({
+  storage,
+  limits: { fileSize: 10 * 1024 * 1024, files: 1 },
+  fileFilter: (req, file, cb) => {
+    const ok = file.mimetype === "application/pdf" || file.mimetype.startsWith("image/");
+    cb(ok ? null : Object.assign(new Error("Solo PDF o imágenes."), { status: 400 }), ok);
+  },
+});

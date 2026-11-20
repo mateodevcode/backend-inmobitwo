@@ -35,6 +35,7 @@
 -- 018_dominios_jobs.sql -> jobs de ejecución remota de dominios en el VPS (log + auditoría)
 -- 023_crm_visitas.sql -> agenda y visitas del CRM (crm_visitas + recordatorios)
 -- 024_crm_demandas.sql -> demandas y cruce del CRM (crm_demandas + crm_demanda_propiedades)
+-- 025_crm_captaciones.sql -> captación y propietarios (crm_captaciones + crm_captacion_documentos)
 --
 -- NOTA: db.sql es la fuente de verdad única. Actualizarlo siempre al agregar
 --       catálogos, columnas o features nuevos.
