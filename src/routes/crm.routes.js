@@ -103,6 +103,7 @@ import {
   obtenerReparto,
   repartirLeads,
 } from "../controllers/crm.equipo.controllers.js";
+import { importarContactos, importarInmuebles } from "../controllers/crm.importacion.controllers.js";
 import { uploadDocumento } from "../lib/multer.js";
 
 // Documento de captación: un archivo en el campo "archivo" (máx. 10 MB).
@@ -216,5 +217,9 @@ router.put("/crm/equipo/reparto", ...conEspacio, guardarReparto);
 router.post("/crm/equipo/repartir-leads", ...conEspacio, repartirLeads);
 router.get("/crm/equipo/metas", ...conEspacio, obtenerMetas);
 router.put("/crm/equipo/metas", ...conEspacio, guardarMetas);
+
+// Importación desde CSV/Excel (`simular: true` = vista previa sin escribir)
+router.post("/crm/importar/contactos", ...conEspacio, importarContactos);
+router.post("/crm/importar/inmuebles", ...conEspacio, importarInmuebles);
 
 export default router;
