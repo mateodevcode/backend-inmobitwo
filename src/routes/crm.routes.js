@@ -93,6 +93,13 @@ import {
   listarPlantillas,
   usarPlantilla,
 } from "../controllers/crm.bandeja.controllers.js";
+import {
+  guardarMetas,
+  guardarReparto,
+  obtenerMetas,
+  obtenerReparto,
+  repartirLeads,
+} from "../controllers/crm.equipo.controllers.js";
 import { uploadDocumento } from "../lib/multer.js";
 
 // Documento de captación: un archivo en el campo "archivo" (máx. 10 MB).
@@ -196,5 +203,12 @@ router.post("/crm/plantillas", ...conEspacio, crearPlantilla);
 router.patch("/crm/plantillas/:id", ...conEspacio, actualizarPlantilla);
 router.delete("/crm/plantillas/:id", ...conEspacio, eliminarPlantilla);
 router.post("/crm/plantillas/:id/uso", ...conEspacio, usarPlantilla);
+
+// Equipo: reparto de leads y metas
+router.get("/crm/equipo/reparto", ...conEspacio, obtenerReparto);
+router.put("/crm/equipo/reparto", ...conEspacio, guardarReparto);
+router.post("/crm/equipo/repartir-leads", ...conEspacio, repartirLeads);
+router.get("/crm/equipo/metas", ...conEspacio, obtenerMetas);
+router.put("/crm/equipo/metas", ...conEspacio, guardarMetas);
 
 export default router;
