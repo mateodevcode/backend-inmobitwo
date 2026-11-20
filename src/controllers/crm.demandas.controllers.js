@@ -294,3 +294,31 @@ export const demandasDePropiedad = async (req, res) => {
   const data = await demandasParaPropiedad(pool, rows[0].id, whereEspacioPropio(crm, "d"));
   res.json({ success: true, data });
 };
+
+// ── Catálogos livianos para el formulario de demandas ────────────
+// GET /crm/catalogos/ciudades?q=  → [{ id, nombre, departamento }] (Colombia)
+export const buscarCiudades = async (req, res) => {
+  const q = String(req.query.q ?? "").trim().slice(0, 60);
+  if (q.length < 2) return res.json({ success: true, data: [] });
+  const { rows } = await pool.query(
+    `SELECT ci.id, ci.name AS nombre, s.name AS departamento
+     FROM cities ci
+     JOIN states s ON s.id = ci.state_id
+     JOIN countries co ON co.id = s.country_id AND co.iso2 = 'CO'
+     WHERE f_unaccent(ci.name) ILIKE f_unaccent($1)
+     ORDER BY (f_unaccent(ci.name) ILIKE f_unaccent($2)) DESC, ci.name
+     LIMIT 15`,
+    [`%${q}%`, `${q}%`],
+  );
+  res.json({ success: true, data: rows });
+};
+
+// GET /crm/catalogos/barrios?city_id=  → [{ id, nombre }]
+export const listarBarrios = async (req, res) => {
+  if (!esId(req.query.city_id)) throw solicitudInvalida("city_id es requerido.");
+  const { rows } = await pool.query(
+    "SELECT id, name AS nombre FROM barrios WHERE city_id = $1 ORDER BY name LIMIT 1000",
+    [req.query.city_id],
+  );
+  res.json({ success: true, data: rows });
+};

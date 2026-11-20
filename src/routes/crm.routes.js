@@ -56,10 +56,12 @@ import {
 } from "../controllers/crm.visitas.controllers.js";
 import {
   actualizarDemanda,
+  buscarCiudades,
   coincidenciasDemanda,
   crearDemanda,
   demandasDePropiedad,
   eliminarDemanda,
+  listarBarrios,
   listarDemandas,
   marcarCoincidenciasVistas,
   marcarSeguimiento,
@@ -132,5 +134,7 @@ router.post("/crm/demandas/:id/vistas", ...conEspacio, marcarCoincidenciasVistas
 router.put("/crm/demandas/:id/propiedades/:propiedadId", ...conEspacio, marcarSeguimiento);
 router.delete("/crm/demandas/:id/propiedades/:propiedadId", ...conEspacio, quitarSeguimiento);
 router.get("/crm/propiedades/:id/demandas", ...conEspacio, demandasDePropiedad);
+router.get("/crm/catalogos/ciudades", ...conEspacio, buscarCiudades);
+router.get("/crm/catalogos/barrios", ...conEspacio, listarBarrios);
 
 export default router;
