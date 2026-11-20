@@ -28,9 +28,13 @@ const SELECT_DEMANDA = `
   SELECT d.*, ot.code AS operacion,
          c.nombre AS contacto_nombre, c.telefono AS contacto_telefono,
          u.name AS agente_nombre,
-         COALESCE((SELECT json_agg(ci.name ORDER BY ci.name) FROM cities ci WHERE ci.id = ANY(d.city_ids)), '[]') AS ciudades,
-         COALESCE((SELECT json_agg(b.name ORDER BY b.name) FROM barrios b WHERE b.id = ANY(d.barrio_ids)), '[]') AS barrios,
-         COALESCE((SELECT json_agg(pt.label_es ORDER BY pt.id) FROM property_types pt WHERE pt.id = ANY(d.property_type_ids)), '[]') AS tipos
+         -- Nombres con su id para que el CRM pueda editar sin reemparejar.
+         COALESCE((SELECT json_agg(json_build_object('id', ci.id, 'nombre', ci.name) ORDER BY ci.name)
+                   FROM cities ci WHERE ci.id = ANY(d.city_ids)), '[]') AS ciudades,
+         COALESCE((SELECT json_agg(json_build_object('id', b.id, 'nombre', b.name) ORDER BY b.name)
+                   FROM barrios b WHERE b.id = ANY(d.barrio_ids)), '[]') AS barrios,
+         COALESCE((SELECT json_agg(json_build_object('id', pt.id, 'nombre', pt.label_es) ORDER BY pt.id)
+                   FROM property_types pt WHERE pt.id = ANY(d.property_type_ids)), '[]') AS tipos
   FROM crm_demandas d
   JOIN operation_types ot ON ot.id = d.operation_type_id
   JOIN crm_contactos c ON c.id = d.contacto_id
