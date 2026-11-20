@@ -4,7 +4,9 @@ import {
   duenoEspacio as duenoCols,
   normalizarTelefonoCO,
   whereEspacioPropio,
+  wherePropiedadesVisibles,
 } from "../lib/crmPermisos.js";
+import { siguienteAgente } from "../lib/equipo/reparto.js";
 import {
   validarActividad,
   validarContacto,
@@ -260,15 +262,17 @@ export const asignarContacto = async (req, res) => {
 export const convertirLead = async (req, res) => {
   try {
     const crm = req.crm;
+    if (!/^\d+$/.test(String(req.params.id))) {
+      return res.status(404).json({ success: false, error: "Lead no encontrado." });
+    }
+    // El lead tiene que ser de un inmueble visible en el ESPACIO ACTIVO
+    // (antes bastaba con ser miembro de cualquier org: el contacto podía
+    // terminar en el espacio equivocado).
+    const vis = wherePropiedadesVisibles(crm, "p");
     const { rows: leads } = await pool.query(
       `SELECT l.* FROM leads l JOIN propiedades p ON p.id = l.propiedad_id
-       WHERE l.id = $1 AND (
-         (p.publicado_por_id = $2 AND p.organizacion_id IS NULL)
-         OR p.organizacion_id IN (
-           SELECT om.organizacion_id FROM organizacion_miembros om
-           JOIN organizaciones o ON o.id = om.organizacion_id
-           WHERE om.usuario_id = $2 AND om.estado = 'activo' AND o.estado = 'aprobada'))`,
-      [req.params.id, crm.usuarioId],
+       WHERE l.id = $${vis.nextIndex} AND ${vis.where}`,
+      [...vis.params, req.params.id],
     );
     const lead = leads[0];
     if (!lead) return res.status(404).json({ success: false, error: "Lead no encontrado." });
@@ -282,7 +286,23 @@ export const convertirLead = async (req, res) => {
     if (existentes[0]) return res.status(200).json({ success: true, data: existentes[0], message: "El lead ya era contacto." });
 
     const telefono = normalizarTelefonoCO(lead.telefono);
-    const asignado = crm.tipo === "org" && crm.rolEnOrg === "agent" ? crm.usuarioId : crm.usuarioId;
+    // Ya hay un contacto con ese correo o teléfono en el espacio: se vincula
+    // el lead a él en vez de crear otro (antes el INSERT no hacía nada y la
+    // respuesta llegaba vacía).
+    const dup = await buscarDuplicado(crm, lead.email, telefono);
+    if (dup) {
+      return res.status(200).json({
+        success: true,
+        data: dup,
+        message: "Ya existía un contacto con ese correo o teléfono.",
+      });
+    }
+    // Inmobiliaria con reparto por turnos: el contacto va al siguiente agente.
+    // Un agente que convierte se lo queda (no reparte leads a otros).
+    let asignado = crm.usuarioId;
+    if (crm.tipo === "org" && crm.rolEnOrg === "agency_admin") {
+      asignado = (await siguienteAgente(crm.organizacionId)) ?? crm.usuarioId;
+    }
     const { rows } = await pool.query(
       `INSERT INTO crm_contactos
         (${dueno.cols}, nombre, email, telefono, origen, lead_id, asignado_a_id, creado_por_id)
