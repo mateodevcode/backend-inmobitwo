@@ -22,14 +22,14 @@ export const ALCANCES = ["cartera", "portal"];
 // Ids de operation_types que satisfacen la operación pedida. Se resuelven por
 // code en SQL para no hardcodear ids.
 const SQL_OPERACIONES_OK = `
-  (SELECT array_agg(ot.id) FROM operation_types ot
+  (SELECT ot.id FROM operation_types ot
    WHERE ot.id = d.operation_type_id
       OR (ot.code = 'alquiler_venta'
           AND (SELECT code FROM operation_types WHERE id = d.operation_type_id) IN ('venta', 'alquiler')))`;
 
 // Condiciones del cruce sobre p (propiedades) y l (oferta) contra d (demanda).
 const CONDICIONES_CRUCE = `
-  l.operation_type_id = ANY(${SQL_OPERACIONES_OK})
+  l.operation_type_id IN ${SQL_OPERACIONES_OK}
   AND (cardinality(d.property_type_ids) = 0 OR p.property_type_id = ANY(d.property_type_ids))
   AND (cardinality(d.city_ids) = 0 OR p.city_id = ANY(d.city_ids))
   AND (cardinality(d.barrio_ids) = 0 OR p.barrio_id = ANY(d.barrio_ids))
