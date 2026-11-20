@@ -3,7 +3,7 @@ import { z } from "zod";
 import { HttpError } from "../lib/errores.js";
 
 const idPositivo = z.coerce.number().int().positive();
-const idOpcional = z.union([idPositivo, z.null()]).optional();
+const idOpcional = z.union([z.null(), idPositivo]).optional();
 // Fecha-hora ISO con zona (el CRM manda "2026-11-20T15:00:00-05:00").
 const fechaHora = z.iso.datetime({ offset: true, message: "Fecha y hora inválidas." });
 const textoOpcional = (max) =>
@@ -28,7 +28,7 @@ const camposVisita = {
   lugar: textoOpcional(300),
   notas: textoOpcional(5000),
   asignado_a_id: idOpcional,
-  recordatorio_minutos: z.union([z.coerce.number().int().min(5).max(2880), z.null()]).optional(),
+  recordatorio_minutos: z.union([z.null(), z.coerce.number().int().min(5).max(2880)]).optional(),
   // true = guardar aunque el agente ya tenga otra visita a esa hora.
   forzar: z.boolean().optional().default(false),
 };
