@@ -169,9 +169,17 @@ export const listarOportunidades = async (req, res) => {
         nextIndex: 3,
       };
     }
-    const conds = [base.where, "o.estado = 'abierta'"];
+    const { asignado, propiedad, valorMin, valorMax, contacto_id } = req.query;
+    // Con contacto: su historial completo (abiertas, ganadas y perdidas).
+    const conds = [base.where];
     const params = [...base.params];
-    const { asignado, propiedad, valorMin, valorMax } = req.query;
+    if (contacto_id !== undefined) {
+      if (!/^\d+$/.test(String(contacto_id))) return res.status(400).json({ success: false, error: "contacto_id inválido." });
+      params.push(contacto_id);
+      conds.push(`o.contacto_id = $${params.length}`);
+    } else {
+      conds.push("o.estado = 'abierta'");
+    }
     if (asignado) {
       params.push(asignado);
       conds.push(`o.asignado_a_id = $${params.length}`);
@@ -191,13 +199,20 @@ export const listarOportunidades = async (req, res) => {
     const where = conds.join(" AND ");
     const { rows } = await pool.query(
       `SELECT o.*, c.nombre AS contacto_nombre, c.email AS contacto_email, c.telefono AS contacto_telefono,
-              p.titulo AS propiedad_titulo, e.nombre AS etapa_nombre, e.color AS etapa_color
+              p.titulo AS propiedad_titulo, e.nombre AS etapa_nombre, e.color AS etapa_color,
+              (SELECT MIN(v.inicio_at) FROM crm_visitas v
+                WHERE v.oportunidad_id = o.id AND v.estado IN ('programada', 'confirmada')
+                  AND v.inicio_at >= now()) AS proxima_visita_at,
+              (SELECT COUNT(*)::int FROM crm_tareas t
+                WHERE t.oportunidad_id = o.id AND t.completada_at IS NULL) AS tareas_pendientes,
+              (SELECT COUNT(*)::int FROM crm_tareas t
+                WHERE t.oportunidad_id = o.id AND t.completada_at IS NULL AND t.vence_at < now()) AS tareas_vencidas
        FROM crm_oportunidades o
        JOIN crm_contactos c ON c.id = o.contacto_id
        LEFT JOIN propiedades p ON p.id = o.propiedad_id
        JOIN crm_etapas e ON e.id = o.etapa_id
        WHERE ${where}
-       ORDER BY o.etapa_id, o.posicion ASC`,
+       ORDER BY ${contacto_id !== undefined ? "o.estado = 'abierta' DESC, o.updated_at DESC" : "o.etapa_id, o.posicion ASC"}`,
       params,
     );
     return res.status(200).json({ success: true, data: rows });

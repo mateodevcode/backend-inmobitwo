@@ -3,7 +3,7 @@
 // Respuestas { success, data | error }. Paginación data + pagination.
 import { pool } from "../db.js";
 import { cacheGet } from "../lib/redis.js";
-import { wherePropiedadesVisibles } from "../lib/crmPermisos.js";
+import { duenoEspacio, whereEspacioPropio, wherePropiedadesVisibles } from "../lib/crmPermisos.js";
 import {
   validarFiltrosLeads,
   validarFiltrosPropiedades,
@@ -58,14 +58,46 @@ export const getDashboard = async (req, res) => {
         kpiParams,
       );
 
+      // Días de Bogotá (el servidor corre en UTC).
       const serie = await pool.query(
-        `SELECT to_char(d.dia, 'YYYY-MM-DD') AS fecha, COUNT(l.id)::int AS total
-         FROM generate_series(CURRENT_DATE - INTERVAL '29 days', CURRENT_DATE, '1 day') AS d(dia)
-         LEFT JOIN leads l ON l.created_at::date = d.dia::date
+        `WITH hoy AS (SELECT (now() AT TIME ZONE 'America/Bogota')::date AS d)
+         SELECT to_char(dia, 'YYYY-MM-DD') AS fecha, COUNT(l.id)::int AS total
+         FROM hoy, generate_series(hoy.d - 29, hoy.d, interval '1 day') AS dia
+         LEFT JOIN leads l ON (l.created_at AT TIME ZONE 'America/Bogota')::date = dia::date
            AND l.propiedad_id IN (SELECT p.id FROM propiedades p WHERE ${vis.where})
-         GROUP BY d.dia ORDER BY d.dia`,
+         GROUP BY dia ORDER BY dia`,
         vis.params,
       );
+
+      // Trabajo del CRM: contactos, oportunidades abiertas y mis tareas.
+      const bc = whereEspacioPropio(crm, "c");
+      const bo = whereEspacioPropio(crm, "o");
+      const dueno = duenoEspacio(crm);
+      const [contactos, oportunidades, tareas] = await Promise.all([
+        pool.query(
+          `SELECT COUNT(*)::int AS total,
+                  COUNT(*) FILTER (WHERE c.created_at >= now() - interval '30 days')::int AS nuevos_30,
+                  COUNT(*) FILTER (WHERE c.autorizacion_datos_at IS NULL)::int AS sin_autorizacion
+           FROM crm_contactos c WHERE ${bc.where} AND c.archivado_at IS NULL`,
+          bc.params,
+        ),
+        pool.query(
+          `SELECT COUNT(*) FILTER (WHERE o.estado = 'abierta')::int AS abiertas,
+                  COALESCE(SUM(o.valor) FILTER (WHERE o.estado = 'abierta'), 0)::bigint AS valor_abierto,
+                  COUNT(*) FILTER (WHERE o.estado = 'ganada' AND o.cerrada_at >= date_trunc('month', now() AT TIME ZONE 'America/Bogota') AT TIME ZONE 'America/Bogota')::int AS ganadas_mes
+           FROM crm_oportunidades o WHERE ${bo.where} AND (o.estado = 'abierta' OR o.estado = 'ganada')`,
+          bo.params,
+        ),
+        pool.query(
+          `SELECT COUNT(*) FILTER (WHERE t.vence_at < now())::int AS vencidas,
+                  COUNT(*) FILTER (WHERE (t.vence_at AT TIME ZONE 'America/Bogota')::date = (now() AT TIME ZONE 'America/Bogota')::date
+                                     AND t.vence_at >= now())::int AS hoy,
+                  COUNT(*)::int AS pendientes
+           FROM crm_tareas t
+           WHERE t.${dueno.col} = $1 AND t.asignado_a_id = $2 AND t.completada_at IS NULL`,
+          [dueno.val, crm.usuarioId],
+        ),
+      ]);
 
       const porEstado = await pool.query(
         `SELECT l.estado, COUNT(*)::int AS total
@@ -87,6 +119,11 @@ export const getDashboard = async (req, res) => {
 
       return {
         kpis: kpis.rows[0],
+        crm: {
+          contactos: contactos.rows[0],
+          oportunidades: { ...oportunidades.rows[0], valor_abierto: Number(oportunidades.rows[0].valor_abierto) },
+          tareas: tareas.rows[0],
+        },
         seriesLeads: serie.rows,
         leadsPorEstado: porEstado.rows,
         ultimosLeads: ultimos.rows,

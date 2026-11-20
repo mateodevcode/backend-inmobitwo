@@ -159,12 +159,13 @@ export const listarVisitas = async (req, res) => {
     if (dias > MAX_DIAS_RANGO) throw solicitudInvalida(`El rango máximo es de ${MAX_DIAS_RANGO} días.`);
     add(`v.inicio_at >= (?::date)::timestamp AT TIME ZONE '${ZONA}'`, f.desde);
     add(`v.inicio_at < (?::date + 1)::timestamp AT TIME ZONE '${ZONA}'`, f.hasta);
-  } else if (!f.contacto_id && !f.propiedad_id) {
+  } else if (!f.contacto_id && !f.propiedad_id && !f.oportunidad_id) {
     conds.push("v.inicio_at >= now() - interval '1 day'", "v.inicio_at < now() + interval '30 days'");
   }
   if (f.asignado) add("v.asignado_a_id = ?", f.asignado);
   if (f.contacto_id) add("v.contacto_id = ?", f.contacto_id);
   if (f.propiedad_id) add("v.propiedad_id = ?", f.propiedad_id);
+  if (f.oportunidad_id) add("v.oportunidad_id = ?", f.oportunidad_id);
   if (f.estado) add("v.estado = ?", f.estado);
 
   const { rows } = await pool.query(

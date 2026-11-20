@@ -70,6 +70,7 @@ export const filtrosVisitasSchema = z.object({
   asignado: idPositivo.optional(),
   contacto_id: idPositivo.optional(),
   propiedad_id: idPositivo.optional(),
+  oportunidad_id: idPositivo.optional(),
   estado: z.enum(ESTADOS_VISITA).optional(),
 });
 

@@ -28,6 +28,17 @@ async function contactoEnEspacio(crm, id) {
   return rows[0] || null;
 }
 
+// Oportunidad visible en el espacio (el agente solo ve las suyas o las de sus contactos).
+async function oportunidadVisible(crm, id) {
+  if (!/^\d+$/.test(String(id))) return null;
+  const base = whereEspacioPropio(crm, "o");
+  const { rows } = await pool.query(
+    `SELECT o.id, o.contacto_id FROM crm_oportunidades o WHERE o.id = $${base.nextIndex} AND ${base.where}`,
+    [...base.params, id],
+  );
+  return rows[0] || null;
+}
+
 async function buscarDuplicado(crm, email, telefono, excluirId = null) {
   const dueno = duenoCols(crm);
   const col = dueno.col;
@@ -416,7 +427,7 @@ export const listarTareas = async (req, res) => {
   try {
     const crm = req.crm;
     const { pagina, limite, offset } = validarPaginacion(req.query);
-    const { vista, asignado } = req.query;
+    const { vista, asignado, contacto_id, oportunidad_id, incluir_completadas } = req.query;
     let base = whereEspacioPropio(crm, "t");
     // Agent: siempre solo las suyas.
     if (crm.tipo === "org" && crm.rolEnOrg === "agent") {
@@ -426,9 +437,19 @@ export const listarTareas = async (req, res) => {
         nextIndex: 3,
       };
     }
-    const conds = [`${base.where}`, "t.completada_at IS NULL"];
+    const conds = [`${base.where}`];
+    if (incluir_completadas !== "1") conds.push("t.completada_at IS NULL");
     const params = [...base.params];
-    if (vista === "hoy") conds.push("t.vence_at::date = CURRENT_DATE");
+    for (const [col, valor] of [["contacto_id", contacto_id], ["oportunidad_id", oportunidad_id]]) {
+      if (valor === undefined) continue;
+      if (!/^\d+$/.test(String(valor))) return res.status(400).json({ success: false, error: `${col} inválido.` });
+      params.push(valor);
+      conds.push(`t.${col} = $${params.length}`);
+    }
+    // "Hoy" en días de Bogotá (el servidor corre en UTC).
+    if (vista === "hoy") {
+      conds.push("(t.vence_at AT TIME ZONE 'America/Bogota')::date = (now() AT TIME ZONE 'America/Bogota')::date");
+    }
     else if (vista === "vencidas") conds.push("t.vence_at < now()");
     else if (vista === "proximas") conds.push("t.vence_at > now()");
     if (asignado) {
@@ -437,9 +458,10 @@ export const listarTareas = async (req, res) => {
     }
     const where = conds.join(" AND ");
     const { rows } = await pool.query(
-      `SELECT t.*, c.nombre AS contacto_nombre FROM crm_tareas t
+      `SELECT t.*, c.nombre AS contacto_nombre, o.titulo AS oportunidad_titulo FROM crm_tareas t
        LEFT JOIN crm_contactos c ON c.id = t.contacto_id
-       WHERE ${where} ORDER BY t.vence_at NULLS LAST, t.id DESC
+       LEFT JOIN crm_oportunidades o ON o.id = t.oportunidad_id
+       WHERE ${where} ORDER BY t.completada_at NULLS FIRST, t.vence_at NULLS LAST, t.id DESC
        LIMIT $${params.length + 1} OFFSET $${params.length + 2}`,
       [...params, limite, offset],
     );
@@ -465,6 +487,13 @@ export const crearTarea = async (req, res) => {
     if (errores.length > 0) return res.status(400).json({ success: false, error: errores });
 
     let contactoId = req.body.contacto_id ?? null;
+    // Tarea de una oportunidad: tiene que ser del espacio y hereda su contacto.
+    const oportunidadId = req.body.oportunidad_id ?? null;
+    if (oportunidadId) {
+      const op = await oportunidadVisible(crm, oportunidadId);
+      if (!op) return res.status(404).json({ success: false, error: "Oportunidad no encontrada." });
+      contactoId = contactoId ?? op.contacto_id;
+    }
     if (contactoId) {
       const c = await contactoEnEspacio(crm, contactoId);
       if (!c) return res.status(404).json({ success: false, error: "Contacto no encontrado." });
@@ -475,8 +504,8 @@ export const crearTarea = async (req, res) => {
     const dueno = duenoCols(crm);
     const { rows } = await pool.query(
       `INSERT INTO crm_tareas
-        (${dueno.cols}, contacto_id, titulo, descripcion, prioridad, vence_at, asignado_a_id, creado_por_id)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING *`,
+        (${dueno.cols}, contacto_id, titulo, descripcion, prioridad, vence_at, asignado_a_id, creado_por_id, oportunidad_id)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING *`,
       [
         ...dueno.vals,
         contactoId,
@@ -486,6 +515,7 @@ export const crearTarea = async (req, res) => {
         req.body.vence_at ?? null,
         asignado,
         crm.usuarioId,
+        oportunidadId,
       ],
     );
     if (crm.tipo === "org") {
