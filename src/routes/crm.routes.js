@@ -54,6 +54,18 @@ import {
   listarVisitas,
   obtenerVisita,
 } from "../controllers/crm.visitas.controllers.js";
+import {
+  actualizarDemanda,
+  coincidenciasDemanda,
+  crearDemanda,
+  demandasDePropiedad,
+  eliminarDemanda,
+  listarDemandas,
+  marcarCoincidenciasVistas,
+  marcarSeguimiento,
+  obtenerDemanda,
+  quitarSeguimiento,
+} from "../controllers/crm.demandas.controllers.js";
 
 const router = Router();
 const rateLimit = createRateLimitMiddleware(defaultLimiter);
@@ -108,5 +120,17 @@ router.get("/crm/visitas/:id", ...conEspacio, obtenerVisita);
 router.patch("/crm/visitas/:id", ...conEspacio, actualizarVisita);
 router.post("/crm/visitas/:id/estado", ...conEspacio, cambiarEstadoVisita);
 router.delete("/crm/visitas/:id", ...conEspacio, eliminarVisita);
+
+// Demandas y cruce
+router.get("/crm/demandas", ...conEspacio, listarDemandas);
+router.post("/crm/demandas", ...conEspacio, crearDemanda);
+router.get("/crm/demandas/:id", ...conEspacio, obtenerDemanda);
+router.patch("/crm/demandas/:id", ...conEspacio, actualizarDemanda);
+router.delete("/crm/demandas/:id", ...conEspacio, eliminarDemanda);
+router.get("/crm/demandas/:id/coincidencias", ...conEspacio, coincidenciasDemanda);
+router.post("/crm/demandas/:id/vistas", ...conEspacio, marcarCoincidenciasVistas);
+router.put("/crm/demandas/:id/propiedades/:propiedadId", ...conEspacio, marcarSeguimiento);
+router.delete("/crm/demandas/:id/propiedades/:propiedadId", ...conEspacio, quitarSeguimiento);
+router.get("/crm/propiedades/:id/demandas", ...conEspacio, demandasDePropiedad);
 
 export default router;

@@ -34,6 +34,7 @@
 -- 017_portada.sql -> portada destacada del hero principal (un solo anuncio, solo superadmin)
 -- 018_dominios_jobs.sql -> jobs de ejecución remota de dominios en el VPS (log + auditoría)
 -- 023_crm_visitas.sql -> agenda y visitas del CRM (crm_visitas + recordatorios)
+-- 024_crm_demandas.sql -> demandas y cruce del CRM (crm_demandas + crm_demanda_propiedades)
 --
 -- NOTA: db.sql es la fuente de verdad única. Actualizarlo siempre al agregar
 --       catálogos, columnas o features nuevos.
