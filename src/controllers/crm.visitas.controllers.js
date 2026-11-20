@@ -8,6 +8,7 @@
 import { pool } from "../db.js";
 import { duenoEspacio, whereEspacioPropio } from "../lib/crmPermisos.js";
 import { noEncontrado, prohibido, solicitudInvalida } from "../lib/errores.js";
+import { fechaCortaBogota, notificar } from "../lib/notificaciones.js";
 import {
   ESTADOS_ACTIVOS,
   actualizarVisitaSchema,
@@ -34,6 +35,20 @@ const SELECT_VISITA = `
   LEFT JOIN usuarios u ON u.id = v.asignado_a_id`;
 
 const esAgente = (crm) => crm.tipo === "org" && crm.rolEnOrg === "agent";
+
+// Aviso al agente de la visita cuando otra persona la crea, mueve o cancela.
+function avisarAgente(crm, visita, tipo, titulo) {
+  if (crm.tipo !== "org") return null;
+  return notificar({
+    destinatarios: [visita.asignado_a_id],
+    organizacionId: crm.organizacionId,
+    tipo,
+    titulo,
+    cuerpo: [fechaCortaBogota(visita.inicio_at), visita.propiedad_titulo].filter(Boolean).join(" · "),
+    url: `/agenda?visita=${visita.id}`,
+    actorId: crm.usuarioId,
+  });
+}
 
 async function visitaEnEspacio(crm, id) {
   if (!/^\d+$/.test(String(id))) throw noEncontrado("Visita no encontrada.");
@@ -204,6 +219,7 @@ export const crearVisita = async (req, res) => {
     ],
   );
   const visita = await visitaEnEspacio(crm, rows[0].id);
+  await avisarAgente(crm, visita, "visita_asignada", `Nueva visita con ${visita.contacto_nombre}`);
   res.status(201).json({ success: true, message: "Visita agendada.", data: visita });
 };
 
@@ -270,6 +286,11 @@ export const actualizarVisita = async (req, res) => {
   params.push(actual.id);
   await pool.query(`UPDATE crm_visitas SET ${sets.join(", ")} WHERE id = $${params.length}`, params);
   const visita = await visitaEnEspacio(crm, actual.id);
+  if (Number(visita.asignado_a_id) !== Number(actual.asignado_a_id)) {
+    await avisarAgente(crm, visita, "visita_asignada", `Te asignaron la visita con ${visita.contacto_nombre}`);
+  } else if (cambioHorario && visita.inicio_at?.toString() !== actual.inicio_at?.toString()) {
+    await avisarAgente(crm, visita, "visita_cambiada", `Reprogramaron tu visita con ${visita.contacto_nombre}`);
+  }
   res.json({ success: true, message: "Visita actualizada.", data: visita });
 };
 
@@ -349,6 +370,9 @@ export const cambiarEstadoVisita = async (req, res) => {
   }
 
   const visita = await visitaEnEspacio(crm, actual.id);
+  if (d.estado === "cancelada") {
+    await avisarAgente(crm, visita, "visita_cambiada", `Cancelaron tu visita con ${visita.contacto_nombre}`);
+  }
   res.json({ success: true, message: "Estado actualizado.", data: visita });
 };
 

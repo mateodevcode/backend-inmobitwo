@@ -13,10 +13,28 @@ import {
   textoCoincidencias,
 } from "../../utils/emails/coincidenciasDemanda.js";
 import { demandasConNovedades } from "./cruce.js";
+import { notificar } from "../notificaciones.js";
 
 export async function enviarAvisosDemandas({ transporter = createTransporter(), db = pool } = {}) {
   const inicio = new Date();
   const filas = await demandasConNovedades(db);
+
+  // Aviso en el CRM por demanda (uno por día como máximo, aunque falle el correo).
+  const dia = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Bogota" }).format(inicio);
+  for (const f of filas) {
+    await notificar(
+      {
+        destinatarios: [f.agente_id],
+        organizacionId: f.organizacion_id ?? null,
+        tipo: "demanda_coincidencias",
+        titulo: `${f.nuevos === 1 ? "1 inmueble nuevo" : `${f.nuevos} inmuebles nuevos`} para ${f.contacto_nombre}`,
+        cuerpo: (f.ejemplos ?? []).join(" · "),
+        url: `/demandas?demanda=${f.id}`,
+        clave: `demanda:${f.id}:${dia}`,
+      },
+      db,
+    );
+  }
   const porAgente = new Map();
   for (const f of filas) {
     if (!f.agente_email) continue;

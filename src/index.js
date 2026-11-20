@@ -32,6 +32,7 @@ import { iniciarCronBusquedas } from "./jobs/busquedasGuardadas.job.js";
 import { iniciarCronPagos } from "./jobs/pagos.job.js";
 import { iniciarCronVisitas } from "./jobs/visitas.job.js";
 import { iniciarCronDemandas } from "./jobs/demandas.job.js";
+import { iniciarCronNotificaciones } from "./jobs/notificaciones.job.js";
 import { corsOptions } from "./cors.config.js";
 import { errorHandler } from "./middleware/error.middleware.js";
 import { ocultarErrores5xx } from "./middleware/ocultarErrores.middleware.js";
@@ -122,3 +123,4 @@ iniciarCronVisitas();
 
 // Aviso diario de inmuebles nuevos que coinciden con demandas (DEMANDAS_CRON_ENABLED=false para apagar)
 iniciarCronDemandas();
+iniciarCronNotificaciones();

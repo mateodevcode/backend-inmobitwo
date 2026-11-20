@@ -7,6 +7,7 @@ import {
   wherePropiedadesVisibles,
 } from "../lib/crmPermisos.js";
 import { siguienteAgente } from "../lib/equipo/reparto.js";
+import { notificar } from "../lib/notificaciones.js";
 import {
   validarActividad,
   validarContacto,
@@ -252,6 +253,16 @@ export const asignarContacto = async (req, res) => {
       [req.body.asignado_a_id ?? null, req.params.id, ...base.params],
     );
     if (!rows[0]) return res.status(404).json({ success: false, error: "Contacto no encontrado." });
+    if (rows[0].asignado_a_id) {
+      await notificar({
+        destinatarios: [rows[0].asignado_a_id],
+        organizacionId: crm.organizacionId,
+        tipo: "contacto_asignado",
+        titulo: `Te asignaron a ${rows[0].nombre}`,
+        url: `/contactos/${rows[0].id}`,
+        actorId: crm.usuarioId,
+      });
+    }
     return res.status(200).json({ success: true, data: rows[0] });
   } catch (error) {
     return res.status(500).json({ success: false, error: error.message });
@@ -325,6 +336,18 @@ export const convertirLead = async (req, res) => {
          VALUES ($1, $2, 'sistema', 'Contacto creado desde un lead del portal.', $3)`,
         [...dueno.vals, contacto.id, crm.usuarioId],
       );
+      if (crm.tipo === "org" && contacto.asignado_a_id) {
+        await notificar({
+          destinatarios: [contacto.asignado_a_id],
+          organizacionId: crm.organizacionId,
+          tipo: "lead_asignado",
+          titulo: `Te asignaron un lead: ${contacto.nombre}`,
+          cuerpo: "Llegó del portal y ya es contacto. Escríbele pronto.",
+          url: `/contactos/${contacto.id}`,
+          clave: `lead-asignado:${lead.id}`,
+          actorId: crm.usuarioId,
+        });
+      }
     }
     return res.status(201).json({ success: true, data: contacto });
   } catch (error) {
@@ -458,6 +481,17 @@ export const crearTarea = async (req, res) => {
         crm.usuarioId,
       ],
     );
+    if (crm.tipo === "org") {
+      await notificar({
+        destinatarios: [asignado],
+        organizacionId: crm.organizacionId,
+        tipo: "tarea_asignada",
+        titulo: `Nueva tarea: ${rows[0].titulo}`,
+        cuerpo: rows[0].vence_at ? "Tiene fecha de vencimiento: revísala en Tareas." : null,
+        url: "/tareas",
+        actorId: crm.usuarioId,
+      });
+    }
     return res.status(201).json({ success: true, data: rows[0] });
   } catch (error) {
     return res.status(500).json({ success: false, error: error.message });
@@ -543,6 +577,18 @@ export const reasignarMasivo = async (req, res) => {
       [hacia_id, crm.organizacionId, desde_id],
     );
     await client.query("COMMIT");
+    const total = contactos.rowCount + oportunidades.rowCount + tareas.rowCount;
+    if (total > 0) {
+      await notificar({
+        destinatarios: [hacia_id],
+        organizacionId: crm.organizacionId,
+        tipo: "contacto_asignado",
+        titulo: "Te pasaron la cartera de otro agente",
+        cuerpo: `${contactos.rowCount} contactos, ${oportunidades.rowCount} oportunidades y ${tareas.rowCount} tareas.`,
+        url: "/contactos",
+        actorId: crm.usuarioId,
+      });
+    }
     return res.status(200).json({
       success: true,
       data: { contactos: contactos.rowCount, oportunidades: oportunidades.rowCount, tareas: tareas.rowCount },

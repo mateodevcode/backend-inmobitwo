@@ -160,6 +160,7 @@ export async function demandasParaPropiedad(db, propiedadId, whereEspacio) {
 export async function demandasConNovedades(db) {
   const { rows } = await db.query(
     `SELECT d.id, d.contacto_id, c.nombre AS contacto_nombre,
+            d.asignado_a_id AS agente_id, d.organizacion_id,
             u.name AS agente_nombre, u.email AS agente_email,
             COUNT(DISTINCT p.id)::int AS nuevos,
             (array_agg(DISTINCT p.titulo))[1:3] AS ejemplos

@@ -1,5 +1,6 @@
 // controllers/tracking.controllers.js
 import { pool } from "../db.js";
+import { adminsDeOrganizacion, notificar } from "../lib/notificaciones.js";
 import {
   calcularScore,
   calcularPuntosTiempo,
@@ -68,6 +69,20 @@ const notificarLead = async (lead) => {
     );
     const propiedad = propRows[0];
     if (!propiedad) return;
+
+    // Aviso en el CRM: dueño del anuncio (+ administradores si es de la inmobiliaria).
+    const deOrg = propiedad.es_de_organizacion && propiedad.organizacion_id;
+    await notificar({
+      destinatarios: deOrg
+        ? [propiedad.publicado_por_id, ...(await adminsDeOrganizacion(propiedad.organizacion_id))]
+        : [propiedad.publicado_por_id],
+      organizacionId: deOrg ? propiedad.organizacion_id : null,
+      tipo: "lead_nuevo",
+      titulo: `Nuevo lead: ${lead.nombre || "interesado sin nombre"}`,
+      cuerpo: `Interesado en «${propiedad.titulo}».`,
+      url: "/leads",
+      clave: `lead:${lead.id}`,
+    });
 
     let destinatarios = [];
 

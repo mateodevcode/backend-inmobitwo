@@ -8,6 +8,7 @@ import { pool } from "../db.js";
 import { normalizarTelefonoCO, wherePropiedadesVisibles } from "../lib/crmPermisos.js";
 import { prohibido, solicitudInvalida } from "../lib/errores.js";
 import { siguienteAgente } from "../lib/equipo/reparto.js";
+import { notificar } from "../lib/notificaciones.js";
 import { validar } from "../validations/visita.schema.js";
 
 const ZONA = "America/Bogota";
@@ -160,6 +161,20 @@ export const repartirLeads = async (req, res) => {
     } finally {
       client.release();
     }
+  }
+  // Un aviso por agente con el número de leads que le tocaron.
+  const porAgente = new Map();
+  for (const r of repartidos) porAgente.set(r.asignado_a_id, [...(porAgente.get(r.asignado_a_id) ?? []), r]);
+  for (const [agente, suyos] of porAgente) {
+    await notificar({
+      destinatarios: [agente],
+      organizacionId: org,
+      tipo: "lead_asignado",
+      titulo: suyos.length === 1 ? "Te asignaron un lead" : `Te asignaron ${suyos.length} leads`,
+      cuerpo: "Llegaron del portal y ya son contactos tuyos.",
+      url: suyos.length === 1 ? `/contactos/${suyos[0].contacto_id}` : "/contactos",
+      actorId: crm.usuarioId,
+    });
   }
   res.json({
     success: true,

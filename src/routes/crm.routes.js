@@ -104,6 +104,12 @@ import {
   repartirLeads,
 } from "../controllers/crm.equipo.controllers.js";
 import { importarContactos, importarInmuebles } from "../controllers/crm.importacion.controllers.js";
+import {
+  contadorNotificaciones,
+  listarNotificaciones,
+  marcarLeida,
+  marcarTodasLeidas,
+} from "../controllers/crm.notificaciones.controllers.js";
 import { uploadDocumento } from "../lib/multer.js";
 
 // Documento de captación: un archivo en el campo "archivo" (máx. 10 MB).
@@ -221,5 +227,11 @@ router.put("/crm/equipo/metas", ...conEspacio, guardarMetas);
 // Importación desde CSV/Excel (`simular: true` = vista previa sin escribir)
 router.post("/crm/importar/contactos", ...conEspacio, importarContactos);
 router.post("/crm/importar/inmuebles", ...conEspacio, importarInmuebles);
+
+// Notificaciones dentro del CRM (del espacio activo)
+router.get("/crm/notificaciones", ...conEspacio, listarNotificaciones);
+router.get("/crm/notificaciones/contador", ...conEspacio, contadorNotificaciones);
+router.post("/crm/notificaciones/leer-todas", ...conEspacio, marcarTodasLeidas);
+router.post("/crm/notificaciones/:id/leida", ...conEspacio, marcarLeida);
 
 export default router;
