@@ -68,9 +68,14 @@ export const buscarPortada = async (req, res) => {
       conds.push(`(p.titulo ILIKE $1 OR ci.name ILIKE $1 OR p.barrio_nombre ILIKE $1 OR CAST(p.id AS TEXT) = $${params.length + 1})`);
       params.push(q);
     }
+    // ?con_fotos=1: solo anuncios con galería (sin fotos no se pueden poner en portada).
+    if (req.query.con_fotos === "1") {
+      conds.push("EXISTS (SELECT 1 FROM propiedades_galeria g WHERE g.propiedad_id = p.id)");
+    }
     const where = conds.length ? `WHERE ${conds.join(" AND ")}` : "";
     const { rows } = await pool.query(
       `SELECT p.id, p.titulo, ci.name AS ciudad, p.precio, p.estado,
+              (SELECT COUNT(DISTINCT g.orden)::int FROM propiedades_galeria g WHERE g.propiedad_id = p.id) AS fotos,
               ${portadaMedium("p")} AS portada
        FROM propiedades p LEFT JOIN cities ci ON ci.id = p.city_id ${where}
        ORDER BY p.created_at DESC LIMIT $${params.length + 1} OFFSET $${params.length + 2}`,
