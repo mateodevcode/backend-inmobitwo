@@ -119,6 +119,24 @@ export async function resolverAsignado(db, crm, solicitado, porDefecto = null) {
   return id;
 }
 
+// Inmueble que se puede enlazar a un registro del CRM (visita, oportunidad,
+// actividad): personal → publicado por mí y sin org; org → de la inmobiliaria
+// (cualquier miembro, no solo quien lo publicó). Devuelve la fila o null.
+export async function propiedadEnEspacio(db, crm, id) {
+  if (!/^\d+$/.test(String(id))) return null;
+  const cond =
+    crm.tipo === "personal"
+      ? "p.publicado_por_id = $2 AND p.organizacion_id IS NULL"
+      : "p.organizacion_id = $2";
+  const { rows } = await db.query(
+    `SELECT p.id, p.titulo, p.direccion, ci.name AS ciudad
+     FROM propiedades p LEFT JOIN cities ci ON ci.id = p.city_id
+     WHERE p.id = $1 AND ${cond}`,
+    [id, crm.tipo === "personal" ? crm.usuarioId : crm.organizacionId],
+  );
+  return rows[0] ?? null;
+}
+
 // Normalización de teléfono colombiano: 10 dígitos desde 3.
 // Devuelve dígitos normalizados o null si no es un celular válido.
 export function normalizarTelefonoCO(valor) {

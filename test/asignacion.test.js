@@ -59,3 +59,44 @@ test("en el espacio personal solo se asigna a uno mismo", async () => {
   assert.equal(await resolverAsignado(db, PERSONAL, 1, null), 9);
   assert.equal(db.llamadas.length, 0);
 });
+
+// propiedadEnEspacio: qué inmueble se puede enlazar a una oportunidad, visita o actividad.
+import { propiedadEnEspacio } from "../src/lib/crmPermisos.js";
+
+function bdPropiedades() {
+  // id 10: org 1 (publicado por 6) · id 20: personal del usuario 9 · id 30: org 2
+  const props = [
+    { id: 10, org: 1, autor: 6 },
+    { id: 20, org: null, autor: 9 },
+    { id: 30, org: 2, autor: 7 },
+  ];
+  const llamadas = [];
+  return {
+    llamadas,
+    query: async (sql, [id, dueno]) => {
+      llamadas.push(sql);
+      const p = props.find((x) => x.id === Number(id));
+      const ok = p && (sql.includes("publicado_por_id = $2") ? p.autor === dueno && p.org === null : p.org === dueno);
+      return { rows: ok ? [{ id: p.id }] : [] };
+    },
+  };
+}
+
+test("en una org, cualquier miembro enlaza inmuebles de su inmobiliaria y no de otra", async () => {
+  const db = bdPropiedades();
+  assert.deepEqual(await propiedadEnEspacio(db, AGENTE, 10), { id: 10 });
+  assert.equal(await propiedadEnEspacio(db, ADMIN, 30), null);
+  assert.equal(await propiedadEnEspacio(db, ADMIN, 20), null);
+});
+
+test("en el espacio personal solo los inmuebles propios sin organización", async () => {
+  const db = bdPropiedades();
+  assert.deepEqual(await propiedadEnEspacio(db, PERSONAL, "20"), { id: 20 });
+  assert.equal(await propiedadEnEspacio(db, PERSONAL, 10), null);
+});
+
+test("un id no numérico no llega a la BD", async () => {
+  const db = bdPropiedades();
+  assert.equal(await propiedadEnEspacio(db, ADMIN, "10 OR 1=1"), null);
+  assert.equal(db.llamadas.length, 0);
+});

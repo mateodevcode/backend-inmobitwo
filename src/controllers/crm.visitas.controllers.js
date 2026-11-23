@@ -6,7 +6,7 @@
 // Un agente solo puede agendarse a sí mismo; el admin puede asignar a
 // cualquier miembro activo. Los errores se lanzan como HttpError (Express 5).
 import { pool } from "../db.js";
-import { duenoEspacio, whereEspacioPropio } from "../lib/crmPermisos.js";
+import { duenoEspacio, propiedadEnEspacio, whereEspacioPropio } from "../lib/crmPermisos.js";
 import { noEncontrado, prohibido, solicitudInvalida } from "../lib/errores.js";
 import { fechaCortaBogota, notificar } from "../lib/notificaciones.js";
 import {
@@ -73,18 +73,9 @@ async function contactoEnEspacio(crm, id) {
 
 // El inmueble tiene que ser del espacio (personal: mío sin org; org: de la org).
 async function propiedadDelEspacio(crm, id) {
-  const cond =
-    crm.tipo === "personal"
-      ? "p.publicado_por_id = $2 AND p.organizacion_id IS NULL"
-      : "p.organizacion_id = $2";
-  const { rows } = await pool.query(
-    `SELECT p.id, p.titulo, p.direccion, ci.name AS ciudad
-     FROM propiedades p LEFT JOIN cities ci ON ci.id = p.city_id
-     WHERE p.id = $1 AND ${cond}`,
-    [id, crm.tipo === "personal" ? crm.usuarioId : crm.organizacionId],
-  );
-  if (!rows[0]) throw noEncontrado("Inmueble no encontrado en este espacio.");
-  return rows[0];
+  const p = await propiedadEnEspacio(pool, crm, id);
+  if (!p) throw noEncontrado("Inmueble no encontrado en este espacio.");
+  return p;
 }
 
 async function oportunidadDelEspacio(crm, id) {

@@ -3,6 +3,7 @@ import { pool } from "../db.js";
 import {
   duenoEspacio as duenoCols,
   normalizarTelefonoCO,
+  propiedadEnEspacio,
   resolverAsignado,
   whereEspacioPropio,
   wherePropiedadesVisibles,
@@ -403,6 +404,9 @@ export const crearActividad = async (req, res) => {
     if (errores.length > 0) return res.status(400).json({ success: false, error: errores });
     const contacto = await contactoEnEspacio(crm, req.body.contacto_id);
     if (!contacto) return res.status(404).json({ success: false, error: "Contacto no encontrado." });
+    if (req.body.propiedad_id != null && !(await propiedadEnEspacio(pool, crm, req.body.propiedad_id))) {
+      return res.status(404).json({ success: false, error: "Inmueble no encontrado en este espacio." });
+    }
     const dueno = duenoCols(crm);
     const { rows } = await pool.query(
       `INSERT INTO crm_actividades

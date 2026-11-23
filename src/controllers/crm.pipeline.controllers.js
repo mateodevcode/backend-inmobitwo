@@ -1,6 +1,6 @@
 // src/controllers/crm.pipeline.controllers.js — etapas y oportunidades
 import { pool } from "../db.js";
-import { duenoEspacio as duenoCols, resolverAsignado, whereEspacioPropio } from "../lib/crmPermisos.js";
+import { duenoEspacio as duenoCols, propiedadEnEspacio, resolverAsignado, whereEspacioPropio } from "../lib/crmPermisos.js";
 import { HttpError } from "../lib/errores.js";
 
 const ETAPAS_SEED = [
@@ -257,6 +257,9 @@ export const crearOportunidad = async (req, res) => {
       [...cBase.params, contacto_id],
     );
     if (!cs[0]) return res.status(404).json({ success: false, error: "Contacto no encontrado." });
+    if (propiedad_id != null && !(await propiedadEnEspacio(pool, crm, propiedad_id))) {
+      return res.status(404).json({ success: false, error: "Inmueble no encontrado en este espacio." });
+    }
 
     const etapa = etapas.find((e) => Number(e.id) === Number(etapa_id)) ?? etapas.find((e) => e.tipo === "abierta");
     if (!etapa) return res.status(400).json({ success: false, error: "No hay etapas abiertas." });
@@ -308,6 +311,9 @@ export const actualizarOportunidad = async (req, res) => {
   try {
     const actual = await oportunidadEnEspacio(req.crm, req.params.id);
     if (!actual) return res.status(404).json({ success: false, error: "Oportunidad no encontrada." });
+    if (req.body.propiedad_id != null && !(await propiedadEnEspacio(pool, req.crm, req.body.propiedad_id))) {
+      return res.status(404).json({ success: false, error: "Inmueble no encontrado en este espacio." });
+    }
     const sets = ["updated_at = now()"];
     const params = [];
     const put = (col, val) => {
