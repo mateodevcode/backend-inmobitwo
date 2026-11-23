@@ -8,8 +8,12 @@ export function errorHandler(err, req, res, next) {
     return res.status(413).json({
       success: false,
       error:
-        "Esta imagen pesa demasiado (máx. 15MB). Cámbiala o redúcela e inténtalo de nuevo.",
+        "Esta imagen pesa demasiado (máx. 10MB). Cámbiala o redúcela e inténtalo de nuevo.",
     });
+  }
+  // Resto de límites de Multer (demasiados archivos, campo inesperado…): 400.
+  if (err.name === "MulterError") {
+    return res.status(400).json({ success: false, error: "Archivos no válidos o demasiados archivos." });
   }
 
   const status = err.status || err.statusCode || 500;

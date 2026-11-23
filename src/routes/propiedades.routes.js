@@ -29,7 +29,7 @@ import {
 import { createRateLimitMiddleware, createRateLimiter, defaultLimiter } from "../lib/rateLimit.js";
 import { ipReal } from "../lib/ipReal.js";
 import { requiereVistas } from "../lib/validarSecretos.js";
-import { upload } from "../lib/multer.js";
+import { exigirImagenesReales, upload } from "../lib/multer.js";
 import { verificarToken, verificarRol, verificarTokenOpcional } from "../middleware/auth.middleware.js";
 
 const router = Router();
@@ -43,11 +43,12 @@ const rateLimit = createRateLimitMiddleware(defaultLimiter);
 const viewTokenLimiter = createRateLimiter(30, 60000, 300, (req) => ipReal(req), "view-token");
 const rateLimitViewToken = createRateLimitMiddleware(viewTokenLimiter);
 
-const uploadFields = upload.fields([
+// Multer + comprobación de que cada archivo es de verdad una imagen (N-17).
+const uploadFields = [upload.fields([
   { name: "imagenPrincipal", maxCount: 1 },
   { name: "galeria", maxCount: 20 },
   { name: "planos", maxCount: 20 },
-]);
+]), exigirImagenesReales];
 
 const ruta = "/propiedades";
 
