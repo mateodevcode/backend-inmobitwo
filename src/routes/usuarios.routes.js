@@ -19,7 +19,7 @@ import {
   verificarToken,
   verificarRol,
 } from "../middleware/auth.middleware.js";
-import { upload } from "../lib/multer.js";
+import { exigirImagenesReales, upload } from "../lib/multer.js";
 import {
   enviarCodigoVerificacion,
   confirmarCodigoVerificacion,
@@ -33,10 +33,11 @@ const rateLimitVerificacionCodigo = createRateLimitMiddleware(
   verificacionCodigoLimiter,
 );
 
-const uploadFields = upload.fields([
+// Multer + comprobación de que cada archivo es de verdad una imagen (N-17).
+const uploadFields = [upload.fields([
   { name: "imagenPrincipal", maxCount: 1 },
   { name: "galeria", maxCount: 20 },
-]);
+]), exigirImagenesReales];
 
 const ruta = "/usuarios";
 const propio = soloPropioOSuperadmin("id");

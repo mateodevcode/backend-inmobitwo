@@ -24,6 +24,25 @@ export function detectarTipoDocumento(buffer) {
   return f ? { mime: f.mime, ext: f.ext } : null;
 }
 
+// Fotos públicas (anuncios, avatares): JPG, PNG, WEBP, AVIF o GIF por sus
+// bytes. Nunca SVG ni nada que un navegador pueda ejecutar.
+const FIRMAS_IMAGEN = [
+  ...FIRMAS.filter((f) => f.mime.startsWith("image/")),
+  {
+    mime: "image/avif",
+    ext: "avif",
+    ok: (b) => b.subarray(4, 8).toString("latin1") === "ftyp" && ["avif", "avis"].includes(b.subarray(8, 12).toString("latin1")),
+  },
+  { mime: "image/gif", ext: "gif", ok: (b) => ["GIF87a", "GIF89a"].includes(b.subarray(0, 6).toString("latin1")) },
+];
+
+// → { mime, ext } o null.
+export function detectarTipoImagen(buffer) {
+  if (!Buffer.isBuffer(buffer) || buffer.length < 12) return null;
+  const f = FIRMAS_IMAGEN.find((x) => x.ok(buffer));
+  return f ? { mime: f.mime, ext: f.ext } : null;
+}
+
 // Nombre seguro para mostrar y para Content-Disposition: sin rutas, sin
 // caracteres de control ni comillas, máximo 150 caracteres.
 export function nombreArchivoSeguro(nombre, ext) {
