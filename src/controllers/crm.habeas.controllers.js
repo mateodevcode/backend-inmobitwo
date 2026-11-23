@@ -148,10 +148,10 @@ const supresionSchema = z.object({
 // avisos que lo nombran. Las captaciones quedan sin propietario (el contrato
 // del inmueble sigue siendo de la inmobiliaria). Irreversible.
 export const suprimirContacto = async (req, res) => {
-  const { id } = validar(idSchema, req.params);
-  const d = validar(supresionSchema, req.body);
   const crm = req.crm;
   if (!puedeGestionarDatos(crm)) throw prohibido("Solo un administrador de la inmobiliaria puede suprimir datos.");
+  const { id } = validar(idSchema, req.params);
+  const d = validar(supresionSchema, req.body);
 
   const client = await pool.connect();
   try {

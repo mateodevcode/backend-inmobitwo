@@ -1,6 +1,7 @@
 // src/controllers/crm.pipeline.controllers.js — etapas y oportunidades
 import { pool } from "../db.js";
-import { duenoEspacio as duenoCols, whereEspacioPropio } from "../lib/crmPermisos.js";
+import { duenoEspacio as duenoCols, resolverAsignado, whereEspacioPropio } from "../lib/crmPermisos.js";
+import { HttpError } from "../lib/errores.js";
 
 const ETAPAS_SEED = [
   { nombre: "Prospecto", color: "#64748b", probabilidad_default: 10, tipo: "abierta" },
@@ -264,7 +265,7 @@ export const crearOportunidad = async (req, res) => {
       "SELECT COALESCE(MAX(posicion), -1)::int AS m FROM crm_oportunidades WHERE etapa_id = $1 AND estado = 'abierta'",
       [etapa.id],
     );
-    const asignado = crm.tipo === "org" && crm.rolEnOrg === "agent" ? crm.usuarioId : (req.body.asignado_a_id ?? crm.usuarioId);
+    const asignado = await resolverAsignado(pool, crm, req.body.asignado_a_id, crm.usuarioId);
     const d = duenoCols(crm);
     const { rows } = await pool.query(
       `INSERT INTO crm_oportunidades
@@ -286,6 +287,7 @@ export const crearOportunidad = async (req, res) => {
     );
     return res.status(201).json({ success: true, data: rows[0] });
   } catch (error) {
+    if (error instanceof HttpError) return res.status(error.status).json({ success: false, error: error.error });
     return res.status(500).json({ success: false, error: error.message });
   }
 };

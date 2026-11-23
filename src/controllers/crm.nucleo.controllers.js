@@ -3,9 +3,11 @@ import { pool } from "../db.js";
 import {
   duenoEspacio as duenoCols,
   normalizarTelefonoCO,
+  resolverAsignado,
   whereEspacioPropio,
   wherePropiedadesVisibles,
 } from "../lib/crmPermisos.js";
+import { HttpError } from "../lib/errores.js";
 import { siguienteAgente } from "../lib/equipo/reparto.js";
 import { notificar } from "../lib/notificaciones.js";
 import { camposRectificados, registrarAuditoria } from "../lib/habeasData.js";
@@ -130,9 +132,8 @@ export const crearContacto = async (req, res) => {
       return res.status(409).json({ success: false, error: "Ya existe un contacto con ese correo o teléfono.", data: dup });
     }
 
-    // Agent crea asignado a sí mismo; admin/personal según lo enviado.
-    let asignado = valores.asignado_a_id ?? null;
-    if (crm.tipo === "org" && crm.rolEnOrg === "agent") asignado = crm.usuarioId;
+    // Agent crea asignado a sí mismo; admin, a un miembro activo (o sin asignar).
+    const asignado = await resolverAsignado(pool, crm, valores.asignado_a_id, null);
 
     const dueno = duenoCols(crm);
     const { rows } = await pool.query(
@@ -165,6 +166,7 @@ export const crearContacto = async (req, res) => {
     if (error.code === "23505") {
       return res.status(409).json({ success: false, error: "Ya existe un contacto con ese correo o teléfono." });
     }
+    if (error instanceof HttpError) return res.status(error.status).json({ success: false, error: error.error });
     return res.status(500).json({ success: false, error: error.message });
   }
 };
@@ -264,11 +266,13 @@ export const asignarContacto = async (req, res) => {
     if (crm.tipo !== "org" || crm.rolEnOrg !== "agency_admin") {
       return res.status(403).json({ success: false, error: "Solo un administrador puede reasignar." });
     }
+    // null = dejar sin asignar; si no, un miembro activo de la inmobiliaria.
+    const destino = await resolverAsignado(pool, crm, req.body.asignado_a_id, null);
     const base = whereEspacioPropio(crm, "c", 3);
     const { rows } = await pool.query(
       `UPDATE crm_contactos c SET asignado_a_id = $1, updated_at = now()
        WHERE c.id = $2 AND ${base.where} AND c.archivado_at IS NULL RETURNING c.*`,
-      [req.body.asignado_a_id ?? null, req.params.id, ...base.params],
+      [destino, req.params.id, ...base.params],
     );
     if (!rows[0]) return res.status(404).json({ success: false, error: "Contacto no encontrado." });
     if (rows[0].asignado_a_id) {
@@ -283,6 +287,7 @@ export const asignarContacto = async (req, res) => {
     }
     return res.status(200).json({ success: true, data: rows[0] });
   } catch (error) {
+    if (error instanceof HttpError) return res.status(error.status).json({ success: false, error: error.error });
     return res.status(500).json({ success: false, error: error.message });
   }
 };
@@ -498,8 +503,7 @@ export const crearTarea = async (req, res) => {
       const c = await contactoEnEspacio(crm, contactoId);
       if (!c) return res.status(404).json({ success: false, error: "Contacto no encontrado." });
     }
-    let asignado = req.body.asignado_a_id ?? crm.usuarioId;
-    if (crm.tipo === "org" && crm.rolEnOrg === "agent") asignado = crm.usuarioId;
+    const asignado = await resolverAsignado(pool, crm, req.body.asignado_a_id, crm.usuarioId);
 
     const dueno = duenoCols(crm);
     const { rows } = await pool.query(
@@ -531,6 +535,7 @@ export const crearTarea = async (req, res) => {
     }
     return res.status(201).json({ success: true, data: rows[0] });
   } catch (error) {
+    if (error instanceof HttpError) return res.status(error.status).json({ success: false, error: error.error });
     return res.status(500).json({ success: false, error: error.message });
   }
 };
@@ -596,9 +601,14 @@ export const reasignarMasivo = async (req, res) => {
     if (crm.tipo !== "org" || crm.rolEnOrg !== "agency_admin") {
       return res.status(403).json({ success: false, error: "Solo un administrador puede reasignar." });
     }
-    const { desde_id, hacia_id } = req.body;
-    if (!Number.isInteger(Number(desde_id)) || !Number.isInteger(Number(hacia_id))) {
+    const desde_id = Number(req.body.desde_id);
+    if (!Number.isInteger(desde_id) || desde_id <= 0 || req.body.hacia_id == null || req.body.hacia_id === "") {
       return res.status(400).json({ success: false, error: "desde_id y hacia_id son requeridos." });
+    }
+    // El origen puede ser un exmiembro (se va un agente); el destino, solo un miembro activo.
+    const hacia_id = await resolverAsignado(client, crm, req.body.hacia_id);
+    if (hacia_id === desde_id) {
+      return res.status(400).json({ success: false, error: "Elige un agente distinto como destino." });
     }
     await client.query("BEGIN");
     const contactos = await client.query(
@@ -632,6 +642,7 @@ export const reasignarMasivo = async (req, res) => {
     });
   } catch (error) {
     await client.query("ROLLBACK");
+    if (error instanceof HttpError) return res.status(error.status).json({ success: false, error: error.error });
     return res.status(500).json({ success: false, error: error.message });
   } finally {
     client.release();

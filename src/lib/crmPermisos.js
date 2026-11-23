@@ -1,4 +1,5 @@
 // src/lib/crmPermisos.js — visibilidad por espacio (personal | org).
+import { solicitudInvalida } from "./errores.js";
 //
 // Regla SQL: los nombres de columna/alias que se interpolan en las consultas
 // del CRM NUNCA vienen del usuario. Se validan con identificadorSql() y la
@@ -94,6 +95,28 @@ export function whereEspacioPropio(crm, alias = "c", startIndex = 1) {
     params: [crm.organizacionId, crm.usuarioId],
     nextIndex: startIndex + 2,
   };
+}
+
+// Responsable de un registro nuevo o reasignado (contacto, tarea, oportunidad).
+// - Personal: solo uno mismo (o porDefecto si no se pide nada).
+// - Agente de una org: siempre él mismo.
+// - Admin de una org: el pedido, que debe ser miembro activo de la org; sin
+//   pedido, porDefecto. Así nadie asigna ni avisa a usuarios ajenos.
+// Lanza HttpError 400 si el id no es válido o no es miembro activo.
+export async function resolverAsignado(db, crm, solicitado, porDefecto = null) {
+  const sinPedido = solicitado === undefined || solicitado === null || solicitado === "";
+  if (crm.tipo === "org" && crm.rolEnOrg !== "agency_admin") return crm.usuarioId;
+  if (sinPedido) return porDefecto;
+  if (crm.tipo === "personal") return crm.usuarioId;
+  const id = Number(solicitado);
+  if (!Number.isInteger(id) || id <= 0) throw solicitudInvalida("asignado_a_id inválido.");
+  const { rows } = await db.query(
+    `SELECT 1 FROM organizacion_miembros
+     WHERE usuario_id = $1 AND organizacion_id = $2 AND estado = 'activo'`,
+    [id, crm.organizacionId],
+  );
+  if (!rows[0]) throw solicitudInvalida("El agente no es miembro activo de la inmobiliaria.");
+  return id;
 }
 
 // Normalización de teléfono colombiano: 10 dígitos desde 3.
