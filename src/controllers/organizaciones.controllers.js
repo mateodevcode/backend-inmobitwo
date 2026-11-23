@@ -2,7 +2,10 @@ import { pool } from "../db.js";
 import { esDominioValido, normalizarDominio } from "../lib/dominio.js";
 import { organizacion_validate } from "../validations/organizacion_validate.js";
 import { selectFields } from "../lib/fieldSelection.helper.js";
-import { CAMPOS_ORGANIZACION } from "../constants/api/fields.js";
+import { CAMPOS_ORGANIZACION, organizacionPublica } from "../constants/api/fields.js";
+
+// Tope del listado público (N-08: antes devolvía todas las filas).
+const LIMITE_PUBLICAS = 500;
 
 // ────────────────────────────────────────────────────────────────
 // Helper: genera un slug a partir del nombre y garantiza que sea único
@@ -90,12 +93,13 @@ export const getOrganizaciones = async (req, res) => {
 export const getOrganizacionesPublicas = async (req, res) => {
   try {
     const { rows } = await pool.query(
-      "SELECT * FROM organizaciones WHERE estado = 'aprobada' ORDER BY created_at DESC",
+      "SELECT * FROM organizaciones WHERE estado = 'aprobada' ORDER BY created_at DESC LIMIT $1",
+      [LIMITE_PUBLICAS],
     );
     res.status(200).json({
       success: true,
       message: "Organizaciones públicas obtenidas correctamente.",
-      data: rows,
+      data: rows.map(organizacionPublica),
     });
   } catch (error) {
     res.status(500).json({
@@ -170,7 +174,7 @@ export const getOrganizacionBySlug = async (req, res) => {
     res.status(200).json({
       success: true,
       message: "Organización obtenida correctamente.",
-      data: organizacion,
+      data: organizacionPublica(organizacion),
     });
   } catch (error) {
     res.status(500).json({
@@ -192,7 +196,7 @@ export const resolveTenant = async (req, res) => {
     message: req.tenant
       ? "Tenant resuelto."
       : "No hay organización asociada a este host.",
-    data: req.tenant,
+    data: organizacionPublica(req.tenant),
   });
 };
 
@@ -269,8 +273,12 @@ export const createOrganizacion = async (req, res) => {
 export const getOrganizacionById = async (req, res) => {
   try {
     const { id } = req.params;
+    if (!/^\d+$/.test(String(id))) {
+      return res.status(404).json({ success: false, error: "organización no encontrada" });
+    }
+    // Público: solo aprobadas (N-08: antes enumeraba pendientes y suspendidas).
     const { rows } = await pool.query(
-      "SELECT * FROM organizaciones WHERE id = $1",
+      "SELECT * FROM organizaciones WHERE id = $1 AND estado = 'aprobada'",
       [id],
     );
     const organizacion = rows[0];
@@ -285,7 +293,7 @@ export const getOrganizacionById = async (req, res) => {
     res.status(200).json({
       success: true,
       message: "organización obtenida correctamente.",
-      data: organizacion,
+      data: organizacionPublica(organizacion),
     });
   } catch (error) {
     res.status(500).json({

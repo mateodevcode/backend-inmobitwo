@@ -11,9 +11,11 @@ import { cacheGet } from "./redis.js";
 
 const NOMINATIM_BASE_URL = "https://nominatim.openstreetmap.org/search";
 
-// ⚠️ Cambia esto por el nombre real de tu app y un contacto válido,
-// Nominatim lo exige en su política de uso (https://operations.osmfoundation.org/policies/nominatim/)
-const USER_AGENT = "InmobiTwo/1.0 (mateodevcode@gmail.com)"; // mateo@seventwo.tech
+// Nominatim exige identificar la app con un contacto (política de uso:
+// https://operations.osmfoundation.org/policies/nominatim/). El contacto va en
+// la variable GEOCODE_CONTACT, no en el código (auditoría N-36).
+const USER_AGENT = `InmobiTwo/1.0 (${process.env.GEOCODE_CONTACT || "https://inmobitwo.seventwo.tech"})`;
+const TIMEOUT_MS = 8000;
 
 const CACHE_TTL_SECONDS = 60 * 60 * 24; // 24 horas
 
@@ -28,6 +30,7 @@ export async function geocodeAddress(address) {
     url.searchParams.set("addressdetails", "1");
 
     const response = await fetch(url.toString(), {
+      signal: AbortSignal.timeout(TIMEOUT_MS),
       headers: {
         "User-Agent": USER_AGENT,
         "Accept-Language": "es",

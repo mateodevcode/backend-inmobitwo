@@ -5,6 +5,14 @@ import OpenAI from "openai";
 import { pool } from "../db.js";
 import { DEEPSEEK_API_KEY, DEEPSEEK_BASE_URL } from "../config.js";
 import { construirPrompt } from "../lib/promptBuilder.js";
+import { sanitizarHtml } from "../lib/sanitizarHtml.js";
+
+// Auditoría N-20: el texto del usuario puede llevar instrucciones para la IA.
+// Se limita lo que entra y todo lo que sale pasa por la misma lista blanca
+// que las descripciones guardadas, así un HTML inyectado nunca llega al cliente.
+const MAX_ENTRADA = 6000;
+const salidaSegura = (texto) => sanitizarHtml(String(texto ?? "")).trim();
+const entradaValida = (texto) => typeof texto === "string" && texto.trim() && texto.length <= MAX_ENTRADA;
 
 const deepseek = new OpenAI({
   apiKey: DEEPSEEK_API_KEY,
@@ -111,21 +119,21 @@ export const generarDescripcion = async (req, res) => {
           {
             id: "moderno",
             nombre: "Moderno y Directo",
-            descripcion: generado.formato_moderno,
+            descripcion: salidaSegura(generado.formato_moderno),
             caracteristicas:
               "Corto, escaneable, bullets limpios, ideal para profesionales y búsquedas rápidas",
           },
           {
             id: "narrativo",
             nombre: "Narrativo y Emocional",
-            descripcion: generado.formato_narrativo,
+            descripcion: salidaSegura(generado.formato_narrativo),
             caracteristicas:
               "Historia, sensaciones, emocional, ideal para familias o primer comprador",
           },
           {
             id: "tecnico",
             nombre: "Técnico y Detallado",
-            descripcion: generado.formato_tecnico,
+            descripcion: salidaSegura(generado.formato_tecnico),
             caracteristicas:
               "Especificaciones, medidas, financiero, ideal para inversionistas o compradores técnicos",
           },
@@ -150,10 +158,10 @@ export const refinarDescripcion = async (req, res) => {
   try {
     const { descripcion, tone, formato } = req.body;
 
-    if (!descripcion || !tone) {
+    if (!entradaValida(descripcion) || typeof tone !== "string" || tone.length > 50) {
       return res.status(400).json({
         success: false,
-        error: "Descripción y tono son requeridos.",
+        error: `Descripción (máx. ${MAX_ENTRADA} caracteres) y tono son requeridos.`,
       });
     }
 
@@ -201,7 +209,7 @@ Nunca uses emojis.
       max_tokens: 1500,
     });
 
-    const descripcionRefinada = response.choices[0].message.content.trim();
+    const descripcionRefinada = salidaSegura(response.choices[0].message.content);
 
     res.json({
       success: true,
@@ -229,10 +237,10 @@ export const mejorarDescripcion = async (req, res) => {
   try {
     const { descripcion, aspectos } = req.body;
 
-    if (!descripcion) {
+    if (!entradaValida(descripcion) || (aspectos != null && (!Array.isArray(aspectos) || aspectos.length > 10))) {
       return res.status(400).json({
         success: false,
-        error: "Descripción es requerida.",
+        error: `Descripción requerida (máx. ${MAX_ENTRADA} caracteres).`,
       });
     }
 
@@ -275,7 +283,7 @@ Responde SOLO con la descripción mejorada.
       max_tokens: 1500,
     });
 
-    const descripcionMejorada = response.choices[0].message.content.trim();
+    const descripcionMejorada = salidaSegura(response.choices[0].message.content);
 
     res.json({
       success: true,

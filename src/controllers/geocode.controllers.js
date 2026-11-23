@@ -3,10 +3,10 @@ import { geocodeAddress } from "../lib/geocode.js";
 export const getGeocode = async (req, res) => {
   const { address } = req.query;
 
-  if (!address || address.trim().length < 5) {
+  if (typeof address !== "string" || address.trim().length < 5 || address.length > 200) {
     return res.status(400).json({
       success: false,
-      message: "address es requerido (mínimo 5 caracteres)",
+      message: "address es requerido (entre 5 y 200 caracteres)",
       data: null,
       error: null,
     });
@@ -31,7 +31,7 @@ export const getGeocode = async (req, res) => {
       success: false,
       message: "Error al consultar el servicio de geocodificación",
       data: null,
-      error: error.message,
+      error: null,
     });
   }
 };

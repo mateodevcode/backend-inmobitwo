@@ -111,13 +111,15 @@ router.get(
   getPropiedadesByOrganizacion,
 );
 
-// Algoritmo de precio sugerido (servicio independiente, antes de rutas :id)
+// Algoritmo de precio sugerido (servicio independiente, antes de rutas :id).
+// Solo con sesión: lo usan el asistente de publicar y Mis anuncios (auditoría N-37).
 router.post(
   `${ruta}/calcular-precio-sugerido`,
+  verificarToken,
   rateLimit,
   calcularPrecioSugeridoPropiedad,
 );
-router.post(`${ruta}/validar-precio`, rateLimit, validarPrecioPropiedad);
+router.post(`${ruta}/validar-precio`, verificarToken, rateLimit, validarPrecioPropiedad);
 
 // 4. OFERTAS POR OPERACIÓN (antes de :id para evitar colisiones de tipos)
 router.get(`${ruta}/:id/ofertas`, verificarToken, rateLimit, getOfertasPropiedad);

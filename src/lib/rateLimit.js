@@ -65,3 +65,6 @@ export const verificacionCodigoLimiter = createRateLimiter(5, 10 * 60000);
 export const passwordLimiter = createRateLimiter(5, 15 * 60000, 5, null, "password");
 // check-email: 20/min por IP (evita enumerar cuentas).
 export const checkEmailLimiter = createRateLimiter(20, 60000, 20, null, "check-email");
+// Geocodificación (proxy a Nominatim, público por los mapas): 20/min por IP,
+// 60/min con sesión (auditoría N-11).
+export const geocodeLimiter = createRateLimiter(20, 60000, 60, null, "geocode");

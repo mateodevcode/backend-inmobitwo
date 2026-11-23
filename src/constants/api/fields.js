@@ -145,7 +145,31 @@ export const CAMPOS_ORGANIZACION = {
   ],
   default: ["id", "nombre", "slug", "logo_url", "ciudad", "departamento", "telefono"],
   sensitive: ["creada_por_id"],
+  // Lo único que ven los endpoints públicos (listado, slug, id, resolve-tenant). Auditoría N-08.
+  publicos: [
+    "id",
+    "nombre",
+    "email",
+    "telefono",
+    "website",
+    "descripcion",
+    "logo_url",
+    "ciudad",
+    "departamento",
+    "slug",
+    "tema",
+    "custom_domain",
+    "created_at",
+  ],
 };
+
+// Fila de organización → solo campos públicos. El dominio propio solo si está activo.
+export function organizacionPublica(org) {
+  if (!org) return null;
+  const out = Object.fromEntries(CAMPOS_ORGANIZACION.publicos.map((c) => [c, org[c] ?? null]));
+  if (org.dominio_estado !== "activo") out.custom_domain = null;
+  return out;
+}
 
 export const CAMPOS_MIEMBRO = {
   permitidos: [
