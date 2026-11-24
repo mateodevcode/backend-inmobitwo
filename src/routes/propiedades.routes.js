@@ -11,7 +11,6 @@ import {
   countPropiedadesMisAnuncios,
   getPropiedadesByOrganizacion,
   getPropertiesBySlugs,
-  getInmueblesEnBbox,
   getMapaInmuebles,
   getPropiedadResumen,
   getHistorialPrecios,
@@ -75,9 +74,6 @@ router.get(`${ruta}/search-slugs`, verificarTokenOpcional, rateLimit, getPropert
 
 // Búsqueda por múltiples tipos de vivienda (agrupados)
 router.get(`${ruta}/search-vivienda`, verificarTokenOpcional, rateLimit, searchVivienda);
-
-// Búsqueda por bounding box (MapaInmuebles)
-router.get(`${ruta}/inmuebles-en-bbox`, verificarTokenOpcional, rateLimit, getInmueblesEnBbox);
 
 // Mapa de inmuebles: puntos livianos o grupos en rejilla según la cantidad
 router.get(`${ruta}/mapa`, verificarTokenOpcional, rateLimitMapa, getMapaInmuebles);

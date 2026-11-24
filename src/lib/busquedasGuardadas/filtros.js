@@ -5,6 +5,7 @@
 import crypto from "node:crypto";
 import { pool } from "../../db.js";
 import { buildTipoFilter, esTipoVacacional } from "../propertyFilters.js";
+import { leerZonas, filtroZonasSQL } from "../zonas.js";
 
 // Parámetros que el FE envía a /propiedades/search-slugs
 // (fecha se EXCLUYE a propósito: es relativo y no tiene sentido en una alerta)
@@ -13,9 +14,13 @@ const CLAVES_PERMITIDAS = [
   "min", "max", "tamMin", "tamMax",
   "tipos", "rental", "anunciante", "multimedia",
   "hab", "banos", "estado", "caract",
+  // Varias zonas del mapa ("municipio:11001,barrio:…"); reemplaza a dept/city.
+  "zonas",
 ];
 
-const CLAVES_LISTA = ["tipos", "rental", "hab", "banos", "estado", "caract", "multimedia"];
+// Listas: se ordenan sin duplicados y NO se pasan a minúsculas (los códigos
+// de barrio pueden traer letras y se comparan tal cual).
+const CLAVES_LISTA = ["tipos", "rental", "hab", "banos", "estado", "caract", "multimedia", "zonas"];
 
 const toList = (v) =>
   (Array.isArray(v) ? v : String(v).split(","))
@@ -41,7 +46,15 @@ export function normalizarFiltros(raw = {}) {
 export function validarFiltros(f) {
   const errores = [];
   if (!f.operation) errores.push("Falta la operación (venta/alquiler).");
-  if (!f.dept) errores.push("Falta el departamento.");
+  if (f.zonas) {
+    try {
+      leerZonas(f.zonas);
+    } catch (e) {
+      errores.push(e.message);
+    }
+  } else if (!f.dept) {
+    errores.push("Falta el departamento.");
+  }
   if (!f.type && !f.tipos) errores.push("Falta el tipo de inmueble.");
   return errores;
 }
@@ -125,9 +138,12 @@ export async function construirWhereBusqueda(f, params) {
   tipoParams.forEach((t) => params.push(t));
   if (tipoSql) where.push(tipoSql);
 
-  // zona: (ciudad+depto) o depto con guion (city-dept), o depto, o región.
+  // zona: varias zonas del mapa (mismo filtro que /api/inmuebles-en-zonas),
+  // o (ciudad+depto) o depto con guion (city-dept), o depto, o región.
   // El controlador las prueba en ese orden; aquí van en OR (mismo resultado).
-  if (f.city) {
+  if (f.zonas) {
+    where.push(filtroZonasSQL(leerZonas(f.zonas), params, "p"));
+  } else if (f.city) {
     const cSlug = push(f.city);
     const sSlug = push(f.dept);
     const fullSlug = push(`${f.city}-${f.dept}`);
