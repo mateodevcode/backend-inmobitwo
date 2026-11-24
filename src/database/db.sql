@@ -2281,7 +2281,9 @@ CREATE TABLE IF NOT EXISTS crm_notificaciones (
     clave VARCHAR(200),
     actor_id INTEGER REFERENCES usuarios(id) ON DELETE SET NULL,
     leida_at TIMESTAMPTZ,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    -- 030: cuándo salió en el resumen por correo (NULL = pendiente).
+    correo_enviado_at TIMESTAMPTZ
 );
 
 CREATE UNIQUE INDEX IF NOT EXISTS uq_crm_notificaciones_clave
@@ -2290,6 +2292,16 @@ CREATE INDEX IF NOT EXISTS idx_crm_notificaciones_usuario
     ON crm_notificaciones (usuario_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_crm_notificaciones_no_leidas
     ON crm_notificaciones (usuario_id, organizacion_id) WHERE leida_at IS NULL;
+CREATE INDEX IF NOT EXISTS idx_crm_notificaciones_correo_pendiente
+    ON crm_notificaciones (created_at)
+    WHERE correo_enviado_at IS NULL AND leida_at IS NULL;
+
+-- 030 — Preferencias de avisos por correo (sin fila = recibir correo)
+CREATE TABLE IF NOT EXISTS crm_preferencias_avisos (
+    usuario_id INTEGER PRIMARY KEY REFERENCES usuarios(id) ON DELETE CASCADE,
+    correo BOOLEAN NOT NULL DEFAULT true,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
 
 -- ============================================================================
 -- 029 — Habeas Data: registro de auditoría (crm_auditoria_datos)

@@ -111,10 +111,12 @@ import {
   suprimirContacto,
 } from "../controllers/crm.habeas.controllers.js";
 import {
+  actualizarPreferencias,
   contadorNotificaciones,
   listarNotificaciones,
   marcarLeida,
   marcarTodasLeidas,
+  obtenerPreferencias,
 } from "../controllers/crm.notificaciones.controllers.js";
 import { uploadDocumento } from "../lib/multer.js";
 
@@ -237,6 +239,8 @@ router.post("/crm/importar/inmuebles", ...conEspacio, importarInmuebles);
 // Notificaciones dentro del CRM (del espacio activo)
 router.get("/crm/notificaciones", ...conEspacio, listarNotificaciones);
 router.get("/crm/notificaciones/contador", ...conEspacio, contadorNotificaciones);
+router.get("/crm/notificaciones/preferencias", ...conEspacio, obtenerPreferencias);
+router.put("/crm/notificaciones/preferencias", ...conEspacio, actualizarPreferencias);
 router.post("/crm/notificaciones/leer-todas", ...conEspacio, marcarTodasLeidas);
 router.post("/crm/notificaciones/:id/leida", ...conEspacio, marcarLeida);
 

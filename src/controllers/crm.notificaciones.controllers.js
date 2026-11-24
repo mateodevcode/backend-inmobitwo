@@ -3,6 +3,7 @@ import { z } from "zod";
 import { pool } from "../db.js";
 import { noEncontrado } from "../lib/errores.js";
 import { validar } from "../validations/visita.schema.js";
+import { guardarPreferenciasAvisos, leerPreferenciasAvisos } from "../lib/avisosCorreo.js";
 
 // Avisos del usuario en el espacio activo (personal = sin organización).
 function filtroEspacio(crm, alias = "n") {
@@ -76,4 +77,16 @@ export const marcarTodasLeidas = async (req, res) => {
     f.params,
   );
   res.json({ success: true, data: { marcadas: rowCount, ...(await contadores(req.crm)) } });
+};
+
+// ── GET /crm/notificaciones/preferencias ─────────────────────────
+// Por usuario (no por espacio): { correo }.
+export const obtenerPreferencias = async (req, res) => {
+  res.json({ success: true, data: await leerPreferenciasAvisos(req.crm.usuarioId) });
+};
+
+// ── PUT /crm/notificaciones/preferencias { correo: boolean } ─────
+export const actualizarPreferencias = async (req, res) => {
+  const d = validar(z.object({ correo: z.boolean({ message: "correo debe ser true o false." }) }).strict(), req.body);
+  res.json({ success: true, message: "Preferencias guardadas.", data: await guardarPreferenciasAvisos(req.crm.usuarioId, d) });
 };

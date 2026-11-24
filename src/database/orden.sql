@@ -40,6 +40,7 @@
 -- 027_crm_equipo.sql -> reparto de leads por turnos y metas mensuales (crm_reparto, crm_metas)
 -- 028_crm_notificaciones.sql -> avisos dentro del CRM (crm_notificaciones)
 -- 029_crm_auditoria_datos.sql -> Habeas Data: registro de auditoría (crm_auditoria_datos)
+-- 030_crm_avisos_correo.sql -> avisos del CRM por correo (correo_enviado_at + crm_preferencias_avisos)
 --
 -- NOTA: db.sql es la fuente de verdad única. Actualizarlo siempre al agregar
 --       catálogos, columnas o features nuevos.
