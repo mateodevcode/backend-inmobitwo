@@ -9,7 +9,6 @@ export {
   getPropiedadesByOrganizacion,
   getPropertiesBySlugs,
   searchVivienda,
-  getInmueblesEnBbox,
   getPropiedadResumen,
 } from "./propiedades/listado.controllers.js";
 export { getMapaInmuebles } from "./propiedades/mapa.controllers.js";

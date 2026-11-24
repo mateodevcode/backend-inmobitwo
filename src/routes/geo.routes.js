@@ -15,7 +15,7 @@ import {
   getInmueblesEnPoligono,
   getTituloSugerido,
 } from "../controllers/geo.controllers.js";
-import { getConteoZonas, getInmueblesEnZonas } from "../controllers/geo.zonas.controllers.js";
+import { getConteoZonas, getInmueblesEnZonas, getGeoJSONZonas } from "../controllers/geo.zonas.controllers.js";
 import { createRateLimitMiddleware, defaultLimiter } from "../lib/rateLimit.js";
 import { verificarTokenOpcional } from "../middleware/auth.middleware.js";
 
@@ -55,5 +55,6 @@ router.post("/inmuebles-en-poligono", verificarTokenOpcional, rateLimit, getInmu
 // Varias zonas a la vez ("Seleccionar en mapa"): conteo de la unión y listado
 router.post("/zonas/conteo", verificarTokenOpcional, rateLimit, getConteoZonas);
 router.post("/inmuebles-en-zonas", verificarTokenOpcional, rateLimit, getInmueblesEnZonas);
+router.post("/zonas/geojson", rateLimit, getGeoJSONZonas);
 
 export default router;

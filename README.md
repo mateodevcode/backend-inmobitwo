@@ -95,7 +95,7 @@ services/                 # rust-tracking-service, rust-media-service (el chat e
 |---|---|---|
 | Auth | `/auth/registro`, `/auth/login`, `/auth/refresh`, `/auth/logout`, `/auth/me`, `/auth/check-email` | Mixto (refresh/logout por cookie) |
 | Usuarios | `/usuarios` | JWT |
-| Propiedades | `/propiedades` (+ `/inicio`, `/search-*`, `/inmuebles-en-bbox`) | Mixto |
+| Propiedades | `/propiedades` (+ `/inicio`, `/search-*`, `/mapa`) | Mixto |
 | Organizaciones | `/organizaciones` (+ `/publicas`, `/slug/:slug`, `/resolve-tenant`, aprobar/suspender, dominio/activar…) | Mixto (`superadmin` para gestión) |
 | Miembros | `/organizaciones/:orgId/miembros`, `/organizaciones/miembros/:id` | JWT (`agency_admin` o `superadmin`) |
 | Favoritos | `/favoritos/toggle`, `/favoritos/mis-favoritos` | JWT |

@@ -4,7 +4,7 @@ import { cacheGet } from "../../lib/redis.js";
 import { tiempoRelativo } from "../../utils/tiempoRelativo.js";
 import { buildTipoFilter, esTipoVacacional } from "../../lib/propertyFilters.js";
 import { clausulaExcluirDescartados } from "../../utils/descartados.js";
-import { aplicarPrivacidadUbicacion, geomFiltroSQL } from "../../lib/ubicacion.service.js";
+import { aplicarPrivacidadUbicacion } from "../../lib/ubicacion.service.js";
 import { puedeGestionarPropiedad } from "../../lib/propiedadPermisos.js";
 import {
   portadaSubquery,
@@ -1190,119 +1190,6 @@ export const searchVivienda = async (req, res) => {
 };
 
 // NUEVO v3.6: Inmuebles dentro de un bounding box (para MapaInmuebles)
-export const getInmueblesEnBbox = async (req, res) => {
-  const { minLat, minLng, maxLat, maxLng, tipoInmueble } = req.query;
-  let { operation } = req.query;
-
-  if (!minLat || !minLng || !maxLat || !maxLng) {
-    return res.status(400).json({
-      success: false,
-      message: "minLat, minLng, maxLat, maxLng son requeridos",
-      data: null,
-      error: null,
-    });
-  }
-
-    try {
-      const params = [];
-      // UBICACIÓN OCULTA: el filtro espacial usa geom_publica para las propiedades
-      // ocultas (y geom real para el resto). Si geom_publica aún no existe
-      // (pago recién aprobado sin aplicar), no se muestra.
-      const filters = [
-        filtroPublicoSQL("p"),
-        `${geomFiltroSQL("p")} IS NOT NULL`,
-      ];
-
-    if (esTipoVacacional(tipoInmueble)) {
-      operation = "alquiler";
-    }
-
-    // params[0] se reservaba a la operación del espejo; la operación la filtra
-    // el JOIN a la oferta activa (ver abajo), así que no se envía parámetro.
-
-    // Fase 5: con filtro de operación, filtra el JOIN a la oferta activa
-    // (el espejo no sirve para "ambas"); sin filtro, valores del espejo.
-    let listingsJoinBbox = "";
-    let precioSelectBbox = "p.precio";
-    if (operation) {
-      const opIdBbox = await operationIdPorCode(operation);
-      if (!opIdBbox) {
-        return res.status(400).json({
-          success: false,
-          message: "Operación no válida.",
-          data: null,
-          error: null,
-        });
-      }
-      listingsJoinBbox = joinOfertaActiva(opIdBbox);
-      precioSelectBbox = "l.precio";
-    }
-
-    if (tipoInmueble) {
-      const { sql, params: tipoParams } = buildTipoFilter(tipoInmueble, {
-        alias: "p",
-        startIdx: params.length + 1,
-      });
-      tipoParams.forEach((t) => params.push(t));
-      if (sql) filters.push(sql);
-    }
-
-    // Excluye los descartados del usuario logueado (anónimos ven todo).
-    // Antes de los params del bbox para no desplazar sus índices.
-    const excluirBbox = clausulaExcluirDescartados(req.usuario?.id, params);
-    if (excluirBbox) filters.push(excluirBbox.replace(/^ AND /, ""));
-
-    params.push(minLng, minLat, maxLng, maxLat);
-    const bboxParamIdx = params.length - 3;
-
-    const query = `
-      SELECT p.id, p.titulo, ${precioSelectBbox} as precio, p.estrato,
-             ot.label_es as operacion, ot.code as operacion_slug,
-             pt.label_es as tipo_inmueble, pt.code as tipo_slug,
-             ${portadaSubquery("p")},
-             ${ofertasSubquery("p")},
-             ST_Y(${geomFiltroSQL("p")}) AS lat, ST_X(${geomFiltroSQL("p")}) AS lng
-      FROM propiedades p
-      LEFT JOIN operation_types ot ON p.operation_type_id = ot.id
-      LEFT JOIN property_types pt ON p.property_type_id = pt.id
-      ${listingsJoinBbox}
-      WHERE ST_Intersects(
-        ${geomFiltroSQL("p")},
-        ST_MakeEnvelope(
-          $${bboxParamIdx}::float,
-          $${bboxParamIdx + 1}::float,
-          $${bboxParamIdx + 2}::float,
-          $${bboxParamIdx + 3}::float,
-          4326
-        )
-      )
-      AND ${filters.join(" AND ")}
-      LIMIT 1000
-    `;
-
-    const { rows } = await pool.query(query, params);
-
-    res.json({
-      success: true,
-      message: null,
-      data: rows.map((r) => ({
-        ...r,
-        lat: parseFloat(r.lat),
-        lng: parseFloat(r.lng),
-      })),
-      error: null,
-    });
-  } catch (error) {
-    console.error("Error en getInmueblesEnBbox:", error);
-    res.status(500).json({
-      success: false,
-      message: "Error al obtener inmuebles",
-      data: null,
-      error: error.message,
-    });
-  }
-};
-
 export const getPropiedadResumen = async (req, res) => {
   const { id } = req.params;
 
