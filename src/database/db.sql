@@ -1447,9 +1447,13 @@ CREATE TABLE IF NOT EXISTS push_subscriptions (
   p256dh      TEXT NOT NULL,
   auth        TEXT NOT NULL,
   user_agent  TEXT,
-  created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  -- 031: aplicación desde la que se suscribió el navegador (portal | crm).
+  app         VARCHAR(10) NOT NULL DEFAULT 'portal'
+              CONSTRAINT push_subscriptions_app_check CHECK (app IN ('portal', 'crm'))
 );
 CREATE INDEX IF NOT EXISTS idx_push_subs_usuario ON push_subscriptions(usuario_id);
+CREATE INDEX IF NOT EXISTS idx_push_subs_usuario_app ON push_subscriptions (usuario_id, app);
 
 CREATE OR REPLACE FUNCTION fn_property_events_from_listings() RETURNS trigger AS $$
 BEGIN

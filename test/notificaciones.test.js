@@ -1,7 +1,7 @@
 // Servicio de avisos del CRM (sin BD: se usa un db falso).
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { destinatariosUnicos, fechaCortaBogota, notificar } from "../src/lib/notificaciones.js";
+import { destinatariosUnicos, fechaCortaBogota, notificar, payloadPush } from "../src/lib/notificaciones.js";
 
 const dbFalso = () => {
   const llamadas = [];
@@ -9,7 +9,9 @@ const dbFalso = () => {
     llamadas,
     query: async (sql, params) => {
       llamadas.push({ sql, params });
-      return { rowCount: params[0].length, rows: [] };
+      // INSERT … RETURNING usuario_id: una fila por destinatario creado.
+      const rows = params[0].map((usuario_id) => ({ usuario_id }));
+      return { rowCount: rows.length, rows };
     },
   };
 };
@@ -67,4 +69,20 @@ test("fechaCortaBogota usa la hora de Colombia", () => {
   const texto = fechaCortaBogota("2026-11-24T20:30:00Z");
   assert.match(texto, /24/);
   assert.match(texto, /3:30/);
+});
+
+test("el INSERT devuelve a quién se le creó el aviso (para el push)", async () => {
+  const db = dbFalso();
+  await notificar({ destinatarios: [3], tipo: "tarea_asignada", titulo: "x" }, db);
+  assert.match(db.llamadas[0].sql, /RETURNING usuario_id/);
+});
+
+test("payloadPush: lo que recibe el service worker del CRM", () => {
+  assert.deepEqual(payloadPush({ tipo: "tarea_asignada", titulo: "Nueva tarea", cuerpo: null, url: "/tareas" }), {
+    titulo: "Nueva tarea",
+    cuerpo: "",
+    url: "/tareas",
+    tag: "crm-tarea_asignada",
+  });
+  assert.equal(payloadPush({ tipo: "lead_nuevo", titulo: "x" }).url, "/notificaciones");
 });
