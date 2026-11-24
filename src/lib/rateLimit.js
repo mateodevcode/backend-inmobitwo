@@ -68,3 +68,6 @@ export const checkEmailLimiter = createRateLimiter(20, 60000, 20, null, "check-e
 // Geocodificación (proxy a Nominatim, público por los mapas): 20/min por IP,
 // 60/min con sesión (auditoría N-11).
 export const geocodeLimiter = createRateLimiter(20, 60000, 60, null, "geocode");
+// Mapa de inmuebles: cada paneo/zoom es una petición (con caché en el
+// cliente). Bucket propio para no gastar el límite general del portal.
+export const mapaLimiter = createRateLimiter(120, 60000, 300, null, "mapa");

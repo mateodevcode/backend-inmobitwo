@@ -12,6 +12,7 @@ import {
   getPropiedadesByOrganizacion,
   getPropertiesBySlugs,
   getInmueblesEnBbox,
+  getMapaInmuebles,
   getPropiedadResumen,
   getHistorialPrecios,
   getPropiedadCaracteristicas,
@@ -26,7 +27,7 @@ import {
   cambiarOperacionPropiedad,
   emitirTokenVista,
 } from "../controllers/propiedades.controllers.js";
-import { createRateLimitMiddleware, createRateLimiter, defaultLimiter } from "../lib/rateLimit.js";
+import { createRateLimitMiddleware, createRateLimiter, defaultLimiter, mapaLimiter } from "../lib/rateLimit.js";
 import { ipReal } from "../lib/ipReal.js";
 import { requiereVistas } from "../lib/validarSecretos.js";
 import { exigirImagenesReales, upload } from "../lib/multer.js";
@@ -35,6 +36,7 @@ import { verificarToken, verificarRol, verificarTokenOpcional } from "../middlew
 const router = Router();
 
 const rateLimit = createRateLimitMiddleware(defaultLimiter);
+const rateLimitMapa = createRateLimitMiddleware(mapaLimiter);
 
 // Emisor de tokens de vista (lote 3 punto 5): 30/min por IP real. Autenticados
 // 300/min por usuario (regla del limiter). Fail-open si Redis cae: bloquear
@@ -76,6 +78,9 @@ router.get(`${ruta}/search-vivienda`, verificarTokenOpcional, rateLimit, searchV
 
 // Búsqueda por bounding box (MapaInmuebles)
 router.get(`${ruta}/inmuebles-en-bbox`, verificarTokenOpcional, rateLimit, getInmueblesEnBbox);
+
+// Mapa de inmuebles: puntos livianos o grupos en rejilla según la cantidad
+router.get(`${ruta}/mapa`, verificarTokenOpcional, rateLimitMapa, getMapaInmuebles);
 
 // Resumen ligero de propiedad para PropertyCard
 router.get(`${ruta}/:id/resumen`, verificarTokenOpcional, rateLimit, getPropiedadResumen);
