@@ -5,6 +5,7 @@ import { tiempoRelativo } from "../../utils/tiempoRelativo.js";
 import { buildTipoFilter, esTipoVacacional } from "../../lib/propertyFilters.js";
 import { clausulaExcluirDescartados } from "../../utils/descartados.js";
 import { aplicarPrivacidadUbicacion, geomFiltroSQL } from "../../lib/ubicacion.service.js";
+import { puedeGestionarPropiedad } from "../../lib/propiedadPermisos.js";
 import {
   portadaSubquery,
   portadaPublicIdSubquery,
@@ -1317,18 +1318,28 @@ export const getPropiedadResumen = async (req, res) => {
   try {
       const { rows } = await pool.query(
         `SELECT
+          p.id, p.titulo, p.precio, p.estrato, p.estado AS estado_publicacion,
+          p.bedroom_count, p.constructed_area, p.private_area,
           p.latitude, p.longitude,
           p.ubicacion_oculta, p.publicado_por_id, p.organizacion_id,
           p.description_needs_review,
+          ${camposCatalogoSelect("p")},
+          ${portadaSubquery("p")},
           ${ofertasSubquery("p")},
           (SELECT COUNT(DISTINCT pg.orden) FROM propiedades_galeria pg WHERE pg.propiedad_id = p.id AND pg.es_portada = false)::int AS galeria_count,
           (SELECT COUNT(DISTINCT pp.orden) FROM propiedades_planos pp WHERE pp.propiedad_id = p.id)::int AS planos_count
         FROM propiedades p
+        ${joinsCatalogo("p")}
         WHERE p.id = $1`,
         [id],
       );
 
-    if (!rows.length) {
+    // Un borrador solo lo ve quien puede gestionarlo (igual que el detalle).
+    const borradorAjeno =
+      rows.length > 0 &&
+      rows[0].estado_publicacion !== "publicado" &&
+      !(await puedeGestionarPropiedad(req.usuario, rows[0]));
+    if (!rows.length || borradorAjeno) {
       return res.status(404).json({
         success: false,
         message: "Propiedad no encontrada",

@@ -12,6 +12,7 @@ export {
   getInmueblesEnBbox,
   getPropiedadResumen,
 } from "./propiedades/listado.controllers.js";
+export { getMapaInmuebles } from "./propiedades/mapa.controllers.js";
 export {
   getPropiedadesById,
   getHistorialPrecios,

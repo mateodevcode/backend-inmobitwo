@@ -1,6 +1,8 @@
 import { pool } from "../db.js";
 import { buildTipoFilter, esTipoVacacional } from "../lib/propertyFilters.js";
 import { aplicarPrivacidadUbicacion } from "../lib/ubicacion.service.js";
+import { filtroPublicoSQL } from "./propiedades/_comun.js";
+
 
 // GET /geo/titulo-sugerido?propertyTypeId=&cityId=&stateId=&direccion=&operacion=
 // Genera el título con el mismo formato que publicarAnuncios.
@@ -323,7 +325,7 @@ export const getStatesGeoJSON = async (_req, res) => {
   try {
     const { rows } = await pool.query(
       `SELECT name, dane_code, slug,
-              ST_AsGeoJSON(geom)::json AS geometry
+              ST_AsGeoJSON(ST_SimplifyPreserveTopology(geom, 0.003), 5)::json AS geometry
        FROM states
        WHERE geom IS NOT NULL
        ORDER BY name ASC`,
@@ -339,6 +341,7 @@ export const getStatesGeoJSON = async (_req, res) => {
       geometry: r.geometry,
     }));
 
+    res.set("Cache-Control", "public, max-age=86400");
     res.json({
       success: true,
       message: null,
@@ -371,7 +374,7 @@ export const getCitiesGeoJSON = async (req, res) => {
   try {
     const { rows } = await pool.query(
       `SELECT c.name, c.dane_code, c.slug, c.latitude, c.longitude,
-              ST_AsGeoJSON(c.geom)::json AS geometry
+              ST_AsGeoJSON(ST_SimplifyPreserveTopology(c.geom, 0.0007), 5)::json AS geometry
        FROM cities c
        INNER JOIN states s ON c.state_id = s.id
        WHERE s.dane_code = $1 AND c.geom IS NOT NULL
@@ -390,6 +393,7 @@ export const getCitiesGeoJSON = async (req, res) => {
       geometry: r.geometry,
     }));
 
+    res.set("Cache-Control", "public, max-age=86400");
     res.json({
       success: true,
       message: null,
@@ -411,7 +415,7 @@ export const getRegionsGeoJSON = async (_req, res) => {
   try {
     const { rows } = await pool.query(
       `SELECT name, slug,
-              ST_AsGeoJSON(geom)::json AS geometry
+              ST_AsGeoJSON(ST_SimplifyPreserveTopology(geom, 0.006), 5)::json AS geometry
        FROM regions
        WHERE geom IS NOT NULL
        ORDER BY name ASC`,
@@ -427,6 +431,7 @@ export const getRegionsGeoJSON = async (_req, res) => {
       geometry: r.geometry,
     }));
 
+    res.set("Cache-Control", "public, max-age=86400");
     res.json({
       success: true,
       message: null,
@@ -459,7 +464,7 @@ export const getBarrios = async (req, res) => {
   try {
     const { rows } = await pool.query(
       `SELECT b.name, b.dane_code, b.slug, b.latitude, b.longitude,
-              ST_AsGeoJSON(b.geom)::json AS geometry
+              ST_AsGeoJSON(ST_SimplifyPreserveTopology(b.geom, 0.00005), 6)::json AS geometry
        FROM barrios b
        INNER JOIN cities c ON b.city_id = c.id
        WHERE c.dane_code = $1
@@ -477,6 +482,7 @@ export const getBarrios = async (req, res) => {
       geometry: r.geometry,
     }));
 
+    res.set("Cache-Control", "public, max-age=86400");
     res.json({
       success: true,
       message: null,
@@ -497,9 +503,11 @@ export const getBarrios = async (req, res) => {
 // Filtros compartidos de anuncios publicados (estado + operación + tipo).
 // Usados por getGeoCount y getGeoCountBatch. Devuelve params/filters SQL con
 // placeholders $n consecutivos; el parámetro de zona se agrega después.
-function filtrosAnuncios({ operation, inmueble }) {
-  const params = [];
-  const filters = ["p.estado = 'publicado'"];
+export function filtrosAnuncios({ operation, inmueble }, paramsIniciales = []) {
+  const params = [...paramsIniciales];
+  // Mismo criterio que los listados públicos: publicado y con oferta activa
+  // (antes solo "publicado": el conteo del mapa incluía vendidos/pausados).
+  const filters = [filtroPublicoSQL("p")];
 
   let op = operation;
   if (esTipoVacacional(inmueble)) {
@@ -566,6 +574,18 @@ export const getGeoCount = async (req, res) => {
         FROM propiedades p
         INNER JOIN barrios b ON p.barrio_id = b.id
         WHERE b.dane_code = $${params.length} AND ${filterSQL}
+      `;
+    } else if (type === "region") {
+      // Regiones se identifican por slug (antes caían en el caso de
+      // departamento y siempre contaban 0).
+      params.push(daneCode);
+      query = `
+        SELECT COUNT(p.id)::int AS total
+        FROM propiedades p
+        INNER JOIN cities c ON p.city_id = c.id
+        INNER JOIN states s ON c.state_id = s.id
+        INNER JOIN regions r ON s.region_id = r.id
+        WHERE r.slug = $${params.length} AND ${filterSQL}
       `;
     } else {
       params.push(daneCode);
@@ -727,7 +747,7 @@ export const getLocationGeoJSON = async (req, res) => {
       params.push(city, dept);
       query = `
         SELECT c.name, c.slug, c.dane_code,
-               ST_AsGeoJSON(c.geom)::json AS geometry,
+               ST_AsGeoJSON(ST_SimplifyPreserveTopology(c.geom, 0.0005), 5)::json AS geometry,
                ST_XMin(c.geom) AS west, ST_YMin(c.geom) AS south,
                ST_XMax(c.geom) AS east, ST_YMax(c.geom) AS north
         FROM cities c
@@ -740,7 +760,7 @@ export const getLocationGeoJSON = async (req, res) => {
       params.push(dept);
       query = `
         SELECT name, slug, dane_code,
-               ST_AsGeoJSON(geom)::json AS geometry,
+               ST_AsGeoJSON(ST_SimplifyPreserveTopology(geom, 0.002), 5)::json AS geometry,
                ST_XMin(geom) AS west, ST_YMin(geom) AS south,
                ST_XMax(geom) AS east, ST_YMax(geom) AS north
         FROM states
@@ -752,7 +772,7 @@ export const getLocationGeoJSON = async (req, res) => {
       params.push(region);
       query = `
         SELECT r.name, r.slug,
-               COALESCE(ST_AsGeoJSON(r.geom)::json, NULL) AS geometry,
+               ST_AsGeoJSON(ST_SimplifyPreserveTopology(r.geom, 0.004), 5)::json AS geometry,
                ST_XMin(r.geom) AS west, ST_YMin(r.geom) AS south,
                ST_XMax(r.geom) AS east, ST_YMax(r.geom) AS north
         FROM regions r
@@ -787,6 +807,79 @@ export const getLocationGeoJSON = async (req, res) => {
     res.status(500).json({ success: false, message: "Error al obtener geometría de ubicación", data: null, error: error.message });
   }
 };
+
+// Columnas y joins del listado de inmuebles por área (polígono dibujado o
+// varias zonas). Mismo formato que consume ListadoDePropiedades.
+const SELECT_LISTADO_AREA = `SELECT
+         p.id, p.titulo, p.direccion, p.precio, p.estrato,
+         p.price_per_sqm, p.private_area, p.constructed_area,
+         p.bedroom_count, p.bathroom_count,
+         ot.label_es as operacion, ot.code as operacion_slug,
+         pt.label_es as tipo_inmueble, pt.code as tipo_slug,
+         p.ubicacion_oculta, p.publicado_por_id, p.organizacion_id,
+         (CASE WHEN p.ubicacion_oculta
+               THEN p.longitude_publica
+               ELSE p.longitude END)::float as longitude,
+         (CASE WHEN p.ubicacion_oculta
+               THEN p.latitude_publica
+               ELSE p.latitude END)::float as latitude,
+         p.es_de_organizacion,
+         COALESCE(
+           (SELECT pg.url FROM propiedades_galeria pg 
+            WHERE pg.propiedad_id = p.id AND pg.es_portada = true AND pg.tamaño = 'medium'
+            LIMIT 1),
+           NULL
+         ) AS imagen_principal_url,
+         COALESCE(
+           (SELECT json_agg(json_build_object(
+             'id', pg.id,
+             'url', pg.url,
+             'orden', pg.orden,
+             'tamaño', pg.tamaño,
+             'es_portada', pg.es_portada
+           ) ORDER BY pg.orden, pg.tamaño)
+           FROM propiedades_galeria pg
+           WHERE pg.propiedad_id = p.id),
+           '[]'::json
+         ) as galeria,
+         COALESCE(
+           (SELECT json_agg(json_build_object(
+             'id', pp.id,
+             'url', pp.url,
+             'orden', pp.orden,
+             'tamaño', pp.tamaño
+           ) ORDER BY pp.orden, pp.tamaño)
+           FROM propiedades_planos pp
+           WHERE pp.propiedad_id = p.id),
+           '[]'::json
+         ) as planos,
+         c.name as city_name,
+         s.name as state_name,
+         o.nombre as organizacion_nombre,
+         o.logo_url as organizacion_logo_url,
+         p.estado
+       FROM propiedades p
+       LEFT JOIN operation_types ot ON p.operation_type_id = ot.id
+       LEFT JOIN property_types pt ON p.property_type_id = pt.id
+       LEFT JOIN cities c ON p.city_id = c.id
+       LEFT JOIN states s ON c.state_id = s.id
+       LEFT JOIN organizaciones o ON p.organizacion_id = o.id`;
+
+// Lista los inmuebles públicos que cumplen `whereArea` (con sus valores ya
+// en `params`) + operación/tipo. Máximo 200, más nuevos primero.
+export async function listarInmueblesEnArea({ whereArea, params, operation, tipoInmueble, usuario }) {
+  const { params: valores, filters } = filtrosAnuncios({ operation, inmueble: tipoInmueble }, params);
+  const { rows } = await pool.query(
+    `${SELECT_LISTADO_AREA}
+     WHERE ${filters.join(" AND ")} AND ${whereArea}
+     ORDER BY p.id DESC
+     LIMIT 200`,
+    valores,
+  );
+  // PRIVACIDAD DE UBICACIÓN
+  await aplicarPrivacidadUbicacion(rows, usuario ?? null);
+  return rows;
+}
 
 export const getInmueblesEnPoligono = async (req, res) => {
   const { polygon, tipoInmueble } = req.body;
@@ -842,99 +935,15 @@ export const getInmueblesEnPoligono = async (req, res) => {
       });
     }
 
-    const params = [geoJSONStr];
-    const filters = ["p.estado = 'publicado'"];
-
-    if (esTipoVacacional(tipoInmueble)) {
-      operation = "alquiler";
-    }
-
-    if (operation) {
-      params.push(operation);
-      filters.push(
-        `p.operation_type_id IN (SELECT id FROM operation_types WHERE LOWER(code) = LOWER($${params.length}))`,
-      );
-    }
-
-    if (tipoInmueble) {
-      const { sql, params: tipoParams } = buildTipoFilter(tipoInmueble, {
-        alias: "p",
-        startIdx: params.length + 1,
-      });
-      tipoParams.forEach((t) => params.push(t));
-      if (sql) filters.push(sql);
-    }
-
-    const filterSQL = filters.join(" AND ");
-
-    const { rows } = await pool.query(
-      `SELECT
-         p.id, p.titulo, p.direccion, p.precio, p.estrato,
-         p.price_per_sqm, p.private_area, p.constructed_area,
-         p.bedroom_count, p.bathroom_count,
-         ot.label_es as operacion, ot.code as operacion_slug,
-         pt.label_es as tipo_inmueble, pt.code as tipo_slug,
-         p.ubicacion_oculta, p.publicado_por_id, p.organizacion_id,
-         (CASE WHEN p.ubicacion_oculta
-               THEN p.longitude_publica
-               ELSE p.longitude END)::float as longitude,
-         (CASE WHEN p.ubicacion_oculta
-               THEN p.latitude_publica
-               ELSE p.latitude END)::float as latitude,
-         p.es_de_organizacion,
-         COALESCE(
-           (SELECT pg.url FROM propiedades_galeria pg 
-            WHERE pg.propiedad_id = p.id AND pg.es_portada = true AND pg.tamaño = 'medium'
-            LIMIT 1),
-           NULL
-         ) AS imagen_principal_url,
-         COALESCE(
-           (SELECT json_agg(json_build_object(
-             'id', pg.id,
-             'url', pg.url,
-             'orden', pg.orden,
-             'tamaño', pg.tamaño,
-             'es_portada', pg.es_portada
-           ) ORDER BY pg.orden, pg.tamaño)
-           FROM propiedades_galeria pg
-           WHERE pg.propiedad_id = p.id),
-           '[]'::json
-         ) as galeria,
-         COALESCE(
-           (SELECT json_agg(json_build_object(
-             'id', pp.id,
-             'url', pp.url,
-             'orden', pp.orden,
-             'tamaño', pp.tamaño
-           ) ORDER BY pp.orden, pp.tamaño)
-           FROM propiedades_planos pp
-           WHERE pp.propiedad_id = p.id),
-           '[]'::json
-         ) as planos,
-         c.name as city_name,
-         s.name as state_name,
-         o.nombre as organizacion_nombre,
-         o.logo_url as organizacion_logo_url,
-         p.estado
-       FROM propiedades p
-       LEFT JOIN operation_types ot ON p.operation_type_id = ot.id
-       LEFT JOIN property_types pt ON p.property_type_id = pt.id
-       LEFT JOIN cities c ON p.city_id = c.id
-       LEFT JOIN states s ON c.state_id = s.id
-       LEFT JOIN organizaciones o ON p.organizacion_id = o.id
-        WHERE ${filterSQL}
-          AND p.geom IS NOT NULL
-          AND ST_Contains(
+    const rows = await listarInmueblesEnArea({
+      whereArea: `p.geom IS NOT NULL AND ST_Contains(
             ST_SetSRID(ST_GeomFromGeoJSON($1::jsonb), 4326),
-            (CASE WHEN p.ubicacion_oculta THEN p.geom_publica ELSE p.geom END)
-          )
-        ORDER BY p.id DESC
-        LIMIT 200`,
-      params,
-    );
-
-    // PRIVACIDAD DE UBICACIÓN
-    await aplicarPrivacidadUbicacion(rows, req?.usuario ?? null);
+            (CASE WHEN p.ubicacion_oculta THEN p.geom_publica ELSE p.geom END))`,
+      params: [geoJSONStr],
+      operation,
+      tipoInmueble,
+      usuario: req?.usuario,
+    });
 
     res.json({
       success: true,
