@@ -1,6 +1,9 @@
 // Avisos dentro del CRM (tabla crm_notificaciones).
 // notificar() nunca lanza: un aviso fallido no debe romper la acción que lo origina.
+// Además del aviso en el CRM, manda push a los navegadores suscritos desde el CRM
+// (si el push está habilitado); el correo lo manda el cron de avisosCorreo.js.
 import { pool } from "../db.js";
+import { enviarPushUsuarios } from "./busquedasGuardadas/notificadorPush.js";
 
 export const TIPOS_NOTIFICACION = [
   "lead_nuevo",
@@ -42,17 +45,33 @@ export async function notificar({ destinatarios, organizacionId = null, tipo, ti
     const ids = destinatariosUnicos(destinatarios, actorId);
     if (!ids.length || !TIPOS_NOTIFICACION.includes(tipo)) return 0;
     const ruta = typeof url === "string" && url.startsWith("/") ? url.slice(0, 300) : null;
-    const { rowCount } = await db.query(
+    const tituloCorto = corto(titulo, 200) ?? "Aviso";
+    const cuerpoCorto = corto(cuerpo, 500);
+    const { rows } = await db.query(
       `INSERT INTO crm_notificaciones (usuario_id, organizacion_id, tipo, titulo, cuerpo, url, clave, actor_id)
        SELECT u, $2, $3, $4, $5, $6, $7, $8 FROM unnest($1::int[]) AS u
-       ON CONFLICT (usuario_id, clave) WHERE clave IS NOT NULL DO NOTHING`,
-      [ids, organizacionId, tipo, corto(titulo, 200) ?? "Aviso", corto(cuerpo, 500), ruta, corto(clave, 200), actorId],
+       ON CONFLICT (usuario_id, clave) WHERE clave IS NOT NULL DO NOTHING
+       RETURNING usuario_id`,
+      [ids, organizacionId, tipo, tituloCorto, cuerpoCorto, ruta, corto(clave, 200), actorId],
     );
-    return rowCount;
+    // Solo a quien se le creó el aviso (los duplicados por clave no repiten push).
+    // Sin await: el push no debe retrasar ni romper la acción.
+    if (rows.length) {
+      const destino = rows.map((r) => r.usuario_id);
+      setImmediate(() =>
+        enviarPushUsuarios(destino, payloadPush({ tipo, titulo: tituloCorto, cuerpo: cuerpoCorto, url: ruta }), { app: "crm" }),
+      );
+    }
+    return rows.length;
   } catch (e) {
     console.error("[notificaciones] no se pudo crear el aviso:", e?.message ?? e);
     return 0;
   }
+}
+
+// Lo que recibe el service worker del CRM (public/sw-avisos.js).
+export function payloadPush({ tipo, titulo, cuerpo, url }) {
+  return { titulo, cuerpo: cuerpo ?? "", url: url ?? "/notificaciones", tag: `crm-${tipo}` };
 }
 
 export async function adminsDeOrganizacion(organizacionId, db = pool) {

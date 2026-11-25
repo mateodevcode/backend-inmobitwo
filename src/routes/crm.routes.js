@@ -119,6 +119,7 @@ import {
   obtenerPreferencias,
 } from "../controllers/crm.notificaciones.controllers.js";
 import { uploadDocumento } from "../lib/multer.js";
+import { clavePublicaPush, eliminarSuscripcionPush, guardarSuscripcion } from "../controllers/push.controller.js";
 
 // Documento de captación: un archivo en el campo "archivo" (máx. 10 MB).
 const unDocumento = (req, res, next) =>
@@ -241,6 +242,10 @@ router.get("/crm/notificaciones", ...conEspacio, listarNotificaciones);
 router.get("/crm/notificaciones/contador", ...conEspacio, contadorNotificaciones);
 router.get("/crm/notificaciones/preferencias", ...conEspacio, obtenerPreferencias);
 router.put("/crm/notificaciones/preferencias", ...conEspacio, actualizarPreferencias);
+// Push del navegador para los avisos (suscripciones con app = 'crm'; 503 si está apagado).
+router.get("/crm/push/clave-publica", verificarToken, rateLimit, clavePublicaPush);
+router.post("/crm/push/suscripcion", verificarToken, rateLimit, guardarSuscripcion("crm"));
+router.delete("/crm/push/suscripcion", verificarToken, rateLimit, eliminarSuscripcionPush);
 router.post("/crm/notificaciones/leer-todas", ...conEspacio, marcarTodasLeidas);
 router.post("/crm/notificaciones/:id/leida", ...conEspacio, marcarLeida);
 

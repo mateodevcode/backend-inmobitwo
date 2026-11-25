@@ -41,6 +41,7 @@
 -- 028_crm_notificaciones.sql -> avisos dentro del CRM (crm_notificaciones)
 -- 029_crm_auditoria_datos.sql -> Habeas Data: registro de auditoría (crm_auditoria_datos)
 -- 030_crm_avisos_correo.sql -> avisos del CRM por correo (correo_enviado_at + crm_preferencias_avisos)
+-- 031_push_app.sql -> push_subscriptions.app (portal | crm) para el push de avisos del CRM
 --
 -- NOTA: db.sql es la fuente de verdad única. Actualizarlo siempre al agregar
 --       catálogos, columnas o features nuevos.
